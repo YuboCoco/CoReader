@@ -1,0 +1,4 @@
+PP-DocLayoutV3 FP16 ONNX weights, redistributed under Apache-2.0.
+Original model: https://huggingface.co/PaddlePaddle/PP-DocLayoutV3_safetensors
+ONNX export: https://huggingface.co/stefanj0/PP-DocLayoutV3-FP16-ONNX/tree/ca5155572513b7832d297255a1f5cab0ff4b0202
+Unmodified mirror: https://huggingface.co/bu44er/PP-DocLayoutV3-FP16-ONNX/tree/58dfa00ba1135e027817cbd5802f1f0df62aa5c0

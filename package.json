@@ -1,0 +1,34 @@
+{
+  "name": "english-lit-reader-desktop",
+  "productName": "CoReader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/main.mjs",
+  "description": "Standalone English literature reader for Windows",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite build && electron .",
+    "build": "vite build --configLoader runner",
+    "test": "node --test",
+    "prepare:layout:win": "node scripts/prepare-layout-win.mjs",
+    "prepare:translation:win": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-haidass-win.ps1",
+    "package:win": "npm run build && node scripts/package-win.mjs",
+    "installer:win": "npm run package:win && node scripts/package-installer-win.mjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "^19.0.0",
+    "electron": "45.4.1",
+    "katex": "^0.16.47",
+    "onnxruntime-node": "1.22.0",
+    "pdfjs-dist": "6.5.438",
+    "playwright-core": "^1.57.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "vite": "^8.0.0"
+  }
+}

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+release/
+test-results/
+*.log
+.env
+.env.*
+/assets/fonts/MiSansVF.ttf
+/assets/app.png
+/assets/coreader.png
+/assets/coreader.ico
+/assets/coreader-balanced.*
+/assets/coreader-book.*
+/assets/coreader-duo.*
+/assets/coreader-white.*
+/assets/coreader-wordmark.png
