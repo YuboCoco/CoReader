@@ -1,8 +1,6 @@
 // The reader surface comes from the English Literature Reader plug-in.
 // Native Windows storage and model requests are provided by desktop-runtime.js.
 import React from 'react';
-import appIcon from '../../assets/coreader-cr.png';
-import wordmark from '../../assets/coreader-wordmark-duo.png';
 import { createPortal } from 'react-dom';
 import * as desktop from './desktop-runtime.js';
 import { AgentPanel } from './agent-panel.jsx';
@@ -36,6 +34,7 @@ const SIDE_READER_MIN_W = 360;
 const PANE_DIVIDER_SIZE = 8;
 const ANALYSIS_CARD_KEYS = ['summary', 'references', 'figure', 'agent'];
 const CARD_KEYS = ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS];
+const CUSTOM_CARD_LAYOUT_LIMIT = 3;
 const CARD_HEADER_HEIGHT = 54;
 const CARD_MIN_H = 272;
 const SIDE_CARD_MIN_W = 392;
@@ -363,8 +362,18 @@ const DEFAULT_SHARED = {
   // even share", which is the v37 behaviour, so an untouched column looks exactly
   // as before; a stored value pins that one card and the rest divide what is left.
   cardHeights: {},
-  customCardLayout: null,
+  customCardLayouts: Array(CUSTOM_CARD_LAYOUT_LIMIT).fill(null),
 };
+const CARD_OPEN_FIELDS = { selection: 'selectionCardOpen', recent: 'recentOpen', terms: 'termsOpen', marks: 'marksOpen' };
+function cardOpenPatch(state, keys, open) {
+  const patch = {};
+  for (const key of keys) {
+    const field = CARD_OPEN_FIELDS[key];
+    if (field) patch[field] = open;
+    else (patch.analysisOpen ??= { ...state.analysisOpen })[key] = open;
+  }
+  return patch;
+}
 const CARD_LAYOUT_FIELDS = [
   'dock', 'sectionOrder', 'cards', 'floatingCards', 'cardWidths', 'cardHeights', 'featureColumns', 'featureCardColumns',
   'sideWidth', 'dualSideWidth', 'sideHeight', 'sideTopWidth', 'sideTopHeight', 'selectionSplit', 'selectionWidthSplit',
@@ -379,6 +388,13 @@ const contentKeys = new Set([...TEXT_KEYS, ...SELECTION_KEYS, ...ANALYSIS_KEYS])
 const savedView = readStore(SNAP_KEY, null) || {};
 const oldSnapshot = Object.keys(savedView).some((key) => contentKeys.has(key));
 let shared = Object.assign({}, DEFAULT_SHARED, savedView);
+shared.customCardLayouts = Array.from({ length: CUSTOM_CARD_LAYOUT_LIMIT }, (_, slot) => {
+  const preset = Array.isArray(savedView.customCardLayouts)
+    ? savedView.customCardLayouts[slot]
+    : slot === 0 ? savedView.customCardLayout : null;
+  return preset && typeof preset === 'object' && !Array.isArray(preset) ? snapshotCardLayout(preset) : null;
+});
+delete shared.customCardLayout;
 if (!Object.hasOwn(savedView, 'dualSideWidth') && Number(savedView.featureColumns) === 2 && Number.isFinite(savedView.sideWidth)) {
   shared.dualSideWidth = Math.max(SIDE_DUAL_MIN, savedView.sideWidth);
 }
@@ -1490,6 +1506,11 @@ const CSS = [
   '.elr-workspace-head .elr-card-control:disabled, .elr-popup-head .elr-inline-control:disabled { opacity: .42; cursor: default; }',
   '.elr-workspace-head .elr-card-control svg, .elr-popup-head .elr-inline-control svg { display: block; width: 16px; height: 16px; }',
   '.elr-card-layout-menu .elr-save-layout { border-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-brand-primary); }',
+  '.elr-card-layout-row { display: grid; grid-template-columns: minmax(0, 1fr) 30px; gap: 5px; }',
+  '.elr-card-layout-row > .elr-btn:first-child { text-align: start; }',
+  '.elr-card-layout-row .elr-layout-delete { display: grid; place-items: center; padding: 0; }',
+  '.elr-card-layout-row .elr-layout-delete:hover { color: var(--dsw-alias-state-error-primary); }',
+  '.elr-card-layout-limit { padding: 3px; font-size: 12px; color: var(--dsw-alias-state-warn-primary); }',
   '.elr-feature-column > .elr-sec, .elr-floating-card { transition: box-shadow .34s ease; }',
   '.elr-body.dock-bottom .elr-feature-column > .elr-sec.is-collapsed { flex: 0 0 54px; width: 54px; min-width: 54px; max-width: 54px; min-height: 0; max-height: none; }',
   '@media (prefers-reduced-motion: reduce) { .elr-side, .elr-floating-card > :first-child > .elr-card-fold-content { transition: none; } }',
@@ -1816,6 +1837,7 @@ const readerIconPaths = {
   fontMinus: 'M2.5 15 6.5 5l4 10M4 11.5h5m4 .5h4.5',
   fontPlus: 'M2.5 15 6.5 5l4 10M4 11.5h5m4 .5h5m-2.5-2.5v5',
   collapse: 'm5 4 5 4 5-4M5 16l5-4 5 4',
+  expand: 'm5 8 5-4 5 4M5 12l5 4 5-4',
   layout: 'M2.5 4h15v12h-15zM9 4v12m0-6h8.5',
   settings: 'M7.5 4 8 2.5h4l.5 1.5 1.5 1 1.5-.2 2 3.4-1 1.3v1.6l1 1.3-2 3.4-1.5-.2-1.5 1-.5 1.5H8l-.5-1.5-1.5-1-1.5.2-2-3.4 1-1.3V9.5l-1-1.3 2-3.4 1.5.2 1.5-1zM10 12.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2z',
   translate: 'M2.5 5.5h9M7 3v2.5M9.8 5.5a11 11 0 0 1-7 9m2-6.5a9 9 0 0 0 5.1 5.4m1.3 3.6 3.2-7 3.1 7m-5.3-2.5h4.3',
@@ -2488,7 +2510,6 @@ function Reader(props) {
   // (v28) Which view the analysis column shows: 'summary' | 'references'.
   const [analysisTab, setAnalysisTab] = useShared('analysisTab');
   const [agentQuote, setAgentQuote] = React.useState(null);
-  const [agentContent, setAgentContent] = React.useState(null);
   const [agentModel, setAgentModel] = useShared('agentModel');
   const agentSelectionRef = React.useRef(null);
   const [figureSort, setFigureSort] = useShared('figureSort');
@@ -2508,7 +2529,8 @@ function Reader(props) {
   const [cardMaxHeight, setCardMaxHeight] = React.useState(displayCardHeightLimit);
   const [featureColumns, setFeatureColumns] = useShared('featureColumns');
   const dualColumns = dock === 'right' && Number(featureColumns) === 2;
-  const [customCardLayout, setCustomCardLayout] = useShared('customCardLayout');
+  const [customCardLayouts, setCustomCardLayouts] = useShared('customCardLayouts');
+  const [layoutLimitReached, setLayoutLimitReached] = React.useState(false);
   const [workspaceStowed, setWorkspaceStowed] = React.useState(false);
   const workspaceId = React.useId();
   const workspaceCloseRef = React.useRef(null);
@@ -5892,19 +5914,30 @@ function Reader(props) {
     h: clampPopup(rect.height, 210, 430),
   };
 
-  const floatFunctionCard = (key, box, bounds) => {
+  const floatFunctionCard = (key, box, bounds, open, expand = false) => {
     setFloatingBounds(bounds);
     setFrontCard(key);
-    setFloatingCards((previous) => ({ ...previous, [key]: box }));
+    const state = readShared();
+    const previous = state.floatingCards;
+    const savedOpen = previous[key]?.dockedOpen;
+    const dockedOpen = typeof savedOpen === 'boolean' ? savedOpen : open;
+    writeShared({
+      floatingCards: { ...previous, [key]: { ...box, dockedOpen } },
+      ...(expand ? cardOpenPatch(state, [key], true) : {}),
+    });
   };
 
   const dockFunctionCard = (key, target = null, after = false, column = null) => {
-    const { floatingCards: previous, sectionOrder: saved, featureCardColumns: savedColumns } = readShared();
+    const state = readShared();
+    const { floatingCards: previous, sectionOrder: saved, featureCardColumns: savedColumns } = state;
     const patch = {};
     if (previous[key]) {
       const next = { ...previous };
       delete next[key];
       patch.floatingCards = next;
+      if (typeof previous[key].dockedOpen === 'boolean') {
+        Object.assign(patch, cardOpenPatch(state, [key], previous[key].dockedOpen));
+      }
     }
     if (column === 0 || column === 1) {
       patch.featureCardColumns = {
@@ -5931,7 +5964,7 @@ function Reader(props) {
     const bounds = popupViewport();
     const size = cardWindowBox(key, rect);
     const box = placeFunctionCard({ ...size, x: (bounds.left + bounds.right - size.w) / 2 }, open && !compactCards[key], bounds);
-    floatFunctionCard(key, { ...size, x: box.x, y: box.y }, bounds);
+    floatFunctionCard(key, { ...size, x: box.x, y: box.y }, bounds, open);
   };
 
   const beginCardDrag = (key, open, onTap) => (event) => {
@@ -5948,20 +5981,37 @@ function Reader(props) {
     const offsetY = startY - initial.top;
     const bounds = popupViewport();
     const size = cardWindowBox(key, initial);
-    const horizontal = dockRef.current === 'bottom';
+    const bottomDock = dockRef.current === 'bottom';
     const originColumnNode = card.closest('.elr-feature-column');
     const originColumn = originColumnNode ? Number(originColumnNode.dataset.featureColumn) : null;
     const columnBox = originColumnNode?.getBoundingClientRect();
     const originNext = card.nextElementSibling?.dataset.elrDockedCard;
     const originPrevious = card.previousElementSibling?.dataset.elrDockedCard;
-    const vertical = horizontal && Boolean(originColumnNode);
-    const capsule = {
-      w: vertical ? CARD_HEADER_HEIGHT : Math.max(170, initial.width),
-      h: vertical ? initial.height : CARD_HEADER_HEIGHT,
+
+    const dockColumn = sideTopElRef.current?.querySelector('.elr-feature-column');
+    const horizontalCapsule = {
+      w: bottomDock && originColumnNode ? size.w : Math.max(170, initial.width),
+      h: CARD_HEADER_HEIGHT,
     };
-    const boxAt = (x, y) => fitPopupBox({ ...capsule, x: x - offsetX, y: y - offsetY }, bounds);
-    const dockAt = (x, y, box) => {
-      const panel = sideTopElRef.current;
+    const verticalCapsule = {
+      w: CARD_HEADER_HEIGHT,
+      h: Math.max(CARD_HEADER_HEIGHT, columnBox?.height ?? dockColumn?.clientHeight ?? 0),
+    };
+    const sourceCapsule = bottomDock && originColumnNode ? verticalCapsule : horizontalCapsule;
+    const grabX = clampPopup(offsetX / sourceCapsule.w, 0, 1);
+    const grabY = clampPopup(offsetY / sourceCapsule.h, 0, 1);
+    const containsPoint = (rect, x, y) => Boolean(rect
+      && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom);
+    const dragLocation = (x, y) => {
+      const panel = workspaceStowed ? null : sideTopElRef.current;
+      const inDock = containsPoint(panel?.getBoundingClientRect(), x, y);
+      const vertical = bottomDock && inDock;
+      const capsule = vertical ? verticalCapsule : horizontalCapsule;
+      // Keep the same relative grab point when the capsule changes direction.
+      const box = fitPopupBox({ ...capsule, x: x - grabX * capsule.w, y: y - grabY * capsule.h }, bounds);
+      return { panel, inDock, vertical, box };
+    };
+    const dockAt = (x, y, { panel, inDock, box }) => {
       if (!panel) return null;
       // Until the dragged capsule clears the compact source slot, keep that
       // slot in the layout. Its rectangle is independent of sibling reflow.
@@ -5971,25 +6021,24 @@ function Reader(props) {
         const slot = originColumnNode.querySelector('.elr-card-drop-placeholder.is-origin')?.getBoundingClientRect();
         const left = slot?.left ?? current.left + initial.left - columnBox.left;
         const top = slot?.top ?? current.top + initial.top - columnBox.top;
-        const right = left + (slot?.width ?? (horizontal ? CARD_HEADER_HEIGHT : initial.width));
-        const bottom = top + (slot?.height ?? (horizontal ? initial.height : CARD_HEADER_HEIGHT));
+        const right = left + (slot?.width ?? (bottomDock ? CARD_HEADER_HEIGHT : initial.width));
+        const bottom = top + (slot?.height ?? (bottomDock ? initial.height : CARD_HEADER_HEIGHT));
         if (box.x < right && box.x + box.w > left && box.y < bottom && box.y + box.h > top) {
           return { column: originColumn, origin: true };
         }
-        passedOrigin = horizontal ? box.x >= right : box.y >= bottom;
+        passedOrigin = bottomDock ? box.x >= right : box.y >= bottom;
       }
-      const rect = panel.getBoundingClientRect();
-      if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null;
+      if (!inDock) return null;
       const columns = [...panel.querySelectorAll('.elr-feature-column')];
       const featureColumn = columns.find((node) => x <= node.getBoundingClientRect().right) || columns.at(-1);
       if (!featureColumn) return null;
       const column = Number(featureColumn.dataset.featureColumn);
-      const position = horizontal ? x : y;
+      const position = bottomDock ? x : y;
       const placeholder = featureColumn.querySelector('.elr-card-drop-placeholder:not(.is-origin)');
       if (hover?.column === column && !hover.origin && placeholder) {
         const slot = placeholder.getBoundingClientRect();
-        const start = horizontal ? slot.left : slot.top;
-        const end = horizontal ? slot.right : slot.bottom;
+        const start = bottomDock ? slot.left : slot.top;
+        const end = bottomDock ? slot.right : slot.bottom;
         if (position >= start - 5 && position <= end + 5) return hover;
       }
       const candidates = [...featureColumn.querySelectorAll('[data-elr-docked-card]')]
@@ -5997,7 +6046,7 @@ function Reader(props) {
       // Hit testing uses stable layout coordinates while siblings animate.
       const columnBounds = featureColumn.getBoundingClientRect();
       const before = candidates.find((node) => {
-        const midpoint = horizontal ? columnBounds.left + node.offsetLeft + node.offsetWidth / 2
+        const midpoint = bottomDock ? columnBounds.left + node.offsetLeft + node.offsetWidth / 2
           : columnBounds.top + node.offsetTop + node.offsetHeight / 2;
         return position < midpoint;
       });
@@ -6013,9 +6062,11 @@ function Reader(props) {
 
     let started = false;
     let hover = null;
+    let previewVertical;
     const painter = frameWriter(({ x, y }) => {
-      const box = boxAt(x, y);
-      const next = dockAt(x, y, box);
+      const location = dragLocation(x, y);
+      const { vertical, box } = location;
+      const next = dockAt(x, y, location);
       if (next?.column !== hover?.column || next?.origin !== hover?.origin
         || next?.target !== hover?.target || next?.after !== hover?.after) {
         rememberCardPositions(key);
@@ -6023,7 +6074,14 @@ function Reader(props) {
         setCardDrop(next);
       }
       const preview = cardGhostRef.current;
-      if (preview) preview.style.transform = 'translate3d(' + box.x + 'px,' + box.y + 'px,0)';
+      if (!preview) return;
+      if (vertical !== previewVertical) {
+        previewVertical = vertical;
+        preview.classList.toggle('is-vertical', vertical);
+        preview.style.width = box.w + 'px';
+        preview.style.height = box.h + 'px';
+      }
+      preview.style.transform = 'translate3d(' + box.x + 'px,' + box.y + 'px,0)';
     });
     const cleanup = () => {
       if (cardGestureCancelRef.current !== cleanup) return;
@@ -6051,11 +6109,11 @@ function Reader(props) {
         started = true;
         gestureStart();
         setTermBubble(null);
-        const box = boxAt(x, y);
-        hover = dockAt(x, y, box);
+        const location = dragLocation(x, y);
+        hover = dockAt(x, y, location);
         rememberCardPositions(key);
         setCardDrop(hover);
-        setGhost({ key, vertical, ...box });
+        setGhost({ key, vertical: location.vertical, ...location.box });
       }
       painter.push({ x, y });
     };
@@ -6064,16 +6122,19 @@ function Reader(props) {
       const { clientX: x, clientY: y } = e;
       const inside = x >= 0 && y >= 0 && x <= window.innerWidth && y <= window.innerHeight;
       if (started && inside) {
-        const box = boxAt(x, y);
-        const target = dockAt(x, y, box);
-        if (target) {
+        const location = dragLocation(x, y);
+        const { box } = location;
+        const target = dockAt(x, y, location);
+        const readingPane = readingSpaceRef.current ?? capture.querySelector('.elr-main');
+        const expand = !location.inDock && containsPoint(readingPane?.getBoundingClientRect(), x, y);
+        if (target && !expand) {
           const workspace = sideTopElRef.current;
           workspace?.classList.add('elr-no-card-motion');
           if (!target.origin) dockFunctionCard(key, target.target, target.after, columnCount === 2 ? target.column : null);
           window.setTimeout(() => workspace?.classList.remove('elr-no-card-motion'), 650);
         } else {
-          const placed = placeFunctionCard({ ...size, x: box.x, y: box.y }, open && !compactCards[key], bounds);
-          floatFunctionCard(key, { ...size, x: placed.x, y: placed.y }, bounds);
+          const placed = placeFunctionCard({ ...size, x: box.x, y: box.y }, (open || expand) && !compactCards[key], bounds);
+          floatFunctionCard(key, { ...size, x: placed.x, y: placed.y }, bounds, open, expand);
         }
       }
       cleanup();
@@ -6320,17 +6381,27 @@ function Reader(props) {
     closeCardMenu(true);
   };
   const saveCardLayout = () => {
-    setCustomCardLayout(structuredClone(snapshotCardLayout(readShared())));
+    const state = readShared();
+    const slot = state.customCardLayouts.indexOf(null);
+    if (slot < 0) {
+      setLayoutLimitReached(true);
+      return;
+    }
+    const layouts = state.customCardLayouts.slice();
+    layouts[slot] = structuredClone(snapshotCardLayout(state));
+    setCustomCardLayouts(layouts);
     layoutMenuRef.current?.hidePopover();
-    notify('已保存自定义布局。', 'ok');
+    notify('已保存自定义布局 ' + (slot + 1) + '。', 'ok');
   };
-  const collapseAllCards = () => {
+  const deleteCardLayout = (slot) => {
+    setCustomCardLayouts((layouts) => layouts.map((preset, index) => index === slot ? null : preset));
+    setLayoutLimitReached(false);
+    layoutMenuRef.current?.querySelector('.elr-save-layout')?.focus();
+  };
+  const setDockedCardsOpen = (open) => {
     rememberCardFold();
     setTermBubble(null);
-    writeShared({
-      selectionCardOpen: false, recentOpen: false, termsOpen: false, marksOpen: false,
-      analysisOpen: Object.fromEntries(ANALYSIS_CARD_KEYS.map((key) => [key, false])),
-    });
+    writeShared(cardOpenPatch(readShared(), dockedCards, open));
   };
   const toggleWorkspace = () => {
     cardGestureCancelRef.current?.();
@@ -7051,19 +7122,12 @@ function Reader(props) {
       h('span', { className: 'elr-model' }, text.length + ' ' + t('chars'))
   ) : null;
 
-  const head = mode === 'pdf' && hasPdf ? null : h('header', { className: 'elr-head' + (showPdfStart ? ' elr-library-head' : '') },
+  const head = mode === 'pdf' ? null : h('header', { className: 'elr-head' },
     h('div', { className: 'elr-head-controls' },
-      showPdfStart ? h('div', { className: 'elr-library-brand' },
-        h('img', { src: appIcon, alt: '', width: 30, height: 30 }),
-        h('span', { className: 'elr-library-wordmark', role: 'img', 'aria-label': 'CoReader',
-          style: { maskImage: 'url("' + wordmark + '")' } })
-      ) : null,
-      showPdfStart || mode !== 'pdf' ? headGroup(
+      headGroup(
         h('button', { type: 'button', className: 'elr-btn elr-head-settings', onClick: openModelSettings, title: '模型、账号与显示设置' }, '设置'),
-        !showPdfStart ? h('button', {
-          type: 'button', className: 'elr-btn', onClick: goHome,
-        }, '论文库') : null
-      ) : null,
+        h('button', { type: 'button', className: 'elr-btn', onClick: goHome }, '论文库')
+      ),
       readingControls
     ),
     h('div', { className: 'elr-head-actions' },
@@ -7112,7 +7176,10 @@ function Reader(props) {
         stage: readingSpaceRef, ratio: pdfReading.ratio, onChange: pdfReading.setRatio,
       }) : null,
       h('div', { ref: figureOutlineRef, className: 'elr-figure-outline', 'aria-hidden': true }),
-      showPdfStart ? h(PaperLibrary, { onOpen: openRecent, onOpenFile: openPdfPicker, readerError: pdfError, tone: toneCls }) : null,
+      showPdfStart ? h(PaperLibrary, {
+        onOpen: openRecent, onOpenFile: openPdfPicker, onSettings: openModelSettings,
+        version: props.version, readerError: pdfError, tone: toneCls,
+      }) : null,
       hasPdf && pdfError ? h('div', { className: 'elr-retry-bar' },
         h('span', null, t('pdf.failed') + ' ' + pdfError),
         h('button', { className: 'elr-btn', onClick: () => { setPdfError(''); setPreviewMode('pdfjs'); setDropSeq((n) => n + 1); } }, t('retry')),
@@ -7795,7 +7862,6 @@ function Reader(props) {
     providers: activeCatalog?.providers, defaultModel: modelBody(), modelPreference: agentModel,
     onModelChange: setAgentModel, onModelSettings: openModelSettings,
     renderAnswer: (answer, source) => renderMarkdown(answer, (inline) => renderInline(inline, source)),
-    onContentChange: setAgentContent,
   }) : h('div', { className: 'elr-out elr-out-empty' }, '请先打开 PDF。');
   const cardNodes = {
     selection: selCard, recent: recentSection, terms: termsSection, marks: marksSection,
@@ -7817,7 +7883,7 @@ function Reader(props) {
     summary: !summary && !summaryDetail?.draft && !summaryDetail?.error && !summaryIssue && !summaryBusy && !pdfTextBusy,
     references: !references.length && !referencesBusy && !pdfTextBusy,
     figure: !figureEntries.length && !figureStatus,
-    agent: mode !== 'pdf' || agentContent?.paper !== paperId || !agentContent?.hasContent,
+    agent: mode !== 'pdf' || !paperId,
   };
   const dockedCards = functionCardOrder(sectionOrder).filter((key) => enabledCards.includes(key) && !floatingCards[key]);
   const floatingCardNodes = hasPaper && ownsCardWindows ? enabledCards.filter((key) => floatingCards[key]).map((key) => {
@@ -7911,6 +7977,8 @@ function Reader(props) {
         );
   };
 
+  const allDockedCardsCollapsed = dockedCards.length > 0 && dockedCards.every((key) => !openCards[key]);
+  const bulkCardLabel = allDockedCardsCollapsed ? '展开所有卡片' : '缩小所有卡片';
   const otherDock = dock === 'bottom' ? 'right' : 'bottom';
   const switchDockLabel = t('dock.switch', { side: t('dock.' + otherDock + 'Short') });
   const columnCount = dualColumns ? 2 : 1;
@@ -7959,18 +8027,30 @@ function Reader(props) {
       ),
       h('span', { className: 'elr-spacer' }),
       h('button', { type: 'button', className: 'elr-card-control',
-        title: '缩小所有卡片', 'aria-label': '缩小所有卡片', disabled: !enabledCards.some((key) => openCards[key]),
-        onClick: collapseAllCards,
-      }, readerIcon('collapse')),
+        title: bulkCardLabel, 'aria-label': bulkCardLabel, disabled: !dockedCards.length,
+        onClick: () => setDockedCardsOpen(allDockedCardsCollapsed),
+      }, readerIcon(allDockedCardsCollapsed ? 'expand' : 'collapse')),
       h('button', { type: 'button', className: 'elr-card-control', title: '卡片布局',
         'aria-label': '卡片布局', 'aria-haspopup': 'dialog', popoverTarget: layoutMenuId,
       }, readerIcon('layout')),
       h('div', { ref: layoutMenuRef, id: layoutMenuId, className: 'elr-reader-options elr-card-layout-menu',
         role: 'dialog', 'aria-label': '卡片布局', popover: 'auto',
+        onToggle: (event) => { if (event.newState === 'closed') setLayoutLimitReached(false); },
       },
       h('button', { type: 'button', className: 'elr-btn', onClick: () => applyCardLayout(DEFAULT_SHARED) }, '默认布局'),
-      h('button', { type: 'button', className: 'elr-btn', disabled: !customCardLayout, onClick: () => applyCardLayout(customCardLayout) }, '自定义布局'),
-      h('button', { type: 'button', className: 'elr-btn elr-save-layout', onClick: saveCardLayout }, '保存布局')),
+      customCardLayouts.map((preset, slot) => {
+        if (!preset) return null;
+        const label = '自定义布局 ' + (slot + 1);
+        return h('div', { className: 'elr-card-layout-row', key: slot },
+          h('button', { type: 'button', className: 'elr-btn', onClick: () => applyCardLayout(preset) }, label),
+          h('button', { type: 'button', className: 'elr-btn elr-layout-delete', title: '删除' + label,
+            'aria-label': '删除' + label, onClick: () => deleteCardLayout(slot),
+          }, h('span', { className: 'elr-trash-icon', 'aria-hidden': true }))
+        );
+      }),
+      h('button', { type: 'button', className: 'elr-btn elr-save-layout', onClick: saveCardLayout }, '保存布局'),
+      layoutLimitReached ? h('div', { className: 'elr-card-layout-limit', role: 'status' }, '自定义布局已达上限（3 个）。') : null
+      ),
       h('button', { type: 'button', ref: cardMenuButtonRef, className: 'elr-card-control' + (cardMenuOpen ? ' active' : ''), title: t('card.manage'), 'aria-label': t('card.manage'), 'aria-haspopup': 'dialog', 'aria-expanded': cardMenuOpen, onClick: (e) => { e.stopPropagation(); setCardMenuOpen((v) => !v); } }, readerIcon('settings')),
       h('button', { type: 'button', ref: workspaceCloseRef, className: 'elr-card-control',
         title: t('cards.stow'), 'aria-label': t('cards.stow'), 'aria-controls': workspaceId, onClick: toggleWorkspace,

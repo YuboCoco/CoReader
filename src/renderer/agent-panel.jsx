@@ -113,7 +113,7 @@ function AgentModelMenu({ providers, model, entry, custom, onChange, onSettings 
 }
 
 export function AgentPanel({ active, paper, page, ready, incoming, readPages, providers, defaultModel,
-  modelPreference, onModelChange, onModelSettings, onJump, renderAnswer, onContentChange }) {
+  modelPreference, onModelChange, onModelSettings, onJump, renderAnswer }) {
   const [turns, setTurns] = useState(null);
   const [retryLoad, setRetryLoad] = useState(0);
   const [question, setQuestion] = useState('');
@@ -125,17 +125,12 @@ export function AgentPanel({ active, paper, page, ready, incoming, readPages, pr
   const follow = useRef(true);
   const running = useRef(null);
   const lastIncoming = useRef(null);
-  const hasContent = Boolean(turns?.length || pending || issue || question.trim() || quotes.length);
   const findModel = (model) => providers?.find((provider) => provider.id === model?.provider)?.models
     .find((entry) => entry.id === model?.model);
   const override = findModel(modelPreference);
   const model = override ? modelPreference : defaultModel;
   const modelEntry = override || findModel(defaultModel);
   const canSend = ready && turns !== null && !pending && Boolean(modelEntry);
-
-  useEffect(() => {
-    onContentChange({ paper, hasContent });
-  }, [paper, hasContent, onContentChange]);
 
   useEffect(() => {
     if (!active || turns !== null) return;

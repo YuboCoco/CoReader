@@ -6,7 +6,7 @@ import { readReaderSettings, writeReaderSettings } from './reader-view.js';
 
 const api = window.reader;
 
-export function ModelCenter({ onClose, onSave, onConnectionsChange }) {
+export function ModelCenter({ version, availableUpdate, onClose, onSave, onConnectionsChange }) {
   const dialog = useRef(null);
   const mounted = useRef(false);
   const connectionUpdates = useRef({});
@@ -109,7 +109,11 @@ export function ModelCenter({ onClose, onSave, onConnectionsChange }) {
     <div className="model-center-chrome">
       <header className="model-center-header">
         <h2 id="model-center-title">模型设置</h2>
-        <button type="button" className="quiet" aria-label="关闭设置" onClick={close}>×</button>
+        <div className="model-center-version">
+          {version && <span>CoReader {version}</span>}
+          {availableUpdate && <a href={availableUpdate.url}>查看新版 {availableUpdate.version}</a>}
+          <button type="button" className="quiet" aria-label="关闭设置" onClick={close}>×</button>
+        </div>
       </header>
       <nav className="model-center-tabs" aria-label="设置分类">
         <button type="button" aria-pressed={tab === 'models'} onClick={() => setTab('models')}>模型与账号</button>

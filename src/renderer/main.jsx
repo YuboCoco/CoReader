@@ -10,6 +10,27 @@ const fonts = import.meta.glob('../../assets/fonts/MiSansVF.ttf', { eager: true,
 const miSans = fonts['../../assets/fonts/MiSansVF.ttf'];
 if (miSans) document.fonts.add(new FontFace('MiSans', 'url("' + miSans + '")', { weight: '100 900', display: 'swap' }));
 
+async function finishStartup() {
+  const splash = document.getElementById('startup-screen');
+  if (!splash) return;
+  try {
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches && !document.hidden) {
+      await Promise.allSettled(splash.getAnimations({ subtree: true }).map((animation) => animation.finished));
+      if (!document.hidden) {
+        await splash.animate([{ opacity: 1 }, { opacity: 0 }], {
+          delay: 2000,
+          duration: 160,
+          easing: 'cubic-bezier(.23, 1, .32, 1)',
+          fill: 'forwards',
+        }).finished;
+      }
+    }
+  } finally {
+    splash.remove();
+    document.getElementById('root').inert = false;
+  }
+}
+
 function PdfPassword({ request, onClose }) {
   const modal = useRef(null);
   const input = useRef(null);
@@ -38,9 +59,16 @@ function App({ issue: startupIssue }) {
   const [password, setPassword] = useState(null);
   const [revision, setRevision] = useState(0);
   const [issue, setIssue] = useState(startupIssue);
+  const [version, setVersion] = useState('');
+  const [update, setUpdate] = useState(null);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
+    let active = true;
     api.windowReady().catch(() => {});
+    finishStartup().catch(() => {});
+    api.appVersion().then((value) => { if (active) setVersion(value); }).catch(() => {});
+    api.checkForUpdate().then((value) => { if (active) setUpdate(value); }).catch(() => {});
     const showError = (event) => setIssue(event.detail);
     const linkClick = (event) => {
       const link = event.target.closest?.('a[href]');
@@ -51,6 +79,7 @@ function App({ issue: startupIssue }) {
     window.addEventListener('reader-storage-error', showError);
     document.addEventListener('click', linkClick, true);
     return () => {
+      active = false;
       window.removeEventListener('reader-storage-error', showError);
       document.removeEventListener('click', linkClick, true);
     };
@@ -60,9 +89,14 @@ function App({ issue: startupIssue }) {
     {issue && <aside className="desktop-error" role="alert">
       <span>{issue}</span><button className="quiet" aria-label="关闭提示" onClick={() => setIssue('')}>×</button>
     </aside>}
-    <Reader t={translate} modelRevision={revision} onModelSettings={() => setShowModelCenter(true)} onPdfPassword={setPassword} />
+    {update && !dismissed && <aside className="desktop-update" aria-label="软件更新">
+      <strong role="status">发现 CoReader {update.version}，可以更新</strong>
+      <a href={update.url}>查看发布</a>
+      <button type="button" aria-label="关闭更新提示" onClick={() => setDismissed(true)}>×</button>
+    </aside>}
+    <Reader t={translate} version={version} modelRevision={revision} onModelSettings={() => setShowModelCenter(true)} onPdfPassword={setPassword} />
     {password && <PdfPassword request={password} onClose={() => setPassword(null)} />}
-    {showModelCenter && <ModelCenter onClose={() => setShowModelCenter(false)}
+    {showModelCenter && <ModelCenter version={version} availableUpdate={update} onClose={() => setShowModelCenter(false)}
       onConnectionsChange={() => setRevision((previous) => previous + 1)} onSave={() => {
       setShowModelCenter(false);
       setRevision((previous) => previous + 1);

@@ -1,0 +1,96 @@
+/* The transparent gap in the existing wordmark divides Co from Reader. */
+.elr-startup {
+  --elr-startup-wordmark-width: clamp(180px, 29vw, 290px);
+  --elr-startup-split: 28.49%;
+  --elr-startup-scene: 740ms;
+  --elr-startup-ease-out: cubic-bezier(.23, 1, .32, 1);
+  --elr-startup-ease-in-out: cubic-bezier(.77, 0, .175, 1);
+  position: fixed;
+  z-index: 500;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 48% 46%, #e0eaf5, transparent 67%), #f4f6f9;
+  color-scheme: light;
+}
+.elr-startup-brand {
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 1.25vw, 16px);
+  animation: elr-startup-align var(--elr-startup-scene) both;
+}
+.elr-startup-icon {
+  display: block;
+  width: clamp(44px, 6vw, 64px);
+  height: auto;
+}
+.elr-startup-wordmark {
+  position: relative;
+  width: var(--elr-startup-wordmark-width);
+  aspect-ratio: 2164 / 375;
+}
+.elr-startup-co, .elr-startup-reader {
+  position: absolute;
+  inset: 0;
+  mask: url('../../assets/coreader-wordmark-duo.png') center / contain no-repeat;
+  animation-duration: var(--elr-startup-scene);
+  animation-fill-mode: both;
+}
+.elr-startup-co {
+  clip-path: inset(0 calc(100% - var(--elr-startup-split)) 0 0);
+  background: light-dark(#1646b5, #9db8ff);
+  transform-origin: 25% 63%;
+  animation-name: elr-startup-co-impact;
+}
+.elr-startup-reader {
+  clip-path: inset(0 0 0 var(--elr-startup-split));
+  background: light-dark(#0b806f, #77dbc4);
+  transform-origin: var(--elr-startup-split) 63%;
+  animation-name: elr-startup-reader-impact;
+}
+@keyframes elr-startup-align {
+  0%, 20% {
+    transform: translateX(calc(var(--elr-startup-wordmark-width) * .35755));
+    animation-timing-function: var(--elr-startup-ease-out);
+  }
+  58%, 100% { transform: translateX(0); }
+}
+@keyframes elr-startup-co-impact {
+  0%, 54% { transform: translateX(0) rotate(0); }
+  66% {
+    transform: translateX(-4px) rotate(-2.5deg);
+    animation-timing-function: var(--elr-startup-ease-out);
+  }
+  83% { transform: translateX(1px) rotate(.8deg); }
+  100% { transform: translateX(0) rotate(0); }
+}
+@keyframes elr-startup-reader-impact {
+  0%, 20% {
+    transform: translateX(47%) rotate(0);
+    opacity: 0;
+    animation-timing-function: var(--elr-startup-ease-in-out);
+  }
+  41% {
+    transform: translateX(22%) rotate(0);
+    opacity: 1;
+    animation-timing-function: var(--elr-startup-ease-out);
+  }
+  54% { transform: translateX(-1px) rotate(0); opacity: 1; }
+  66% {
+    transform: translateX(-5px) rotate(-2.5deg);
+    opacity: 1;
+    animation-timing-function: var(--elr-startup-ease-out);
+  }
+  83% { transform: translateX(2px) rotate(.8deg); opacity: 1; }
+  100% { transform: translateX(0) rotate(0); opacity: 1; }
+}
+@media (prefers-color-scheme: dark) {
+  .elr-startup {
+    background: radial-gradient(ellipse at 48% 46%, #25364b, transparent 67%), #1b2028;
+    color-scheme: dark;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .elr-startup-brand, .elr-startup-co, .elr-startup-reader { animation: none; }
+}

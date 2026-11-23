@@ -48,6 +48,8 @@ contextBridge.exposeInMainWorld('reader', {
   testModel: (draft) => call('model:test', draft),
   startJob: (job) => call('job:start', job),
   cancelJob: (id) => call('job:cancel', id),
+  appVersion: () => call('app:version'),
+  checkForUpdate: () => call('app:check-update'),
   windowReady: () => call('window:ready'),
   chatgptStatus: () => call('chatgpt:status'),
   chatgptLogin: (id) => call('chatgpt:login', id),

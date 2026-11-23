@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, net, protocol, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, safeStorage, shell } from 'electron';
 import { createReadStream, mkdirSync, writeFileSync } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
@@ -17,6 +17,7 @@ import { runReadingAgent } from './reading-agent.mjs';
 import { locateCodeBuddy, readCodeBuddyModels, runCodeBuddy } from './codebuddy.mjs';
 import { createLocalTranslator } from './local-translation.mjs';
 import { detectPdfLayout } from './layout-model.mjs';
+import { findAppUpdate } from './app-updates.mjs';
 
 const origin = 'litreader://app';
 const dist = fileURLToPath(new URL('../dist/', import.meta.url));
@@ -28,6 +29,7 @@ let library;
 let chatgpt;
 const jobs = new Map();
 const appLifetime = new AbortController();
+let updateCheck;
 const translationBundle = app.isPackaged ? join(process.resourcesPath, 'haidass')
   : fileURLToPath(new URL('../release/runtime/haidass/', import.meta.url));
 const offlineTranslators = new Map(Object.keys(localTranslationModels).map((id) =>
@@ -784,6 +786,12 @@ function attachActions() {
     return { body };
   });
   registerHandler('job:cancel', (_event, request) => jobs.get(request)?.abort());
+  registerHandler('app:version', () => app.getVersion());
+  registerHandler('app:check-update', () => {
+    updateCheck ??= findAppUpdate(app.getVersion(), fetch,
+      AbortSignal.any([appLifetime.signal, AbortSignal.timeout(8000)])).catch(() => null);
+    return updateCheck;
+  });
   registerHandler('window:ready', () => reportStartup('READY'));
   registerHandler('window:fullscreen', () => {
     const next = !mainWindow.isFullScreen();
@@ -795,7 +803,7 @@ function attachActions() {
 function createWindow() {
   mainWindow = new BrowserWindow({
     title: 'CoReader', icon: appIcon, width: 1360, height: 880, minWidth: 760, minHeight: 550,
-    backgroundColor: '#f4f6f9', autoHideMenuBar: true,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b2028' : '#f4f6f9', autoHideMenuBar: true,
     show: process.env.ENGLISH_LIT_READER_HIDDEN !== '1',
     webPreferences: { preload, nodeIntegration: false, contextIsolation: true, sandbox: true },
   });

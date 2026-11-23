@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import appIcon from '../../assets/coreader-cr.png';
+import wordmark from '../../assets/coreader-wordmark-duo.png';
 import { indexPaperPageCount } from './desktop-runtime.js';
 import './paper-library.css';
 
@@ -123,7 +125,7 @@ function LibraryDialog({ title, cancel, submit, busy, issue, children, action = 
   </dialog>;
 }
 
-export function PaperLibrary({ onOpen, onOpenFile, readerError, tone }) {
+export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerError, tone }) {
   const [data, setData] = useState(empty);
   const [indexedPages, setIndexedPages] = useState(() => new Map());
   const indexedPapers = useRef(new Set());
@@ -371,7 +373,10 @@ export function PaperLibrary({ onOpen, onOpenFile, readerError, tone }) {
     onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setDrop(null); }}
     onDragEnd={() => setDrop(null)}>
     <aside className="pl-sidebar" aria-label="论文分类">
-      <div className="pl-sidebar-title"><Icon name="paper" /><strong>论文库</strong></div>
+      <div className="pl-brand">
+        <img src={appIcon} alt="" width={29} height={29} />
+        <span className="pl-wordmark" role="img" aria-label="CoReader" style={{ maskImage: 'url("' + wordmark + '")' }} />
+      </div>
       <nav aria-label="论文视图">
         {link('all', scopes.all, 'all', data.papers.length)}
         {link('recent', scopes.recent, 'recent', recentCount)}
@@ -383,17 +388,23 @@ export function PaperLibrary({ onOpen, onOpenFile, readerError, tone }) {
         {categories.filter((item) => !isHidden(item)).map((item) => link(item.id, item.name,
           'folder', categoryCount(item), item.depth, item.hasChildren))}
       </nav>
-    </aside>
-    <section className="pl-main" aria-label={title}>
-      <header className="pl-masthead">
-        <div className="pl-title"><h1 title={active?.path}>{title}</h1><span>{active ? categoryCount(active) : rootCount} 篇</span></div>
-        <div className="pl-masthead-actions">
-          {active && <button type="button" onClick={() => showEditor({ kind: 'category', category: active })}>管理分类</button>}
+      <footer className="pl-sidebar-footer">
+        <div className="pl-sidebar-actions" role="group" aria-label="导入论文">
           <button type="button" onClick={onOpenFile}>打开 PDF</button>
           <button type="button" className="pl-primary" disabled={Boolean(busy)} onClick={() => importFiles(null, active?.id || null)}>
             <Icon name="plus" />{busy === 'import' ? '导入中…' : '从文件夹导入'}
           </button>
         </div>
+        <div className="pl-sidebar-utility">
+          <button type="button" onClick={onSettings}>设置</button>
+          {version && <span title="当前版本">v{version}</span>}
+        </div>
+      </footer>
+    </aside>
+    <section className="pl-main" aria-label={title}>
+      <header className="pl-masthead">
+        <div className="pl-title"><h1 title={active?.path}>{title}</h1><span>{active ? categoryCount(active) : rootCount} 篇</span></div>
+        {active && <button type="button" onClick={() => showEditor({ kind: 'category', category: active })}>管理分类</button>}
       </header>
       <div className="pl-controls">
         <label className="pl-search"><Icon name="search" /><input type="search" aria-label="搜索论文" placeholder="搜索标题、作者、标签…"
