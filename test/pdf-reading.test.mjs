@@ -1,9 +1,74 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { blockForAnchor, chapterRange, embeddedOutline, flattenOutline, headingOutline,
-  captionOfLine, equationNumber, outlineAt, paragraphBlocks, readingLines, sourceScrollOffset, visualCaptionLabel } from '../src/renderer/pdf-reading.mjs';
+  captionOfLine, equationNumber, outlineAt, paragraphBlocks, paragraphTermContext, readingLines,
+  sourceScrollOffset, termContextWindow, visualCaptionLabel } from '../src/renderer/pdf-reading.mjs';
 import { composeMedia, formulaTextInBounds, textOutsideMedia } from '../src/renderer/pdf-layout.mjs';
+import { extractPaperMetadata } from '../src/renderer/pdf-metadata.mjs';
 import { blockAtPoint, bookmarkWithNumber, insertMedia, isDisplayMath, lineInsideMedia, pdfMedia, protectMath, translationSource } from '../src/renderer/pdf-media.mjs';
+
+test('term context follows the chosen occurrence and supplies neighboring paragraphs', () => {
+  const blocks = [
+    { text: 'Attention refers to the opening discussion of user behavior.' },
+    { text: 'The introduction describes an independent task.' },
+    { text: 'The method first projects the input into query and key vectors.' },
+    { text: 'Attention here is a weighted sum of value vectors.' },
+    { text: 'The weights come from scaled dot products of queries and keys.' },
+  ];
+  const context = paragraphTermContext(blocks, 3, 'attention');
+  assert.match(context, /^选中段落：\nAttention here is a weighted sum/);
+  assert.match(context, /query and key vectors/);
+  assert.match(context, /weighted sum of value vectors/);
+  assert.match(context, /scaled dot products/);
+  assert.doesNotMatch(context, /user behavior/);
+});
+
+test('long term context remains bounded and retains the selected occurrence', () => {
+  const text = 'earlier sentence. '.repeat(280) + 'selected occurrence' + ' later sentence.'.repeat(280);
+  const context = termContextWindow(text, text.indexOf('selected occurrence'), 'selected occurrence'.length);
+  assert.ok(context.length <= 3200);
+  assert.match(context, /earlier sentence\. selected occurrence later sentence\./);
+  assert.match(termContextWindow(text, 0, 'earlier'.length), /^earlier/);
+});
+
+test('single-column paragraphs retain inline summation runs and split on extra leading', () => {
+  const run = (str, x, y, width, size = 10) => ({ str, width, height: size, transform: [size, 0, 0, size, x, y] });
+  const placed = readingLines([
+    run('These lines establish the normal body spacing', 72, 710, 390),
+    run('for a single-column paper over several baselines,', 72, 699, 390),
+    run('with enough text to measure the normal spacing.', 72, 688, 390),
+    run('The repeated lines continue the earlier discussion.', 72, 677, 390),
+    run('The next paragraph describes the update with h =', 72, 660.5, 257),
+    run('∑', 333, 668, 10), run('i', 343, 657.5, 3, 7),
+    run('v_i, where the weights depend on depth.', 348, 660.5, 192),
+    run('The update uses a single learned vector per layer.', 72, 649.5, 390),
+  ]);
+  assert.equal(placed.length, 6);
+  const blocks = paragraphBlocks(placed, [0, 0, 612, 792]);
+  assert.equal(blocks.length, 2);
+  assert.match(blocks[1].text, /^The next paragraph.*∑.*where the weights/);
+  assert.equal(blocks[1].boxes.length, 2);
+});
+
+test('paper details combine PDF fields with the visible abstract', async () => {
+  const run = (str, x, y, width, size = 10) => ({ str, width, height: size, transform: [size, 0, 0, size, x, y] });
+  const pdf = {
+    getMetadata: async () => ({
+      info: { Title: 'Untitled', Author: 'Research Team', Custom: new Map([
+        ['DOI', 'https://doi.org/10.48550/arXiv.2603.12345'], ['arXivID', 'https://arxiv.org/abs/2603.12345v1'],
+      ]) },
+    }),
+    getPage: async () => ({ view: [0, 0, 612, 792], getTextContent: async () => ({ items: [
+      run('Sample Research Title', 145, 710, 290, 22), run('Abstract', 270, 680, 75, 12),
+      run('We evaluate an input-', 80, 660, 350), run('dependent approach.', 80, 649, 350),
+      run('1 Introduction', 72, 612, 170, 15), run('An unrelated DOI belongs to another paper.', 72, 592, 300),
+    ] }) }),
+  };
+  assert.deepEqual(await extractPaperMetadata(pdf), {
+    title: 'Sample Research Title', authors: 'Research Team', year: '2026', venue: 'arXiv',
+    doi: '10.48550/arXiv.2603.12345', arxiv: '2603.12345v1', abstract: 'We evaluate an input-dependent approach.',
+  });
+});
 
 test('following a translation keeps the source viewport inside its page and reveals the paragraph', () => {
   assert.equal(sourceScrollOffset(1120, 1000, 2300, 600, 1300, 1450, 44), 1120);

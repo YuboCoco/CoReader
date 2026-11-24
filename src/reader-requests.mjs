@@ -40,7 +40,7 @@ export async function runReaderRequest(path, body, signal, { modelCall, modelInf
 
   const selected = string(body[path === '/translate' ? 'text' : path === '/term' ? 'term' : 'formula'], limitByAction[path]);
   if (!selected) throw new Error('请在文中选中内容。');
-  const context = string(body.surrounding || body.context, 2400);
+  const context = string(body.surrounding || body.context, path === '/term' ? 3600 : 2400);
   if (path === '/formula') {
     return { ok: true, text: await modelCall(formulaPrompt, selected + (context ? '\n\n上下文：\n' + context : ''),
       { signal, maxTokens: Math.min(8192, analysisBudget(modelInfo).maxTokens) }), ...metadata?.() };

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import appIcon from '../../assets/coreader-cr.png';
 import wordmark from '../../assets/coreader-wordmark-duo.png';
-import { indexPaperPageCount } from './desktop-runtime.js';
+import { indexPaper, postReader, renderPaperCover } from './desktop-runtime.js';
 import './paper-library.css';
 
 const api = window.reader;
@@ -20,13 +20,13 @@ function readingProgress(paper, indexedPages) {
   return { total, readTo, completed, status, percent };
 }
 
-function ReadingProgress({ paper, indexedPages }) {
+function ReadingProgress({ paper, indexedPages, compact = false }) {
   const { total, readTo, percent } = readingProgress(paper, indexedPages);
   const label = percent == null ? '第 ' + readTo + ' 页' : percent + '%';
   const description = total && readTo > 0 ? '已读到第 ' + readTo + ' / ' + total + ' 页' : label;
-  return <div className="pl-reading-progress" role="progressbar" aria-label="阅读进度" aria-valuenow={percent ?? undefined}
-    aria-valuetext={description === label ? label : label + '，' + description} title={description}>
-    <span className="pl-progress-track" aria-hidden="true"><span style={{ '--pl-progress': (percent ?? 0) + '%' }} /></span>
+  return <div className={'pl-reading-progress' + (compact ? ' is-compact' : '')} role="progressbar" aria-label="阅读进度"
+    aria-valuenow={percent ?? undefined} aria-valuetext={description === label ? label : label + '，' + description} title={description}>
+    {!compact && <span className="pl-progress-track" aria-hidden="true"><span style={{ '--pl-progress': (percent ?? 0) + '%' }} /></span>}
     <span className="pl-progress-value">{label}</span>
   </div>;
 }
@@ -43,10 +43,122 @@ function Icon({ name }) {
     plus: 'M12 4v16M4 12h16',
     list: 'M8 6h12M8 12h12M8 18h12M4 6h.1M4 12h.1M4 18h.1',
     table: 'M3 5h18v14H3zm0 5h18m-18 4h18M13 5v14',
+    gallery: 'M4 4h6v6H4zm10 0h6v6h-6zM4 14h6v6H4zm10 0h6v6h-6z',
     chevron: 'm9 5 7 7-7 7',
   };
   return <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
     strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
+}
+
+const covers = new Map();
+const coverLanes = [Promise.resolve(), Promise.resolve(), Promise.resolve()];
+let nextCoverLane = 0;
+
+function PaperCover({ paper, open }) {
+  const ref = useRef(null);
+  const [src, setSrc] = useState(() => covers.get(paper.id) || '');
+  useEffect(() => {
+    if (src || !ref.current) return;
+    let controller;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) {
+        controller?.abort();
+        return;
+      }
+      controller = new AbortController();
+      const { signal } = controller;
+      const lane = nextCoverLane++ % coverLanes.length;
+      coverLanes[lane] = coverLanes[lane].then(async () => {
+        if (signal.aborted) return;
+        const preview = covers.get(paper.id) || await renderPaperCover(paper.id, signal);
+        if (!preview || signal.aborted) return;
+        covers.set(paper.id, preview);
+        if (covers.size > 48) covers.delete(covers.keys().next().value);
+        setSrc(preview);
+      }).catch(() => {});
+    }, { root: ref.current.closest('.pl-results'), rootMargin: '100px' });
+    observer.observe(ref.current);
+    return () => { observer.disconnect(); controller?.abort(); };
+  }, [paper.id, src]);
+  return <button type="button" ref={ref} className="pl-cover" title={paperTitle(paper)}
+    aria-label={'阅读 ' + paperTitle(paper)} onClick={() => open(paper)}>
+    {src ? <img src={src} alt="" draggable={false} /> : <Icon name="paper" />}
+  </button>;
+}
+
+function PaperAbstract({ paper, onSaved }) {
+  const [abstract, setAbstract] = useState(paper.abstract || '');
+  const [chinese, setChinese] = useState(false);
+  const [translation, setTranslation] = useState(paper.abstractTranslation || null);
+  const source = abstract.trim();
+  const current = translation?.source === source ? translation : null;
+  const request = useRef(null);
+  useEffect(() => () => request.current?.abort(), []);
+
+  async function toggle() {
+    if (chinese) {
+      setChinese(false);
+      request.current?.abort();
+      request.current = null;
+      return;
+    }
+    setChinese(true);
+    if (current?.text) return;
+
+    const controller = new AbortController();
+    request.current = controller;
+    setTranslation(null);
+    try {
+      const paragraphs = [];
+      const limit = 6000;
+      let remaining = source;
+      while (remaining) {
+        let end = remaining.length;
+        if (end > limit) {
+          const boundary = remaining.slice(0, limit).search(/\s\S*$/u);
+          end = boundary >= limit / 2 ? boundary : limit;
+          if (/[\uD800-\uDBFF]/.test(remaining[end - 1])) end--;
+        }
+        const part = remaining.slice(0, end).trim();
+        remaining = remaining.slice(end).trimStart();
+        const result = await postReader('/translate', { text: part }, 300000, controller.signal);
+        if (!result?.ok || typeof result.text !== 'string' || !result.text.trim()) {
+          throw new Error(result?.error || '翻译未返回正文。');
+        }
+        paragraphs.push(result.text.trim());
+      }
+      controller.signal.throwIfAborted();
+      const translated = paragraphs.join('\n\n');
+      if (source === paper.abstract) {
+        const record = await api.savePaperAbstractTranslation(paper.id, source, translated);
+        onSaved(paper.id, record);
+      }
+      if (!controller.signal.aborted) setTranslation({ source, text: translated });
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setTranslation({ source, error: error.timeout ? '摘要翻译超时。' : error.message || '摘要翻译失败。' });
+      }
+    } finally {
+      if (request.current === controller) request.current = null;
+    }
+  }
+
+  return <section className="pl-abstract" aria-label="摘要">
+    <div className="pl-abstract-heading">
+      <label htmlFor="pl-paper-abstract">摘要</label>
+      <button type="button" onClick={toggle} disabled={!abstract.trim()} aria-pressed={chinese}>
+        {chinese ? '查看原文' : '查看中文'}
+      </button>
+    </div>
+    <textarea id="pl-paper-abstract" name="abstract" maxLength={10000} value={abstract} hidden={chinese}
+      onChange={(event) => setAbstract(event.target.value)} />
+    {current?.text && source !== paper.abstract && <input type="hidden" name="abstractTranslation" value={current.text} />}
+    {chinese && <div className="pl-abstract-translation" lang="zh-CN" tabIndex={0} aria-label="中文摘要"
+      aria-busy={!current}>
+      {current?.error ? <p className="pl-error" role="alert">{current.error}</p>
+        : current?.text || <p role="status">正在翻译摘要…</p>}
+    </div>}
+  </section>;
 }
 
 function PaperTagPicker({ catalog, selected, onChange, onCreate, busy }) {
@@ -107,10 +219,10 @@ function categoryTree(categories) {
   return walk(null, 0, '');
 }
 
-function LibraryDialog({ title, cancel, submit, busy, issue, children, action = '保存', destructive, tone }) {
+function LibraryDialog({ title, cancel, submit, busy, issue, children, action = '保存', destructive, details, tone }) {
   const ref = useRef(null);
   useEffect(() => { ref.current.showModal(); }, []);
-  return <dialog ref={ref} className={'pl-dialog' + tone} aria-label={title}
+  return <dialog ref={ref} className={'pl-dialog' + (details ? ' is-details' : '') + tone} aria-label={title}
     onCancel={(event) => { event.preventDefault(); if (!busy) cancel(); }}
     onKeyDown={(event) => { if (event.key === 'Escape') event.stopPropagation(); }}>
     <form onSubmit={submit}>
@@ -130,7 +242,13 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
   const [indexedPages, setIndexedPages] = useState(() => new Map());
   const indexedPapers = useRef(new Set());
   const [scope, setScope] = useState(() => localStorage.getItem('elr.library-scope') || 'all');
-  const [view, setView] = useState(() => localStorage.getItem('elr.library-view') === 'table' ? 'table' : 'list');
+  const [layout, setLayout] = useState(() => localStorage.getItem('elr.library-view') === 'table' ? 'table' : 'list');
+  const [gallery, setGallery] = useState(() => localStorage.getItem('elr.library-gallery') === 'true');
+  const [coverWidth, setCoverWidth] = useState(() => {
+    const saved = Number(localStorage.getItem('elr.library-cover-width'));
+    return saved >= 128 && saved <= 340 ? saved : 176;
+  });
+  const resultsRef = useRef(null);
   const [collapsed, setCollapsed] = useState(new Set());
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState('');
@@ -153,21 +271,42 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
     return () => { alive.current = false; };
   }, []);
   useEffect(() => {
-    const pending = data.papers.filter((paper) => paper.furthestPage > 0 && !paper.pageCount && !indexedPapers.current.has(paper.id));
+    const pending = data.papers.filter((paper) => (!paper.metadataIndexed || !paper.pageCount) && !indexedPapers.current.has(paper.id));
     if (!pending.length) return;
     const controller = new AbortController();
     const { signal } = controller;
     const timer = setTimeout(async () => {
       for (const { id } of pending) {
         if (signal.aborted) break;
-        const count = await indexPaperPageCount(id, signal).catch(() => null);
+        const result = await indexPaper(id, signal).catch(() => null);
         if (signal.aborted) break;
         indexedPapers.current.add(id);
-        if (count) setIndexedPages((previous) => new Map(previous).set(id, count));
+        if (result) {
+          setIndexedPages((previous) => new Map(previous).set(id, result.pageCount));
+          setData((previous) => ({ ...previous, papers: previous.papers.map((paper) => {
+            if (paper.id !== id) return paper;
+            const missing = Object.fromEntries(Object.entries(result).filter(([key]) => !paper[key]));
+            return { ...paper, ...missing };
+          }) }));
+        }
       }
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [data.papers]);
+  useEffect(() => {
+    if (!gallery) return;
+    const results = resultsRef.current;
+    const zoom = (event) => {
+      if ((!event.ctrlKey && !event.metaKey) || !event.deltaY) return;
+      event.preventDefault();
+      const pixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 120 : 1);
+      const step = Math.round(Math.max(-120, Math.min(120, pixels)) / 4);
+      setCoverWidth((width) => Math.max(128, Math.min(340, width - (step || Math.sign(pixels)))));
+    };
+    results.addEventListener('wheel', zoom, { passive: false });
+    return () => results.removeEventListener('wheel', zoom);
+  }, [gallery]);
+  useEffect(() => { localStorage.setItem('elr.library-cover-width', String(coverWidth)); }, [coverWidth]);
   const categories = useMemo(() => categoryTree(data.categories), [data.categories]);
   const categoryById = useMemo(() => new Map(categories.map((item) => [item.id, item])), [categories]);
   const active = categoryById.get(scope);
@@ -196,6 +335,7 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
   const visible = current === 'recent' ? rows.slice(0, 20) : rows;
   const picked = visible.filter((paper) => selected.has(paper.id)).map((paper) => paper.id);
   const title = active?.name || scopes[current];
+  const nextLayout = layout === 'list' ? 'table' : 'list';
 
   function navigate(key) {
     setScope(key);
@@ -203,9 +343,18 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
     setSelected(new Set());
   }
 
-  function setLayout(next) {
-    setView(next);
-    localStorage.setItem('elr.library-view', next);
+  function showGallery(enabled) {
+    setGallery(enabled);
+    localStorage.setItem('elr.library-gallery', String(enabled));
+  }
+
+  function toggleLayout() {
+    if (gallery) {
+      showGallery(false);
+      return;
+    }
+    setLayout(nextLayout);
+    localStorage.setItem('elr.library-view', nextLayout);
   }
 
   async function mutate(action, after, label = 'save') {
@@ -274,6 +423,12 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
     });
   }
 
+  function rememberAbstractTranslation(id, translation) {
+    if (!alive.current) return;
+    setData((previous) => ({ ...previous, papers: previous.papers.map((paper) =>
+      paper.id === id && paper.abstract === translation.source ? { ...paper, abstractTranslation: translation } : paper) }));
+  }
+
   function showEditor(value) {
     setError('');
     setEditor(value.kind === 'details' ? { ...value, tags: value.paper.tags || [] } : value);
@@ -298,7 +453,9 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget));
     if (editor.kind === 'details') {
-      void mutate(() => api.updatePaperDetails(editor.paper.id, { ...values, tags: editor.tags }), () => setEditor(null));
+      const initial = { ...editor.paper, title: paperTitle(editor.paper) };
+      const changed = Object.fromEntries(Object.entries(values).filter(([key, value]) => key === 'status' || value !== (initial[key] || '')));
+      void mutate(() => api.updatePaperDetails(editor.paper.id, { ...changed, tags: editor.tags }), () => setEditor(null));
       return;
     }
     if (editor.kind === 'move') {
@@ -419,8 +576,13 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
           <option value="recent">最近打开</option><option value="title">标题顺序</option><option value="year">年份倒序</option>
         </select>
         <div className="pl-views" role="group" aria-label="论文显示方式">
-          {[['list', '列表'], ['table', '表格']].map(([key, name]) => <button type="button" key={key} className="pl-icon"
-            aria-label={name} title={name} aria-pressed={view === key} onClick={() => setLayout(key)}><Icon name={key} /></button>)}
+          <button type="button" className="pl-icon" aria-label="切换列表和表格"
+            title={'切换到' + ((gallery ? layout : nextLayout) === 'list' ? '列表' : '表格')} onClick={toggleLayout}>
+            <Icon name={layout} />
+          </button>
+          <button type="button" className="pl-view-button" aria-pressed={gallery} title="平铺显示论文首页" onClick={() => showGallery(!gallery)}>
+            <Icon name="gallery" />视图
+          </button>
         </div>
       </div>
       {notice && <div className="pl-feedback" role="status">{notice}</div>}
@@ -433,18 +595,30 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
           <button type="button" disabled={Boolean(busy)} onClick={() => showEditor({ kind: 'move', ids: picked })}>分类到…</button>
           {active && <button type="button" disabled={Boolean(busy)} onClick={removeFromCategory}>移出分类</button>}</>}
       </div>}
-      <div className="pl-results">
+      <div className="pl-results" ref={resultsRef}>
         {visible.length === 0 ? <div className="pl-empty">
           <div><Icon name="paper" /></div>
           <strong>{busy === 'loading' ? '正在读取论文库…' : query || tag || status ? '没有匹配的论文' : '这里还没有论文'}</strong>
           {!busy && !query && !tag && !status && <p>将 PDF 拖到这里收录{active ? '到当前分类' : ''}。</p>}
-        </div> : view === 'list' ? <ul className="pl-list">
+        </div> : gallery ? <ul className="pl-gallery" style={{ '--pl-cover-width': coverWidth + 'px' }}>
+          {visible.map((paper) => <li key={paper.id} draggable onDragStart={(event) => startDrag(event, paper)}>
+            <PaperCover paper={paper} open={onOpen} />
+            <div className="pl-gallery-caption">
+              {openTitle(paper)}
+              <div className="pl-gallery-actions">
+                {selectPaper(paper)}
+                <ReadingProgress paper={paper} indexedPages={indexedPages} />
+                {details(paper)}
+              </div>
+            </div>
+          </li>)}
+        </ul> : layout === 'list' ? <ul className="pl-list">
           {visible.map((paper) => <li key={paper.id} draggable onDragStart={(event) => startDrag(event, paper)}>
             {selectPaper(paper)}
             <div className="pl-document-icon"><Icon name="paper" /></div>
             <div className="pl-paper-copy">
               {openTitle(paper)}
-              <div className="pl-meta">{[paper.authors, paper.year, paper.venue, categoryById.get(paper.category)?.path]
+              <div className="pl-meta">{[paper.year, paper.venue, categoryById.get(paper.category)?.path]
                 .filter(Boolean).join(' · ') || paper.name}</div>
               {paper.tags?.length > 0 && <div className="pl-tags">{tagButtons(paper)}</div>}
               <ReadingProgress paper={paper} indexedPages={indexedPages} />
@@ -453,41 +627,53 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
             {details(paper)}
           </li>)}
         </ul> : <table className="pl-table">
+          <colgroup>
+            <col className="pl-col-select" /><col className="pl-col-title" /><col className="pl-col-authors" />
+            <col className="pl-col-year" /><col className="pl-col-category" /><col className="pl-col-tags" />
+            <col className="pl-col-status" /><col className="pl-col-progress" /><col className="pl-col-actions" />
+          </colgroup>
           <thead><tr><th aria-label="选择" /><th><button type="button" onClick={() => setSort('title')}>标题</button></th>
             <th>作者</th><th><button type="button" onClick={() => setSort('year')}>年份</button></th>
             <th>分类</th><th>标签</th><th>状态</th><th>进度</th><th aria-label="操作" /></tr></thead>
           <tbody>{visible.map((paper) => <tr key={paper.id} draggable onDragStart={(event) => startDrag(event, paper)}>
-            <td>{selectPaper(paper)}</td><td>{openTitle(paper)}</td><td>{paper.authors || '—'}</td><td>{paper.year || '—'}</td>
+            <td>{selectPaper(paper)}</td><td>{openTitle(paper)}</td>
+            <td><span className="pl-table-authors" title={paper.authors || undefined}>{paper.authors || '—'}</span></td>
+            <td>{paper.year || '—'}</td>
             <td>{categoryById.get(paper.category)?.path || '—'}</td>
-            <td>{paper.tags?.length ? <div className="pl-tags">{tagButtons(paper)}</div> : '—'}</td>
-            <td>{statuses[paperStatus(paper)]}</td><td><ReadingProgress paper={paper} indexedPages={indexedPages} /></td><td>{details(paper)}</td>
+            <td>{paper.tags?.length ? paper.tags.join('；') : '—'}</td>
+            <td>{statuses[paperStatus(paper)]}</td>
+            <td><ReadingProgress paper={paper} indexedPages={indexedPages} compact /></td>
+            <td>{details(paper)}</td>
           </tr>)}</tbody>
         </table>}
       </div>
     </section>
-    {editor && <LibraryDialog tone={tone} busy={Boolean(busy)} issue={error} submit={submit}
+    {editor && <LibraryDialog key={editor.kind + (editor.paper?.id || '')} tone={tone} busy={Boolean(busy)}
+      details={editor.kind === 'details'} issue={error} submit={submit}
       cancel={() => { setEditor(null); setError(''); }}
       title={editor.kind === 'details' ? '论文详情' : editor.kind === 'move' ? '分类论文' : editor.kind === 'remove' ? '删除分类'
         : editor.category ? '编辑分类' : '新建分类'}
       action={editor.kind === 'remove' ? '删除分类' : editor.kind === 'move' ? '确认分类' : '保存'}
       destructive={editor.kind === 'remove'}>
       {editor.kind === 'details' ? <>
-        <label>标题<input name="title" maxLength={400} defaultValue={paperTitle(editor.paper)} autoFocus required /></label>
-        <label>作者<input name="authors" maxLength={600} defaultValue={editor.paper.authors} /></label>
-        <div className="pl-fields">
+        <div className="pl-fields pl-title-fields">
+          <label>标题<input name="title" maxLength={400} defaultValue={paperTitle(editor.paper)} autoFocus required /></label>
+          <label>作者<input name="authors" maxLength={600} defaultValue={editor.paper.authors} /></label>
+        </div>
+        <div className="pl-fields pl-publication-fields">
+          <label>出处<input name="venue" maxLength={240} defaultValue={editor.paper.venue} /></label>
           <label>年份<input name="year" maxLength={12} defaultValue={editor.paper.year} /></label>
           <label>状态{readingProgress(editor.paper, indexedPages).completed
             ? <><input value={statuses.read} readOnly /><input type="hidden" name="status" value="read" /></>
             : <select name="status" defaultValue={paperStatus(editor.paper)}>{Object.entries(statuses)
                 .map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>}</label>
         </div>
-        <label>出处<input name="venue" maxLength={240} defaultValue={editor.paper.venue} /></label>
         <div className="pl-fields">
           <label>DOI<input name="doi" maxLength={240} defaultValue={editor.paper.doi} /></label>
           <label>arXiv<input name="arxiv" maxLength={80} defaultValue={editor.paper.arxiv} /></label>
         </div>
         <PaperTagPicker catalog={tags} selected={editor.tags} onChange={updateDetailTags} onCreate={createTag} busy={Boolean(busy)} />
-        <label>摘要<textarea name="abstract" rows={3} maxLength={10000} defaultValue={editor.paper.abstract} /></label>
+        <PaperAbstract paper={editor.paper} onSaved={rememberAbstractTranslation} />
       </> : editor.kind === 'move' ? <>
         <label>将 {editor.ids.length} 篇论文分类到<select name="category" defaultValue={active?.id || ''} autoFocus>
           <option value="">未分类</option>{categoryOptions()}

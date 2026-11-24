@@ -15,6 +15,7 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [outline, setOutline] = useState({ status: 'loading', nodes: [] });
   const [target, setTarget] = useState(null);
+  const [selectedParagraph, setSelectedParagraph] = useState(null);
   const [hover, setHover] = useState(null);
   const [ratio, setRatio] = useState(() => Math.min(72, Math.max(32, Number(readStore('pdf-compare-width', 52)) || 52)));
   const [translatedRead, setTranslatedRead] = useState(null);
@@ -24,12 +25,14 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
   const owner = useRef('pdf');
   const restore = useRef(null);
   const originalScale = useRef(null);
+  const isolatedPage = useRef(null);
   const currentMode = useRef(mode);
   currentMode.current = mode;
 
   useEffect(() => {
     setMode('pdf');
     setTarget(null);
+    setSelectedParagraph(null);
     setHover(null);
     setTranslatedRead(null);
     setOutline({ status: 'loading', nodes: [] });
@@ -178,19 +181,32 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
     }
   }
 
-  function keepOriginalInView(location, align = false) {
+  function isolateOriginalPage(view) {
+    const node = view?.div || null;
+    if (isolatedPage.current !== node) {
+      isolatedPage.current?.removeAttribute('data-elr-source-page');
+      isolatedPage.current = node;
+      node?.setAttribute('data-elr-source-page', '');
+    }
+    container.current?.toggleAttribute('data-elr-single-source', Boolean(node));
+  }
+
+  function keepOriginalInView(location, align = false, fitParagraph = false) {
     const frame = container.current;
-    const view = pdfState.current?.viewer.getPageView(location.page - 1);
+    const viewer = pdfState.current?.viewer;
+    const view = viewer?.getPageView(location.page - 1);
     if (!frame || !view?.viewport || !frame.clientHeight) {
       goOriginal(location);
       return;
     }
+    isolateOriginalPage(view);
     const paper = view.div.getBoundingClientRect();
     const viewport = frame.getBoundingClientRect();
     const pageTop = frame.scrollTop + paper.top + view.div.clientTop - viewport.top - frame.clientTop;
     const pageLeft = frame.scrollLeft + paper.left + view.div.clientLeft - viewport.left - frame.clientLeft;
     const height = frame.clientHeight;
-    const inset = Math.min(44, height * .12);
+    const capsule = frame.closest('.elr-reading-space')?.querySelector('.elr-reader-capsule');
+    const inset = Math.min((capsule?.offsetHeight || 32) + 16, height * .18);
     const hasPosition = Number.isFinite(location.y);
     const x = Number.isFinite(location.x) ? location.x : view.viewport.viewBox[0];
     const bounds = hasPosition
@@ -198,9 +214,17 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
       : null;
     const focusTop = bounds ? pageTop + Math.min(bounds[1], bounds[3]) : undefined;
     const focusBottom = bounds ? pageTop + Math.max(bounds[1], bounds[3]) : undefined;
-    // Pin the viewport to the source page while the translation is driving it.
-    // Near the bottom this leaves the paragraph visible without spilling into the next page.
-    const top = sourceScrollOffset(align && bounds ? focusTop - inset : frame.scrollTop,
+    if (fitParagraph && bounds) {
+      const factor = Math.min(1, (height - 2 * inset) / Math.max(1, Math.abs(bounds[3] - bounds[1])),
+        (frame.clientWidth - 28) / Math.max(1, Math.abs(bounds[2] - bounds[0])));
+      if (factor < .995) {
+        viewer.currentScale *= Math.max(.05 / viewer.currentScale, factor);
+        keepOriginalInView(location, align);
+        return;
+      }
+    }
+    const desiredTop = align && bounds ? (focusTop + focusBottom - height) / 2 : frame.scrollTop;
+    const top = sourceScrollOffset(desiredTop,
       pageTop, pageTop + view.div.clientHeight, height, focusTop, focusBottom, inset);
     if (Math.abs(frame.scrollTop - top) > .5) frame.scrollTop = top;
     if (bounds && Number.isFinite(location.x) && view.div.clientWidth > frame.clientWidth) {
@@ -221,6 +245,7 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
   function changeMode(next) {
     if (next === mode) return;
     setHover(null);
+    setSelectedParagraph(null);
     let location = anchor.current?.page === page ? anchor.current : { page };
     if (['pdf', 'compare'].includes(mode) && owner.current === 'pdf') location = originalLocation();
     restore.current = location;
@@ -250,9 +275,18 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
       return;
     }
     owner.current = 'navigation';
+    setSelectedParagraph(Number.isInteger(location.index) ? { page: location.page, index: location.index } : null);
     setAnchor({ ...location, navigation: ++navigation.current, preserveTranslationScroll: true });
-    keepOriginalInView(location);
+    setPage(location.page);
+    const viewer = pdfState.current?.viewer;
+    if (viewer && viewer.currentPageNumber !== location.page) viewer.currentPageNumber = location.page;
+    keepOriginalInView(location, true, true);
   }
+
+  useLayoutEffect(() => {
+    if (mode !== 'compare' || !ready) isolateOriginalPage();
+    return () => isolateOriginalPage();
+  }, [mode, ready, paper, edition]);
 
   useLayoutEffect(() => {
     const viewer = pdfState.current?.viewer;
@@ -331,10 +365,19 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
     if (!frame || !viewer) return;
     let request;
     let pending = 0;
+    let clickRequest = 0;
+    let down;
     const clear = () => {
       cancelAnimationFrame(pending);
       pending = 0;
       setHover(null);
+    };
+    const hitPoint = (pageElement, page, clientX, clientY) => {
+      const view = viewer.getPageView(page - 1);
+      const box = pageElement.querySelector('.canvasWrapper')?.getBoundingClientRect();
+      if (!view?.viewport || !box?.width || !box.height) return null;
+      return view.viewport.convertToPdfPoint((clientX - box.left) * view.viewport.width / box.width,
+        (clientY - box.top) * view.viewport.height / box.height);
     };
     const move = (event) => {
       cancelAnimationFrame(pending);
@@ -351,22 +394,45 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
       }
       const { clientX, clientY } = event;
       pending = requestAnimationFrame(() => {
-        const view = viewer.getPageView(page - 1);
-        const box = pageElement.querySelector('.canvasWrapper')?.getBoundingClientRect();
-        if (!view?.viewport || !box?.width || !box.height || request?.page !== page || !request.blocks) {
-          setHover(null);
-          return;
-        }
-        const [x, y] = view.viewport.convertToPdfPoint((clientX - box.left) * view.viewport.width / box.width,
-          (clientY - box.top) * view.viewport.height / box.height);
-        const block = blockAtPoint(request.blocks, x, y);
+        const point = hitPoint(pageElement, page, clientX, clientY);
+        const block = point && request?.page === page && request.blocks && blockAtPoint(request.blocks, ...point);
         setHover((previous) => block ? previous?.page === page && previous.block === block ? previous : { page, block } : null);
       });
     };
+    const pointerDown = (event) => {
+      clickRequest++;
+      down = { x: event.clientX, y: event.clientY };
+      clear();
+    };
+    const click = async (event) => {
+      const ticket = ++clickRequest;
+      if (event.button !== 0 || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey
+        || frame.classList.contains('elr-picking-figure') || event.target.closest('a, button, .annotationLayer')
+        || (down && Math.hypot(event.clientX - down.x, event.clientY - down.y) > 6)) return;
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed && frame.contains(selection.anchorNode)) return;
+      const pageElement = event.target.closest('.page[data-page-number]');
+      if (!pageElement) return;
+      const number = Number(pageElement.dataset.pageNumber);
+      const point = hitPoint(pageElement, number, event.clientX, event.clientY);
+      if (!point) return;
+      const blocks = await loadBlocks(number).catch(() => null);
+      if (!blocks || ticket !== clickRequest || currentMode.current !== 'compare'
+        || frame.classList.contains('elr-picking-figure')) return;
+      const block = blockAtPoint(blocks, ...point);
+      if (!block || block.kind) return;
+      owner.current = 'navigation';
+      setSelectedParagraph({ page: number, index: block.index });
+      setAnchor({ page: number, index: block.index, x: block.x, y: block.y, right: block.right, bottom: block.bottom,
+        centerTranslation: true, navigation: ++navigation.current });
+      setPage(number);
+    };
+    const scrolled = () => { clickRequest++; clear(); };
     frame.addEventListener('pointermove', move, { passive: true });
     frame.addEventListener('pointerleave', clear);
-    frame.addEventListener('scroll', clear, { passive: true });
-    frame.addEventListener('pointerdown', clear, { passive: true });
+    frame.addEventListener('scroll', scrolled, { passive: true });
+    frame.addEventListener('pointerdown', pointerDown, { passive: true });
+    frame.addEventListener('click', click);
     const bus = pdfState.current.eventBus;
     bus.on('scalechanging', clear);
     const resize = new ResizeObserver(clear);
@@ -375,10 +441,12 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
       clear();
       resize.disconnect();
       bus.off('scalechanging', clear);
+      clickRequest++;
       frame.removeEventListener('pointermove', move);
       frame.removeEventListener('pointerleave', clear);
-      frame.removeEventListener('scroll', clear);
-      frame.removeEventListener('pointerdown', clear);
+      frame.removeEventListener('scroll', scrolled);
+      frame.removeEventListener('pointerdown', pointerDown);
+      frame.removeEventListener('click', click);
     };
   }, [paper, edition, mode, ready]);
 
@@ -403,7 +471,11 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
   }, [mode, hover]);
 
   function onOriginalPage(number) {
-    if (currentMode.current === 'pdf' || (currentMode.current === 'compare' && owner.current === 'pdf')) setPage(number);
+    if (currentMode.current === 'pdf') setPage(number);
+    if (currentMode.current === 'compare' && owner.current === 'pdf') {
+      isolateOriginalPage(pdfState.current?.viewer.getPageView(number - 1));
+      setPage(number);
+    }
   }
 
   function followTranslation(location) {
@@ -423,7 +495,7 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
   const currentLocation = translatedRead?.page === page ? translatedRead : target?.page === page ? target : { page };
   const current = outline.entries?.length ? outlineAt(outline.entries, currentLocation)?.id : 'page-' + page;
   return { mode, changeMode, showSource, locateSource, outline, outlineOpen, setOutlineOpen, loadOutline, loadBlocks, getChapter,
-    target, current, ratio, jump, onOriginalPage, followTranslation, hover, setHover, getAssets, loadMedia,
+    target, current, ratio, jump, onOriginalPage, followTranslation, selectedParagraph, hover, setHover, getAssets, loadMedia,
     useTranslation: () => {
       const changed = owner.current !== 'translation';
       owner.current = 'translation';
@@ -645,7 +717,7 @@ function savedTranslation(page, block) {
   return record?.source === source ? record : page.bySource.get(source);
 }
 
-export function PdfTranslations({ paper, page, pageCount, mode, target, loadBlocks, getChapter, getModel,
+export function PdfTranslations({ paper, page, pageCount, mode, target, selectedParagraph, loadBlocks, getChapter, getModel,
   onRead, onUserInput, onOriginal, onPage, getAssets, hover, onHover }) {
   const scroll = useRef(null);
   const actions = useRef(null);
@@ -656,6 +728,7 @@ export function PdfTranslations({ paper, page, pageCount, mode, target, loadBloc
   const mounted = useRef(false);
   const lastTarget = useRef(null);
   const sheetHeights = useRef(new Map());
+  const centeredLayout = useRef(null);
   const [results, setResults] = useState({});
   const [task, setTask] = useState(null);
   const [problem, setProblem] = useState('');
@@ -663,6 +736,7 @@ export function PdfTranslations({ paper, page, pageCount, mode, target, loadBloc
   const [, setRevision] = useState(0);
   const hasParagraphs = results[page]?.data?.blocks.some((block) => !block.kind);
   const targetPage = target?.page || page;
+  const centerTranslation = mode === 'compare' && Boolean(target?.centerTranslation);
   const targetView = results[targetPage]?.data;
   const currentBlock = useMemo(() => targetView && blockForAnchor(targetView.blocks, target), [targetView, target]);
 
@@ -727,12 +801,37 @@ export function PdfTranslations({ paper, page, pageCount, mode, target, loadBloc
     latest.current = targetPage + ':' + (currentBlock?.index ?? '');
     const destination = target && (Number.isFinite(target.y) || Number.isInteger(target.index)) ? row || sheet : sheet;
     if (destination === sheet && sheet) node.scrollTop = sheet.offsetTop - 4;
-    if (destination === row && row) {
+    if (destination === row && row && !centerTranslation) {
       const controls = actions.current?.getBoundingClientRect();
       const inset = controls ? Math.min(controls.bottom - node.getBoundingClientRect().top + 8, node.clientHeight * .38) : 10;
       node.scrollTop = Math.max(sheet.offsetTop - 4, row.offsetTop - inset);
     }
-  }, [mode, page, target, targetPage, currentBlock, targetView]);
+  }, [mode, page, target, targetPage, currentBlock, targetView, centerTranslation]);
+
+  useLayoutEffect(() => {
+    const node = scroll.current;
+    const sheet = node?.children[targetPage - 1];
+    if (!centerTranslation || !currentBlock) return;
+    const row = sheet?.querySelector('[data-pdf-paragraph="' + currentBlock.index + '"]');
+    if (!row) return;
+    const align = () => {
+      const pane = node.getBoundingClientRect();
+      const bounds = row.getBoundingClientRect();
+      const delta = bounds.top + bounds.height / 2 - (pane.top + node.clientTop + node.clientHeight / 2);
+      if (Math.abs(delta) > 1) node.scrollTop += delta;
+    };
+    align();
+    const resize = new ResizeObserver(align);
+    resize.observe(node);
+    resize.observe(sheet);
+    resize.observe(row);
+    if (sheet.previousElementSibling) resize.observe(sheet.previousElementSibling);
+    centeredLayout.current = resize;
+    return () => {
+      resize.disconnect();
+      centeredLayout.current = null;
+    };
+  }, [centerTranslation, targetPage, currentBlock, target?.navigation]);
 
   function scrollChanged() {
     onHover(null);
@@ -768,6 +867,7 @@ export function PdfTranslations({ paper, page, pageCount, mode, target, loadBloc
   }
 
   function takeTranslationControl() {
+    centeredLayout.current?.disconnect();
     if (onUserInput()) latest.current = null;
   }
 
@@ -861,7 +961,8 @@ export function PdfTranslations({ paper, page, pageCount, mode, target, loadBloc
       {task ? '正在翻译第 ' + task.page + ' 页' + (task.last > task.page ? ' / ' + task.last : '') + ' · 已完成 ' + task.done + ' 段' : problem}
       {failure && failure.page !== page && <button type="button" className="elr-btn" onClick={() => onPage(failure.page)}>查看</button>}
     </div>}
-    <div className="elr-parallel-scroll" ref={scroll} onScroll={scrollChanged} onWheel={takeTranslationControl}
+    <div className="elr-parallel-scroll" data-center-target={centerTranslation || undefined}
+      ref={scroll} onScroll={scrollChanged} onWheel={takeTranslationControl}
       onPointerDown={takeTranslationControl} onKeyDown={takeTranslationControl} onPointerLeave={() => onHover(null)} tabIndex={0} aria-label="译文段落">
       {Array.from({ length: pageCount }, (_, i) => {
         const number = i + 1;
@@ -870,7 +971,7 @@ export function PdfTranslations({ paper, page, pageCount, mode, target, loadBloc
           style={result ? undefined : { minHeight: sheetHeights.current.get(number) || 'max(280px, 68cqh)' }}>
           <h3 className="elr-parallel-sheet-label">第 {number} 页</h3>
           {result ? <TranslationSheet page={number} result={result} mode={mode} getAssets={getAssets}
-            sheetHeights={sheetHeights} currentIndex={targetPage === number ? currentBlock?.index : undefined}
+            sheetHeights={sheetHeights} selectedIndex={selectedParagraph?.page === number ? selectedParagraph.index : undefined}
             task={task} failure={failure} onOriginal={onOriginal} translate={translate} hover={hover} onHover={onHover} />
             : Math.abs(page - number) <= 1 && <p className="elr-parallel-empty" role="status">正在提取段落…</p>}
         </section>;
@@ -879,7 +980,7 @@ export function PdfTranslations({ paper, page, pageCount, mode, target, loadBloc
   </section>;
 }
 
-function TranslationSheet({ page, result, mode, getAssets, sheetHeights, currentIndex, task, failure,
+function TranslationSheet({ page, result, mode, getAssets, sheetHeights, selectedIndex, task, failure,
   onOriginal, translate, hover, onHover }) {
   const label = useRef(null);
   const [media, setMedia] = useState(null);
@@ -932,14 +1033,27 @@ function TranslationSheet({ page, result, mode, getAssets, sheetHeights, current
             const saved = savedTranslation(view, block);
             const busy = task?.page === page && task.index === block.index;
             const error = failure?.page === page && failure.index === block.index ? failure.text : '';
-            const active = currentIndex === block.index;
+            const compare = mode === 'compare';
+            const selected = compare && selectedIndex === block.index;
+            const locate = (event) => {
+              if (event.target.closest('button, a')) return;
+              const selection = window.getSelection();
+              if (selection && !selection.isCollapsed && event.currentTarget.contains(selection.anchorNode)) return;
+              onOriginal(anchor);
+            };
             return <article className={'elr-paragraph' + (block.heading ? ' is-heading' : block.listItem ? ' is-list-item' : '')} key={block.index}
-              data-pdf-paragraph={block.index} data-current={active || undefined} data-hovered={hovered || undefined}
+              data-pdf-paragraph={block.index} data-focused={selected || undefined} data-hovered={hovered || undefined}
+              tabIndex={compare ? 0 : undefined} aria-keyshortcuts={compare ? 'Enter Space' : undefined}
+              onClick={compare ? locate : undefined} onKeyDown={compare ? (event) => {
+                if (event.currentTarget !== event.target || !['Enter', ' '].includes(event.key)) return;
+                event.preventDefault();
+                onOriginal(anchor);
+              } : undefined}
               onPointerMove={track} onPointerEnter={track} onPointerLeave={() => onHover(null)}>
               {mode === 'reflow' && <div className="elr-parallel-original" lang="en">{block.text}</div>}
               <div className="elr-paragraph-meta">
                 {saved?.model && <small title={saved.model}>{saved.model}</small>}
-                <button type="button" className="elr-btn" onClick={() => onOriginal(anchor)}>定位原文</button>
+                {!compare && <button type="button" className="elr-btn" onClick={() => onOriginal(anchor)}>定位原文</button>}
                 <button type="button" className="elr-btn" disabled={Boolean(task)} onClick={() => translate('page', block, page)}>
                   {saved ? '重译此段' : '翻译此段'}
                 </button>

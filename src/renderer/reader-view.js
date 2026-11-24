@@ -5,10 +5,12 @@ import { createPortal } from 'react-dom';
 import * as desktop from './desktop-runtime.js';
 import { AgentPanel } from './agent-panel.jsx';
 import { PaperLibrary } from './paper-library.jsx';
+import { FigurePicker } from './figure-picker.jsx';
 import { OriginalPdfMediaAction, PdfOutline, PdfSplitHandle, PdfTranslations,
   useOriginalPdfMedia, usePdfReading } from './pdf-reading.jsx';
-import { equationNumber, readingLines, visualCaptionLabel, visualCaptionPattern as FIGURE_LABEL_RE } from './pdf-reading.mjs';
-import { viewportBounds } from './pdf-media.mjs';
+import { blockForAnchor, equationNumber, paragraphBlocks, paragraphTermContext, readingLines, termContextWindow,
+  visualCaptionLabel, visualCaptionPattern as FIGURE_LABEL_RE } from './pdf-reading.mjs';
+import { blockAtPoint, viewportBounds } from './pdf-media.mjs';
 import { readingAgentLimits } from '../reading-agent.mjs';
 import { availableEfforts, effortLabels } from '../model-capabilities.mjs';
 
@@ -49,7 +51,7 @@ const CARD_FOLD_EASE = 'cubic-bezier(.22,.7,.2,1)';
 const CARD_FOLD_TRANSITION = CARD_FOLD_DURATION + 'ms ' + CARD_FOLD_EASE;
 const CARD_FONT_MIN = 11;
 const CARD_FONT_DEFAULT = 13;
-const CARD_FONT_MAX = 18;
+const CARD_FONT_MAX = 24;
 const AGENT_CARD_MIN_H = 320;
 const BOTTOM_COMPACT_CARD_WIDTH = 248;
 const CARD_DOCK_BOTTOM_GAP = 14;
@@ -67,6 +69,21 @@ const MARKS_CARD_MIN_H = 140;
 const SIDE_TOP_MIN = 90;
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 6;
+const PDF_CANVAS_MAX_EDGE = 8192;
+const PDF_CANVAS_MAX_PIXELS = 16 * 1024 * 1024;
+const PDF_OVERLAY_MAX_EDGE = 4096;
+const PDF_OVERLAY_MAX_PIXELS = 4 * 1024 * 1024;
+
+function sizePdfOverlay(canvas, { width, height }) {
+  const scale = Math.min(3, Math.max(1, window.devicePixelRatio || 1),
+    PDF_OVERLAY_MAX_EDGE / width, PDF_OVERLAY_MAX_EDGE / height,
+    Math.sqrt(PDF_OVERLAY_MAX_PIXELS / (width * height)));
+  canvas.width = Math.max(1, Math.floor(width * scale));
+  canvas.height = Math.max(1, Math.floor(height * scale));
+  canvas.style.width = width + 'px';
+  canvas.style.height = height + 'px';
+  return scale;
+}
 // (v20 #3) Presets offered by the zoom dropdown; the free-form number input
 // accepts anything inside ZOOM_MIN..ZOOM_MAX.
 const ZOOM_PRESETS = [50, 75, 100, 125, 150, 200, 300, 400];
@@ -316,6 +333,7 @@ const DEFAULT_SHARED = {
   // to be a boolean; a number keeps the old value readable (see the migration
   // below) and gives the toolbar a real three-way choice.
   spreadMode: 0,
+  capsulePosition: 'top',
   theme: 'default',
   // (v40) Overall UI tone. `theme` above only recolours the PAPER (the page
   // itself), which is a reading preference; this one tints the reader's own
@@ -427,6 +445,7 @@ if (!oldSnapshot) {
 }
 delete shared.darkMode;
 if (!PAGE_THEMES.includes(shared.theme)) shared.theme = 'default';
+if (shared.capsulePosition !== 'bottom') shared.capsulePosition = 'top';
 // (v19 #4) `spreadMode` was a boolean (false = one page, true = two pages) and is
 // now a page count minus one. Translate any stored boolean once, here.
 if (shared.spreadMode === true) shared.spreadMode = 1;
@@ -892,9 +911,6 @@ const CSS = [
   // It deliberately does NOT include SIZE containment (`strict` would imply it
   // and collapse this absolutely-positioned box to zero height).
   '.elr-pdf-container { position: absolute; inset: 0; overflow: auto; overscroll-behavior: contain; contain: layout paint style; }',
-  '.elr-pdf-container.elr-picking-figure { touch-action: none; user-select: none; cursor: crosshair; }',
-  '.elr-pdf-container.elr-picking-figure .pdfViewer, .elr-pdf-container.elr-picking-figure .textLayer { cursor: crosshair; user-select: none; }',
-  '.elr-figure-outline { position: absolute; top: 0; left: 0; z-index: 9; display: none; box-sizing: border-box; pointer-events: none; border: 2px solid #1760bd; box-shadow: 0 0 0 1px #fff; }',
   '.elr-pdf-wrap.is-start { min-height: 0; background: var(--dsw-alias-bg-base); }',
   '.elr-pdf-wrap.is-start > .elr-pdf-container { visibility: hidden; }',
   '.elr-drag-mask { position: absolute; inset: 10px; z-index: 5; display: flex; align-items: center; justify-content: center; border: 2px dashed var(--dsw-alias-brand-primary); border-radius: 14px; background: var(--dsw-alias-bg-overlay); color: var(--dsw-alias-brand-primary); font-size: 15px; font-weight: 600; pointer-events: none; }',
@@ -911,7 +927,7 @@ const CSS = [
   '.elr-recent-item button { border: none; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font-size: calc(11px + var(--elr-card-font-adjust, 0px)); padding: 2px 4px; }',
   '.elr-recent-item button:hover { color: var(--dsw-alias-state-error-primary); }',
   // ---- v4: inline translation popup ----
-  '.elr-popup { position: fixed; z-index: 120; display: flex; flex-direction: column; box-sizing: border-box; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-overlay); color: var(--dsw-alias-label-primary); box-shadow: 0 10px 32px rgba(0,0,0,.28); font-size: 12px; }',
+  '.elr-popup { position: fixed; z-index: 120; display: flex; flex-direction: column; border-radius: 16px; font-size: 12px; }',
   // (v14 #2) Font size is set EXPLICITLY by the A−/A+ buttons on the title
   // bar and written as an inline fontSize on the card; the text regions simply
   // inherit it. No container query / automatic scaling: `cqw` was silently
@@ -973,6 +989,7 @@ const CSS = [
   '.elr-popup-actions { display: flex; align-items: center; justify-content: flex-end; margin-top: 7px; }',
   // The title bar doubles as the drag handle.
   '.elr-popup-head { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-secondary); font-size: 11px; cursor: move; user-select: none; touch-action: none; }',
+  '.elr-popup[data-selection-anchored] .elr-popup-head { cursor: default; }',
   '.elr-popup-head .elr-icon-btn { padding: 2px 6px; white-space: nowrap; }',
   '.elr-popup-head .elr-popup-translate { min-width: 0; overflow: hidden; text-overflow: ellipsis; border-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-brand-primary); font-weight: 600; }',
   '.elr-popup-head .elr-popup-translate:hover:not(:disabled) { background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-bg-base); }',
@@ -1152,7 +1169,6 @@ const CSS = [
   '.elr-trash-icon::before { content: ""; position: absolute; top: -3px; left: -2px; width: 12px; height: 1px; border-radius: 1px; background: currentColor; }',
   '.elr-trash-icon::after { content: ""; position: absolute; top: -6px; left: 2px; box-sizing: border-box; width: 4px; height: 3px; border: 1px solid currentColor; border-bottom: 0; border-radius: 2px 2px 0 0; }',
   '.elr-term-body { border-top: 1px solid var(--dsw-alias-border-l1); padding: 7px 9px 9px; font-size: calc(11px + var(--elr-card-font-adjust, 0px)); color: var(--dsw-alias-label-primary); max-height: 320px; overflow: auto; }',
-  '.elr-term-quote { margin: 0 0 7px; padding: 5px 8px; border-left: 2px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); font-size: calc(11px + var(--elr-card-font-adjust, 0px)); font-style: italic; }',
   '.elr-term-popover { position: fixed; z-index: 127; box-sizing: border-box; display: flex; flex-direction: column; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-overlay); color: var(--dsw-alias-label-primary); box-shadow: 0 10px 28px rgba(0,0,0,.25); font-size: 12px; }',
   '.elr-term-popover:focus { outline: none; }',
   '.elr-term-popover::before { content: ""; position: absolute; z-index: 2; width: 8px; height: 8px; background: var(--dsw-alias-bg-overlay); border: 0 solid var(--dsw-alias-border-l2); pointer-events: none; }',
@@ -1270,7 +1286,8 @@ const CSS = [
   // -1px so it lines up with the container's own 1px border) instead of a
   // `min-width` — the preset list is now exactly as wide as the zoom field.
   // Each item centres its number so the column of percentages is symmetric.
-  '.elr-zoom-menu { position: absolute; left: -1px; right: -1px; top: calc(100% + 4px); z-index: 30; box-sizing: border-box; display: flex; flex-direction: column; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-overlay); box-shadow: 0 8px 22px rgba(0, 0, 0, .22); }',
+  '.elr-zoom-menu { position: fixed; inset: auto; margin: 4px 0; position-area: block-end span-inline-end; justify-self: start; position-try-fallbacks: flip-block, flip-inline; box-sizing: border-box; min-width: 112px; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-overlay); box-shadow: 0 8px 22px rgba(0, 0, 0, .22); }',
+  '.elr-zoom-menu:popover-open { display: flex; flex-direction: column; }',
   '.elr-zoom-item { border: none; background: transparent; color: var(--dsw-alias-label-primary); text-align: center; padding: 4px 0; border-radius: 5px; cursor: pointer; font: inherit; font-size: 12px; }',
   '.elr-zoom-item:hover { background: var(--dsw-alias-bg-layer-2); }',
   '.elr-zoom-item.active { color: var(--dsw-alias-brand-primary); font-weight: 600; }',
@@ -1361,7 +1378,7 @@ const CSS = [
   '@media (prefers-reduced-motion: reduce) { .elr-view *, .elr-view *::before, .elr-view *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; } }',
   // Final readability and layering fixes for the Apple-style surface.
   '.settings { background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l2); box-shadow: 0 20px 60px rgba(15,23,42,.22); }',
-  '.settings:is(.model-center,.connection-detail)::backdrop { background: var(--elr-glass-scrim); }',
+  '.settings:is(.model-center,.connection-detail)::backdrop { background: var(--elr-glass-scrim); backdrop-filter: blur(8px); }',
   '.settings .model-center-header, .settings .connection-detail-header { background: transparent; border-bottom-color: var(--dsw-alias-border-l1); }',
   '.settings .connection-card, .settings .subscription-card, .settings .account-settings, .settings .advanced-config { background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l1); }',
   '.settings .connection-card:hover, .settings .subscription-card summary:hover { background: var(--dsw-alias-bg-layer-2); }',
@@ -1380,8 +1397,8 @@ const CSS = [
   '.elr-zoom-menu, .elr-card-menu { max-height: min(420px, calc(100vh - 84px)); overflow: auto; pointer-events: auto; background: var(--dsw-alias-bg-layer-1); opacity: 1; }',
   '.settings:is(.model-center,.connection-detail)[open] { --elr-frosted-fill: var(--elr-glass-dialog-fill); --elr-frosted-blur: var(--elr-glass-floating-blur); border-color: transparent; border-radius: 16px; background: var(--elr-frosted-background); backdrop-filter: var(--elr-frosted-filter); box-shadow: var(--elr-frosted-rim), 0 16px 44px rgb(12 20 34 / .23); }',
   '.settings.connection-detail[open] { --elr-frosted-fill: var(--elr-glass-floating-fill); }',
-  '.elr-settings-panel, .elr-card-menu, .elr-popup, .elr-note-bubble, .elr-selection-tools { --elr-frosted-fill: var(--elr-glass-floating-fill); --elr-frosted-blur: var(--elr-glass-floating-blur); background: var(--elr-frosted-background); border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 58%, transparent); border-radius: 16px; backdrop-filter: var(--elr-frosted-filter); box-shadow: var(--elr-frosted-rim), 0 12px 34px rgb(12 20 34 / .20); }',
-  '.elr-popup .elr-popup-block-original { background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 44%, transparent); }',
+  '.elr-settings-panel, .elr-card-menu, .elr-note-bubble { --elr-frosted-fill: var(--elr-glass-floating-fill); --elr-frosted-blur: var(--elr-glass-floating-blur); background: var(--elr-frosted-background); border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 58%, transparent); border-radius: 16px; backdrop-filter: var(--elr-frosted-filter); box-shadow: var(--elr-frosted-rim), 0 12px 34px rgb(12 20 34 / .20); }',
+  '.elr-popup .elr-popup-block-original { background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 24%, transparent); }',
   '.elr-popup .elr-popup-block-result { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, transparent); }',
   '.elr-selection-tools { position: fixed; z-index: 124; box-sizing: border-box; height: ' + SELECTION_TOOL_HEIGHT + 'px; display: flex; align-items: center; justify-content: center; gap: 3px; padding-inline: 7px; border-radius: 999px; color: var(--dsw-alias-label-primary); user-select: none; }',
   '.elr-selection-tools button { flex: 0 1 30px; display: grid; place-items: center; min-width: 0; height: 30px; padding: 0; border: 0; border-radius: 50%; color: inherit; background: transparent; cursor: pointer; }',
@@ -1394,7 +1411,7 @@ const CSS = [
   '.elr-selection-tools svg { width: 18px; height: 18px; }',
   '.elr-selection-divider { flex: 0 0 1px; height: 18px; margin-inline: 2px; background: var(--dsw-alias-border-l2); }',
   '.elr-mark-badge::before { background: var(--elr-mark-swatch, currentColor); }',
-  '@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .settings:is(.model-center,.connection-detail)[open], .elr-settings-panel, .elr-card-menu, .elr-popup, .elr-note-bubble, .elr-selection-tools { background: var(--dsw-alias-bg-layer-1); backdrop-filter: none; } }',
+  '@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .settings:is(.model-center,.connection-detail)[open], .elr-settings-panel, .elr-card-menu, .elr-note-bubble { background: var(--dsw-alias-bg-layer-1); backdrop-filter: none; } }',
   '.elr-feature-workspace { flex: 1 1 auto; min-height: 0; height: 100%; overflow: hidden; background: radial-gradient(ellipse at 82% 6%, var(--elr-duo-side-ambient, var(--elr-glass-ambient)), transparent 72%), radial-gradient(ellipse at 14% 85%, var(--elr-workspace-reflection, var(--elr-glass-bounce)), transparent 69%), var(--elr-duo-side, var(--dsw-alias-bg-base)); }',
   '.elr-card-head.elr-workspace-head { flex: 0 0 auto; min-height: ' + BOTTOM_DOCK_HEAD_H + 'px; background: transparent; container-type: inline-size; }',
   '.elr-card-font-menu > label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; font-size: 12px; }',
@@ -1481,9 +1498,7 @@ const CSS = [
   '.elr-feature-column > .elr-sec.is-compact { flex: 0 0 auto; min-height: 0; }',
   '.elr-body.dock-bottom .elr-feature-column > [data-elr-docked-card] { min-height: 0; }',
   '.elr-body.dock-bottom .elr-feature-column > .elr-sec.is-compact { width: ' + BOTTOM_COMPACT_CARD_WIDTH + 'px; min-width: 0; }',
-  // Shift the natural-height card up only if it reaches past the viewport.
-  '.elr-floating-card.is-compact { translate: 0 min(0px, calc(var(--elr-card-room) - 100%)); }',
-  '.elr-body:not(.dock-bottom) .elr-feature-column > .elr-sec.is-compact, .elr-floating-card.is-compact { height: calc-size(auto, size * 1.5); }',
+  '.elr-body:not(.dock-bottom) .elr-feature-column > .elr-sec.is-compact { height: calc-size(auto, size * 1.5); }',
   '.elr-body:not(.dock-bottom) [data-elr-docked-card="agent"]:not(.is-collapsed), [data-elr-floating-card="agent"].is-open { min-height: ' + AGENT_CARD_MIN_H + 'px; }',
   '.elr-sec.is-compact .elr-out-empty { padding: 6px var(--elr-card-content-gap); }',
   '.elr-sec.is-compact .elr-selection-panes { flex: 0 0 auto; grid-template: auto / minmax(0,1fr); min-height: 0; }',
@@ -2013,8 +2028,10 @@ function selectionTranslationLayout(rect, box, minHeight) {
   const available = viewport.bottom - viewport.top - toolHeight;
   const besideSelection = Math.max(viewport.bottom - rect.bottom, rect.top - viewport.top) - toolHeight - SELECTION_TOOL_GAP;
   const h = Math.max(1, Math.min(box.h, available, besideSelection >= minHeight ? besideSelection : available));
+  const w = Math.min(box.w, viewport.right - viewport.left);
   const position = selectionToolLayout(rect, h);
-  return { position, box: popupBelowSelectionTools({ ...box, h }, position) };
+  position.x = clampPopup(rect.left, viewport.left, viewport.right - Math.max(w, position.w));
+  return { position, box: popupBelowSelectionTools({ ...box, w, h }, position) };
 }
 
 function functionCardOrder(saved) {
@@ -2425,19 +2442,9 @@ function selectionDraft(current, fragment, intent) {
 // local sense, so the right-click explanation sends the surrounding sentence
 // separately from the whole paper: that is what tells the model how the authors
 // are USING the term here, not just what the term means in the abstract.
-function sentenceAround(raw, term) {
-  const source = cleanSelectionText(raw || '');
-  const needle = cleanSelectionText(term || '');
-  if (!source || !needle) return '';
-  const at = source.toLowerCase().indexOf(needle.toLowerCase());
-  if (at === -1) return '';
-  let start = at;
-  while (start > 0 && !/[.!?;]\s/.test(source.slice(start - 2, start + 1))) start--;
-  if (start > 0) start += 1;
-  let end = at + needle.length;
-  while (end < source.length && !/[.!?]/.test(source.charAt(end))) end++;
-  if (end < source.length) end += 1;
-  return source.slice(start, Math.min(end, start + 600)).trim();
+function termContextFromText(source, term) {
+  const offset = source.toLowerCase().indexOf(term.toLowerCase());
+  return offset < 0 ? source.slice(0, 1600).trim() : termContextWindow(source, offset, term.length);
 }
 
 function isPdf(file) {
@@ -2479,6 +2486,7 @@ function Reader(props) {
   const [dock, setDock] = useShared('dock');
   const [panMode, setPanMode] = useShared('panMode');
   const [spreadMode, setSpreadMode] = useShared('spreadMode');
+  const [capsulePosition] = useShared('capsulePosition');
   const [theme, setTheme] = useShared('theme');
   // (v40) Reader chrome tint (淡蓝 / 淡绿), independent from `theme` above.
   const [uiTone, setUiTone] = useShared('uiTone');
@@ -2819,6 +2827,7 @@ function Reader(props) {
   const selectionSourceRef = React.useRef(null);
   const containerRef = React.useRef(null);
   const readingSpaceRef = React.useRef(null);
+  const readingCapsuleRef = React.useRef(null);
   const viewerElRef = React.useRef(null);
   const pdfFileRef = React.useRef(null);
   const txtFileRef = React.useRef(null);
@@ -2850,8 +2859,6 @@ function Reader(props) {
   const pdfReferenceSourceRef = React.useRef(null);
   const pdfTextJobRef = React.useRef(null);
   const figurePickingRef = React.useRef(false);
-  const figureOutlineRef = React.useRef(null);
-  const figureDragRef = React.useRef(null);
   const figureRunRef = React.useRef(null);
   const summaryRunRef = React.useRef(null);
   const paperIdRef = React.useRef(paperId);
@@ -3026,7 +3033,6 @@ function Reader(props) {
     if (on) setSelectionTools(null);
   };
   const cancelFigureWork = () => {
-    figureDragRef.current?.();
     const run = figureRunRef.current;
     figureRunRef.current = null;
     if (run) {
@@ -3192,8 +3198,15 @@ function Reader(props) {
   const closeTranslationPopup = () => {
     popupDragCancelRef.current?.();
     setPopup(null);
-    setPopupOn(false);
     setSelectionTools((tools) => tools && { ...tools, position: selectionToolLayout(tools.rect) });
+  };
+
+  const dismissSelectionSurfaces = () => {
+    if (inlinePopupRef.current?.followsSelection) {
+      popupDragCancelRef.current?.();
+      setPopup(null);
+    }
+    setSelectionTools(null);
   };
 
   React.useLayoutEffect(() => {
@@ -3244,7 +3257,7 @@ function Reader(props) {
       selectedHighlightRef.current = { paper: state.paperId, text: next?.selection ?? state.selection, anchors };
       const draft = next?.selectionEdit ?? state.selectionEdit;
       const result = next ? next.selectionResult : state.selectionResult;
-      const position = !noteBubble && (popupOnRef.current || popup) ? openSelectionTranslation(rect, draft, result) : selectionToolLayout(rect);
+      const position = !noteBubble && popupOnRef.current ? openSelectionTranslation(rect, draft, result) : selectionToolLayout(rect);
       setSelectionTools({ text: value, rect, range: ranges?.[0]?.cloneRange(), position, anchor, anchors });
     } else if (popupOnRef.current) {
       setPopup((previous) => !next && previous ? previous : placeTranslationPopup(readShared().selectionEdit, rect, previous));
@@ -3750,7 +3763,6 @@ function Reader(props) {
   const toggleFigurePicker = () => {
     if (!pdfTextJobRef.current || figureRunRef.current) return;
     if (figurePickingRef.current) {
-      figureDragRef.current?.();
       setFigurePickMode(false);
     } else {
       showContentCategory('visual');
@@ -3759,95 +3771,12 @@ function Reader(props) {
     }
   };
 
-  const startFigureBox = (event) => {
-    if (!figurePickingRef.current || event.button !== 0 || event.isPrimary === false || figureDragRef.current) return;
-    const container = containerRef.current;
-    const outline = figureOutlineRef.current;
+  const confirmFigureBox = (page, crop) => {
     const job = pdfTextJobRef.current;
-    const node = event.target?.closest?.('.pdfViewer .page[data-page-number]');
-    if (!container || !outline || !job || !node || !container.contains(node)) return;
-    const pageNumber = Number(node.dataset.pageNumber);
-    if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > job.pdf.numPages) return;
-    const pageView = pdfStateRef.current?.viewer?.getPageView?.(pageNumber - 1);
-    const rotation = pageView?.viewport?.rotation;
-    const wrapperBox = node.querySelector('.canvasWrapper')?.getBoundingClientRect();
-    const raw = node.getBoundingClientRect();
-    const pageBox = wrapperBox?.width && wrapperBox.height ? wrapperBox : {
-      left: raw.left + node.clientLeft, top: raw.top + node.clientTop,
-      width: node.clientWidth, height: node.clientHeight,
-    };
-    if (!pageBox.width || !pageBox.height) return;
-    const visible = container.getBoundingClientRect();
-    const overlayOrigin = outline.parentElement.getBoundingClientRect();
-    const minX = Math.max(pageBox.left, visible.left);
-    const minY = Math.max(pageBox.top, visible.top);
-    const maxX = Math.min(pageBox.left + pageBox.width, visible.left + container.clientWidth);
-    const maxY = Math.min(pageBox.top + pageBox.height, visible.top + container.clientHeight);
-    const x0 = clampPopup(event.clientX, minX, maxX);
-    const y0 = clampPopup(event.clientY, minY, maxY);
-    const pointer = event.pointerId;
-    const boxAt = (ev) => {
-      const x = clampPopup(ev.clientX, minX, maxX);
-      const y = clampPopup(ev.clientY, minY, maxY);
-      return { x: Math.min(x, x0), y: Math.min(y, y0), w: Math.abs(x - x0), h: Math.abs(y - y0) };
-    };
-    const paint = frameWriter((box) => {
-      outline.style.transform = 'translate3d(' + (box.x - overlayOrigin.left) + 'px,' + (box.y - overlayOrigin.top) + 'px,0)';
-      outline.style.width = box.w + 'px';
-      outline.style.height = box.h + 'px';
-      outline.style.display = 'block';
-    });
-    const clean = () => {
-      if (figureDragRef.current !== clean) return;
-      figureDragRef.current = null;
-      paint.cancel();
-      outline.style.display = 'none';
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      window.removeEventListener('pointercancel', cancel);
-      window.removeEventListener('blur', clean);
-      window.removeEventListener('resize', clean);
-      container.removeEventListener('scroll', clean);
-      container.removeEventListener('lostpointercapture', cancel);
-      if (container.hasPointerCapture?.(pointer)) container.releasePointerCapture(pointer);
-    };
-    const move = (ev) => { if (ev.pointerId === pointer) paint.push(boxAt(ev)); };
-    const cancel = (ev) => { if (ev.pointerId === pointer) clean(); };
-    const up = (ev) => {
-      if (ev.pointerId !== pointer) return;
-      const box = boxAt(ev);
-      clean();
-      if (box.w < 10 || box.h < 10) { notify(t('figure.tooSmall'), 'warn'); return; }
-      setFigurePickMode(false);
-      void analyzeFigure(job, pageNumber, rotation, {
-        x: (box.x - pageBox.left) / pageBox.width, y: (box.y - pageBox.top) / pageBox.height,
-        w: box.w / pageBox.width, h: box.h / pageBox.height,
-      });
-    };
-    figureDragRef.current = clean;
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', cancel);
-    window.addEventListener('blur', clean);
-    window.addEventListener('resize', clean);
-    container.addEventListener('scroll', clean);
-    container.addEventListener('lostpointercapture', cancel);
-    try { container.setPointerCapture(pointer); } catch (_) {}
-    event.preventDefault();
-    event.stopPropagation();
+    const viewport = pdfStateRef.current?.viewer.getPageView(page - 1)?.viewport;
+    setFigurePickMode(false);
+    if (job && viewport && page >= 1 && page <= job.pdf.numPages) void analyzeFigure(job, page, viewport.rotation, crop);
   };
-
-  React.useEffect(() => {
-    if (!figurePicking) return;
-    const escape = (event) => {
-      if (event.key !== 'Escape') return;
-      figureDragRef.current?.();
-      setFigurePickMode(false);
-      event.preventDefault();
-    };
-    window.addEventListener('keydown', escape);
-    return () => window.removeEventListener('keydown', escape);
-  }, [figurePicking]);
 
   const openNativePreview = (file, reason) => {
     releaseNativeUrl();
@@ -3901,6 +3830,7 @@ function Reader(props) {
     }
   };
   const paintPageHighlights = (pageEl, hitRects, noteRects) => {
+    if (!hitRects.length && !noteRects?.length) return null;
     // Anchor to `.canvasWrapper`, the box the glyph canvas occupies, instead of
     // `.page` — the latter has a 9px transparent border (`--page-border`), which
     // both offsets absolutely positioned children and inflates the measured rect.
@@ -3908,13 +3838,9 @@ function Reader(props) {
     let rect = null;
     try { rect = wrapper.getBoundingClientRect(); } catch (_) { return null; }
     if (!rect || !rect.width || !rect.height) return null;
-    const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
     const canvas = document.createElement('canvas');
     canvas.className = 'elr-hl-overlay';
-    canvas.width = Math.round(rect.width * dpr);
-    canvas.height = Math.round(rect.height * dpr);
-    canvas.style.width = rect.width + 'px';
-    canvas.style.height = rect.height + 'px';
+    const dpr = sizePdfOverlay(canvas, rect);
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
     const sx = canvas.width / rect.width;
@@ -3972,13 +3898,9 @@ function Reader(props) {
     let box = null;
     try { box = wrapper.getBoundingClientRect(); } catch (_) { return; }
     if (!box || !box.width || !box.height) return;
-    const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
     const canvas = document.createElement('canvas');
     canvas.className = 'elr-find-overlay' + (active ? ' is-active' : '');
-    canvas.width = Math.round(box.width * dpr);
-    canvas.height = Math.round(box.height * dpr);
-    canvas.style.width = box.width + 'px';
-    canvas.style.height = box.height + 'px';
+    sizePdfOverlay(canvas, box);
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const sx = canvas.width / box.width;
@@ -4148,7 +4070,7 @@ function Reader(props) {
       // Fold the rendered canvas size into the signature so such a page is
       // repainted exactly once.
       const glyph = pageEl.querySelector('.canvasWrapper canvas');
-      const dim = glyph ? glyph.width + 'x' + glyph.height : '0';
+      const dim = glyph ? [glyph.width, glyph.height, glyph.clientWidth, glyph.clientHeight].join('x') : '0';
       const currentPage = Number(pageEl.dataset.pageNumber);
       const highlights = highlightsByPage.get(currentPage) || [];
       const pageSig = noteSig + '#' + JSON.stringify(highlights) + '#' + dim;
@@ -4255,6 +4177,7 @@ function Reader(props) {
     cancelFigureWork();
     pdfTextJobRef.current = null;
     const s = pdfStateRef.current;
+    s?.resize?.disconnect();
     const task = pdfLoadingTaskRef.current;
     pdfLoadingTaskRef.current = null;
     pdfDocRef.current = null;
@@ -4271,6 +4194,30 @@ function Reader(props) {
     }
   };
 
+  function fitPdfPage(state) {
+    const { viewer, container } = state;
+    const number = viewer.currentPageNumber;
+    const page = viewer.getPageView(number - 1)?.div;
+    if (!page || !container.clientWidth || !container.clientHeight) return;
+    const box = page.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const across = Math.min(viewer.pagesCount, 1 + readShared().spreadMode);
+    const width = Math.max(1, container.clientWidth - 36) / across;
+    const height = Math.max(1, container.clientHeight - 24);
+    const scale = Math.min(ZOOM_MAX, viewer.currentScale * Math.min(width / box.width, height / box.height));
+    state.fitPage = true;
+    state.updatingFit = true;
+    try {
+      if (Math.abs(viewer.currentScale - scale) > .001) viewer.currentScale = scale;
+      viewer.scrollPageIntoView({ pageNumber: number });
+      const pageTop = page.getBoundingClientRect().top;
+      const frameTop = container.getBoundingClientRect().top;
+      container.scrollTop = Math.max(0, container.scrollTop + pageTop - frameTop - 4);
+    } finally {
+      state.updatingFit = false;
+    }
+  }
+
   function ensureViewer() {
     if (viewerPromiseRef.current) return viewerPromiseRef.current;
     const pending = (async () => {
@@ -4283,16 +4230,26 @@ function Reader(props) {
       const linkService = new V.PDFLinkService({ eventBus, externalLinkTarget: V.LinkTarget?.BLANK || 2 });
       const viewer = new V.PDFViewer({
         container, viewer: viewerEl, eventBus, linkService, textLayerMode: 1,
+        // Keep the backing bitmap well below Chromium's limits at high zoom.
+        // PDF.js detail canvases use the viewport's full device pixel ratio.
+        maxCanvasPixels: PDF_CANVAS_MAX_PIXELS, maxCanvasDim: PDF_CANVAS_MAX_EDGE,
+        enableDetailCanvas: window.reader?.platform !== 'darwin' && window.devicePixelRatio <= 1.5,
       });
       linkService.setViewer(viewer);
-      const state = { eventBus, linkService, viewer, V, pdfjsLib };
+      const state = { eventBus, linkService, viewer, V, pdfjsLib, container, fitPage: false, updatingFit: false };
+      state.resize = new ResizeObserver(() => {
+        if (!viewer.pdfDocument || !container.clientWidth || !container.clientHeight) return;
+        if (state.fitPage) fitPdfPage(state);
+        viewer.update();
+      });
+      state.resize.observe(container);
       eventBus.on('pagechanging', (e) => {
         if (e?.pageNumber) pdfReading.onOriginalPage(e.pageNumber);
       });
       // (v20 #3) Keep the toolbar percentage in sync with whatever changed the
       // scale: our +/- buttons, the preset list, Ctrl+wheel, or pdf.js itself.
       eventBus.on('scalechanging', (e) => {
-        figureDragRef.current?.();
+        if (!state.updatingFit) state.fitPage = false;
         const scale = e && Number(e.scale);
         if (Number.isFinite(scale) && scale > 0) setZoomPct(Math.round(scale * 100));
       });
@@ -4310,8 +4267,8 @@ function Reader(props) {
       eventBus.on('pagesinit', () => {
         applySpread(viewer, V);
         const file = lastFileRef.current;
-        if (file?.desktopZoom) viewer.currentScale = file.desktopZoom;
         if (file?.desktopPage && file.desktopPage <= viewer.pagesCount) viewer.currentPageNumber = file.desktopPage;
+        fitPdfPage(state);
         setZoomPct(Math.round(viewer.currentScale * 100));
         setPageNum(viewer.currentPageNumber);
         setPositionReady(file);
@@ -4351,6 +4308,7 @@ function Reader(props) {
     const file = lastFileRef.current;
     if (!file) return;
     const sourcePaper = readShared().paperId;
+    const indexing = new AbortController();
     let cancelled = false;
     const alive = () => !cancelled && lastFileRef.current === file
       && readShared().paperId === sourcePaper && readShared().mode === 'pdf';
@@ -4385,6 +4343,7 @@ function Reader(props) {
       const pdf = await task.promise;
       if (!alive()) return;
       pdfDocRef.current = pdf;
+      void desktop.indexOpenPaper(sourcePaper, pdf, indexing.signal).catch(() => {});
       state.linkService.setDocument(pdf, null);
       state.viewer.setDocument(pdf);
       pdfTextJobRef.current = { pdf, paper: sourcePaper, pending: null };
@@ -4404,7 +4363,7 @@ function Reader(props) {
       setPdfError(reason);
       openNativePreview(file, reason);
     });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; indexing.abort(); };
   }, [mode, dropSeq]);
 
   // (#4) Two-column browsing. Toggling re-wraps pages and creates the
@@ -4440,10 +4399,7 @@ function Reader(props) {
   }, [mode, hasPdf]);
 
   React.useEffect(() => {
-    if (!popupOn) {
-      popupDragCancelRef.current?.();
-      setPopup(null);
-    }
+    if (!popupOn && inlinePopupRef.current) closeTranslationPopup();
   }, [popupOn]);
 
   React.useEffect(() => {
@@ -4456,7 +4412,7 @@ function Reader(props) {
     const reflow = () => {
       popupDragCancelRef.current?.();
       cardGestureCancelRef.current?.();
-      setSelectionTools(null);
+      dismissSelectionSurfaces();
       setCardMaxHeight(displayCardHeightLimit());
       if (Object.keys(readShared().floatingCards).length) setFloatingBounds(popupViewport());
       setPopup(fitPrevious);
@@ -4538,7 +4494,7 @@ function Reader(props) {
           x: e.clientX, y: e.clientY, rect: clicked?.getBoundingClientRect(),
           text: cleanSelectionText(target.text).slice(0, MAX_SELECTION),
           markId: hitHighlight?.id, noteId: clickedNote?.id,
-          surrounding: cleanSelectionText(target.text).slice(0, 600),
+          anchors: highlightAnchors(target),
         });
         return;
       }
@@ -4556,7 +4512,7 @@ function Reader(props) {
         const text = normText(mark.text);
         return mark.kind === 'note' && text && needle && (text.includes(needle) || needle.includes(text));
       });
-      setMenu({ x: e.clientX, y: e.clientY, rect, text: clipped, markId, noteId: note?.id, anchors, surrounding: sentenceAround(raw, clipped) });
+      setMenu({ x: e.clientX, y: e.clientY, rect, text: clipped, markId, noteId: note?.id, anchors });
     };
     const onDoubleClick = (e) => {
       if (figurePickingRef.current) return;
@@ -4643,7 +4599,7 @@ function Reader(props) {
       if (event.target?.closest?.('.elr-selection-tools, .elr-popup, .elr-note-bubble')) { cancel(); return; }
       if (gesture && !gesture.drawing) commit();
       cancel();
-      if (isPdf) setSelectionTools(null);
+      if (isPdf) dismissSelectionSurfaces();
       if (event.button !== 0 || !inside(event.target)
         || (isPdf && (figurePickingRef.current || event.ctrlKey || event.metaKey))) return;
       const current = readShared();
@@ -4706,7 +4662,7 @@ function Reader(props) {
       const bounds = source.getBoundingClientRect();
       if (!rect?.width || rect.bottom <= bounds.top || rect.top >= bounds.bottom
         || rect.right <= bounds.left || rect.left >= bounds.right) {
-        setSelectionTools(null);
+        dismissSelectionSurfaces();
         return;
       }
       if (rect.left === tools.rect.left && rect.top === tools.rect.top && rect.bottom === tools.rect.bottom) return;
@@ -4714,9 +4670,10 @@ function Reader(props) {
       const follows = popup?.followsSelection && !popupDragCancelRef.current;
       const annotation = noteBubbleRef.current;
       const followsNote = annotation?.anchorRange && annotation.anchorRange === tools.range;
-      const position = selectionToolLayout(rect, follows ? popup.h : followsNote ? annotation.h : 0);
+      const layout = follows ? selectionTranslationLayout(rect, popup, popupMinimum.h) : null;
+      const position = layout?.position || selectionToolLayout(rect, followsNote ? annotation.h : 0);
       setSelectionTools((current) => current?.range === tools.range ? { ...current, rect, position } : current);
-      if (follows) setPopup((current) => current === popup ? { ...current, ...popupBelowSelectionTools(current, position) } : current);
+      if (layout) setPopup((current) => current === popup ? { ...current, ...layout.box } : current);
       if (followsNote) setNoteBubble((current) => current === annotation ? { ...current, ...popupBelowSelectionTools(current, position) } : current);
     });
     const onScroll = () => {
@@ -4731,10 +4688,13 @@ function Reader(props) {
         closeNoteBubble();
         return;
       }
-      if (inlinePopupRef.current) {
+      if (isPdf && (selectionToolsRef.current || inlinePopupRef.current?.followsSelection)) {
+        event.preventDefault();
+        dismissSelectionSurfaces();
+      } else if (inlinePopupRef.current) {
         event.preventDefault();
         closeTranslationPopup();
-      } else if (isPdf) setSelectionTools(null);
+      }
     };
     document.addEventListener('selectionchange', onChange);
     if (isPdf) source.addEventListener('scroll', onScroll, { passive: true });
@@ -4758,7 +4718,7 @@ function Reader(props) {
       window.removeEventListener('blur', cancel);
       cancel();
     };
-  }, [mode, paperId, previewMode, panMode]);
+  }, [mode, paperId, previewMode, panMode, popupMinimum.h]);
 
   const referenceScanComplete = (scan) => {
     if (scan.next === null && !scan.failed.size) return true;
@@ -5090,7 +5050,21 @@ function Reader(props) {
     void analyzeFigure(job, page, rotation, crop, block);
   };
 
-  const explainTerm = async (value, surrounding) => {
+  async function termContextFromPdf(job, anchor, term) {
+    const { page, rects } = anchor;
+    const rect = rects[0];
+    const rotation = pdfStateRef.current?.viewer.getPageView(page - 1)?.viewport?.rotation;
+    const proxy = await job.pdf.getPage(page);
+    const viewport = proxy.getViewport(Number.isFinite(rotation) ? { scale: 1, rotation } : { scale: 1 });
+    const [x, y] = viewport.convertToPdfPoint((rect.x + rect.w / 2) * viewport.width, (rect.y + rect.h / 2) * viewport.height);
+    const content = await readPdfPageText(job, page, proxy);
+    const lines = content.readingLines ||= referenceReadingOrder(readingLines(content.items));
+    const blocks = paragraphBlocks(lines, content.view);
+    const target = blockAtPoint(blocks, x, y) || blockForAnchor(blocks, { x, y });
+    return target ? paragraphTermContext(blocks, blocks.indexOf(target), term) : '';
+  }
+
+  const explainTerm = async (value, surrounding, anchors) => {
     const term = String(value || '').trim().slice(0, MAX_TERM_CHARS).trimEnd();
     if (!term) { notify(t('selection.empty'), 'error'); return; }
     const { paperId: paper, mode, text: source } = readShared();
@@ -5105,22 +5079,22 @@ function Reader(props) {
     const sameTerm = (entry) => entry.term.trim().toLowerCase() === key;
     const previous = entries.find(sameTerm);
     if (previous?.busy) return;
-    const record = normalizeTerm({
-      id: previous?.id,
-      term,
-      body: previous?.body,
-      surrounding: String(surrounding || '').trim().slice(0, 2000),
-    });
+    const record = normalizeTerm({ id: previous?.id, term, body: previous?.body });
+    const job = pdfTextJobRef.current;
+    const anchor = anchors?.find((part) => part.rects?.length);
+    const supplied = String(surrounding || '').trim();
     setPaperTerms(paper, [{ ...record, busy: true }, ...entries.filter((entry) => !sameTerm(entry))]);
     notify(t('term.running'));
 
     let body = record.body;
     let error = '';
     try {
+      const passage = mode === 'pdf' && job?.paper === paper && anchor
+        ? await termContextFromPdf(job, anchor, term).catch(() => '') : '';
+      record.surrounding = passage || (supplied && supplied !== term ? supplied : termContextFromText(source, term));
       const data = await post('/term', {
         ...bodyRef.current(),
         term,
-        context: source.slice(0, 40000),
         surrounding: record.surrounding,
       });
       const explanation = String(data?.text || '').trim();
@@ -5139,12 +5113,14 @@ function Reader(props) {
   };
 
   const explainSelectionTerm = (input) => {
-    const { selectionEdit: draft, text: source } = readShared();
+    const { selectionEdit: draft, paperId: paper } = readShared();
     const picked = input?.value.slice(input.selectionStart, input.selectionEnd);
     const term = cleanSelectionText(picked) || cleanSelectionText(draft);
     if (term.length > MAX_TERM_CHARS) { notify(t('term.selectShort'), 'warn'); return; }
-    const excerpt = sentenceAround(draft, term);
-    return explainTerm(term, excerpt !== term ? excerpt : sentenceAround(source, term));
+    const selected = selectedHighlightRef.current;
+    const anchors = selected?.paper === paper && cleanSelectionText(selected.text).includes(term) ? selected.anchors : null;
+    const excerpt = picked ? termContextWindow(draft, input.selectionStart, picked.length) : '';
+    return explainTerm(term, excerpt, anchors);
   };
 
   const removeTerm = (id) => {
@@ -5522,6 +5498,10 @@ function Reader(props) {
   // (v28 #3, revised) The merged zoom control keeps its preset list open or closed.
   const [zoomMenuOpen, setZoomMenuOpen] = React.useState(false);
   const zoomBoxRef = React.useRef(null);
+  const zoomPopupRef = React.useRef(null);
+  React.useLayoutEffect(() => {
+    if (zoomMenuOpen) zoomPopupRef.current?.showPopover({ source: zoomBoxRef.current });
+  }, [zoomMenuOpen]);
   const applyZoomPct = (pct) => {
     const s = pdfStateRef.current;
     const numeric = Number(pct);
@@ -7038,8 +7018,18 @@ function Reader(props) {
   const fullscreenActive = isFullscreen || props.nativeFullscreen;
   const fullscreenLabel = t(fullscreenActive ? 'fullscreen.exit' : 'fullscreen.enter');
   const comparison = pdfReading.mode === 'compare';
+  React.useLayoutEffect(() => {
+    const capsule = readingCapsuleRef.current;
+    const space = readingSpaceRef.current;
+    if (!capsule || !space) return;
+    const measureCapsule = () => space.style.setProperty('--elr-capsule-space', Math.ceil(capsule.offsetHeight) + 24 + 'px');
+    measureCapsule();
+    const observer = new ResizeObserver(measureCapsule);
+    observer.observe(capsule);
+    return () => { observer.disconnect(); space.style.removeProperty('--elr-capsule-space'); };
+  }, [hasPdf, capsulePosition]);
   const readingCapsule = hasPdf ? h('div', {
-    className: 'elr-reader-capsule', role: 'group', 'aria-label': 'PDF 阅读工具',
+    ref: readingCapsuleRef, className: 'elr-reader-capsule', role: 'group', 'aria-label': 'PDF 阅读工具',
   },
       h('div', { className: 'elr-reader-cluster' },
         h('button', { type: 'button', className: 'elr-btn elr-reader-symbol', title: t('page.prev'),
@@ -7077,12 +7067,18 @@ function Reader(props) {
           h('button', {
             className: 'elr-zoom-caret',
             disabled: !showOriginalPdf,
-            title: t('zoom.label'),
+            'aria-label': t('zoom.label'), title: t('zoom.label'),
             'aria-expanded': zoomMenuOpen,
             onClick: (e) => { e.preventDefault(); setZoomMenuOpen((v) => !v); },
           }, zoomMenuOpen ? '▴' : '▾'),
           zoomMenuOpen
-            ? h('div', { className: 'elr-zoom-menu' },
+            ? h('div', { ref: zoomPopupRef, className: 'elr-zoom-menu', popover: 'manual' },
+                h('button', { type: 'button', className: 'elr-zoom-item', onClick: () => {
+                  const state = pdfStateRef.current;
+                  if (state?.viewer.pdfDocument) fitPdfPage(state);
+                  setZoomDraft(null);
+                  setZoomMenuOpen(false);
+                } }, '适合整页'),
                 ZOOM_PRESETS.map((p) => h('button', {
                   key: p,
                   className: 'elr-zoom-item' + (p === zoomPct ? ' active' : ''),
@@ -7096,8 +7092,8 @@ function Reader(props) {
       ),
       h('div', { className: 'elr-reader-cluster' },
         pdfAnalysisReady ? h('button', { type: 'button', className: 'elr-btn elr-reader-compare',
-          'aria-pressed': comparison, title: comparison ? '切换到原文' : '切换到对照',
-          onClick: () => switchPdfMode(comparison ? 'pdf' : 'compare') }, comparison ? '对照' : '原文') : null,
+          'aria-pressed': comparison,
+          onClick: () => switchPdfMode(comparison ? 'pdf' : 'compare') }, comparison ? '原文阅读' : '对照翻译') : null,
         h('button', { type: 'button', className: 'elr-btn elr-reader-symbol elr-reader-capture',
           disabled: !pdfAnalysisReady || !showOriginalPdf || Boolean(figureActivity?.busy),
           title: t('figure.screenshot'), 'aria-label': t('figure.screenshot'), 'aria-pressed': figurePicking,
@@ -7156,7 +7152,6 @@ function Reader(props) {
         + (figurePicking ? ' elr-picking-figure' : ''),
       'data-elr-page-theme': theme === 'default' ? undefined : theme,
       style: { display: previewMode === 'native' ? 'none' : '' },
-      onPointerDownCapture: startFigureBox,
       'aria-hidden': !showOriginalPdf || undefined,
       inert: !showOriginalPdf,
     }, h('div', { ref: viewerElRef, className: 'pdfViewer' }), originalMedia.hover ? h(OriginalPdfMediaAction, {
@@ -7172,7 +7167,8 @@ function Reader(props) {
       nativeLayer,
       pdfAnalysisReady && paperId ? h(PdfTranslations, {
         key: paperId + ':' + dropSeq, paper: paperId, page: pageNum, pageCount, mode: pdfReading.mode,
-        target: pdfReading.target, loadBlocks: pdfReading.loadBlocks, getChapter: pdfReading.getChapter,
+        target: pdfReading.target, selectedParagraph: pdfReading.selectedParagraph,
+        loadBlocks: pdfReading.loadBlocks, getChapter: pdfReading.getChapter,
         getAssets: pdfReading.getAssets, hover: pdfReading.hover, onHover: pdfReading.setHover,
         getModel: () => bodyRef.current(), onRead: pdfReading.followTranslation, onUserInput: pdfReading.useTranslation,
         onOriginal: pdfReading.locateSource, onPage: (page) => pdfReading.jump({ page }),
@@ -7180,7 +7176,6 @@ function Reader(props) {
       pdfAnalysisReady && pdfReading.mode === 'compare' ? h(PdfSplitHandle, {
         stage: readingSpaceRef, ratio: pdfReading.ratio, onChange: pdfReading.setRatio,
       }) : null,
-      h('div', { ref: figureOutlineRef, className: 'elr-figure-outline', 'aria-hidden': true }),
       showPdfStart ? h(PaperLibrary, {
         onOpen: openRecent, onOpenFile: openPdfPicker, onSettings: openModelSettings,
         version: props.version, readerError: pdfError, tone: toneCls,
@@ -7291,6 +7286,7 @@ function Reader(props) {
 
   const main = h('div', { className: 'elr-main' },
     mode === 'pdf' ? h('div', { ref: readingSpaceRef, className: 'elr-reading-space', 'data-reading-mode': pdfReading.mode,
+      'data-capsule-position': hasPdf ? capsulePosition : undefined,
       style: { '--elr-original-width': pdfReading.ratio + '%' } },
       mainContent,
       readingCapsule,
@@ -7750,7 +7746,6 @@ function Reader(props) {
           type: 'button', className: 'elr-btn', onClick: () => explainTerm(item.term, item.surrounding),
         }, t('term.retry'))
       ) : null,
-      item.surrounding ? h('div', { className: 'elr-term-quote' }, item.surrounding) : null,
       item.body ? renderMarkdown(item.body) : null
     );
   };
@@ -7893,14 +7888,12 @@ function Reader(props) {
   const dockedCards = functionCardOrder(sectionOrder).filter((key) => enabledCards.includes(key) && !floatingCards[key]);
   const floatingCardNodes = hasPaper && ownsCardWindows ? enabledCards.filter((key) => floatingCards[key]).map((key) => {
     const open = openCards[key];
-    const compact = open && compactCards[key];
     const savedBox = floatingCards[key];
     let minHeight = 130;
     if (key === 'selection') minHeight = CARD_MIN_H;
     else if (key === 'marks') minHeight = MARKS_CARD_MIN_H;
     else if (key === 'agent') minHeight = AGENT_CARD_MIN_H;
-    const restoredHeight = key === 'selection' || key === 'agent' ? Math.max(minHeight, savedBox.h) : savedBox.h;
-    const box = placeFunctionCard({ ...savedBox, h: restoredHeight }, open && !compact, floatingBounds);
+    const box = placeFunctionCard({ ...savedBox, h: Math.max(minHeight, savedBox.h) }, open, floatingBounds);
     const saveSize = (patch, edge) => setFloatingCards((previous) => {
       const saved = previous[key];
       if (!saved) return previous;
@@ -7912,15 +7905,13 @@ function Reader(props) {
     return createPortal(h('div', {
       className: 'elr-sec elr-floating-card' + toneCls + (frontCard === key ? ' is-front' : '')
         + (open ? ' is-open' : ' is-collapsed')
-        + (compact ? ' is-compact' : '')
         + (ghost?.key === key ? ' dragging' : ''),
       'data-elr-floating-card': key,
-      style: { left: box.x, top: box.y, width: box.w, height: compact ? undefined : box.h, '--elr-card-font-adjust': cardFontAdjust,
-        '--elr-card-room': compact ? (floatingBounds.bottom - box.y) + 'px' : undefined },
+      style: { left: box.x, top: box.y, width: box.w, height: box.h, '--elr-card-font-adjust': cardFontAdjust },
       onPointerDownCapture: () => setFrontCard(key),
       onFocus: () => setFrontCard(key),
     }, cardNodes[key], resizeHandles(saveSize, 220, minHeight, popupViewport, {
-      edges: open && !compact ? RESIZE_EDGES : ['e', 'w'], cancelRef: cardGestureCancelRef, title: t('card.floatResize'),
+      edges: open ? RESIZE_EDGES : ['e', 'w'], cancelRef: cardGestureCancelRef, title: t('card.floatResize'),
     })), floatingHost, key);
   }) : [];
 
@@ -8201,7 +8192,7 @@ function Reader(props) {
     const finishMark = (action) => {
       action();
       window.getSelection()?.removeAllRanges();
-      setSelectionTools(null);
+      dismissSelectionSurfaces();
     };
     const actionButton = (icon, label, onClick, attributes) => h('button', {
       ...attributes, type: 'button', title: label, 'aria-label': label, onClick,
@@ -8231,14 +8222,16 @@ function Reader(props) {
       h('span', { className: 'elr-selection-divider', 'aria-hidden': true }),
       actionButton('note', t('mark.badgeNote'), () => addNote(text, rect, selectionTools)),
       actionButton('translate', t('selection.inline'), () => {
-        if (popup) { closeTranslationPopup(); return; }
+        const enabled = !popupOn;
+        setPopupOn(enabled);
+        if (!enabled) { closeTranslationPopup(); return; }
         const { selectionEdit: draft, selectionResult: result } = readShared();
         const nextPosition = openSelectionTranslation(rect, draft, result);
         setSelectionTools({ ...selectionTools, position: nextPosition });
-      }, { 'aria-pressed': Boolean(popup), disabled: Boolean(noteBubble) }),
+      }, { 'aria-pressed': popupOn, disabled: Boolean(noteBubble) }),
       actionButton('term', t('term.explain'), () => {
         if (text.length > MAX_TERM_CHARS) { notify(t('term.selectShort'), 'warn'); return; }
-        explainTerm(text, sentenceAround(readShared().text, text));
+        explainTerm(text, '', anchors);
       }),
       actionButton('agent', t('selection.quoteAgent'), () => addAgentSelection(selectionTools), { disabled: !pdfAnalysisReady })
     );
@@ -8248,10 +8241,11 @@ function Reader(props) {
     h('div', {
       className: 'elr-popup elr-resizable' + (popupHorizontal ? ' is-side-by-side' : '')
         + (scheme === 'dark' ? ' elr-popup-dark' : '') + toneCls,
+      'data-selection-anchored': popup.followsSelection || undefined,
       style: { left: popup.x, top: popup.y, width: popup.w, height: popup.h, fontSize: popupFont + 'px' },
       'aria-keyshortcuts': 'Escape',
     },
-      h('div', { className: 'elr-popup-head', onPointerDown: startTranslationDrag },
+      h('div', { className: 'elr-popup-head', onPointerDown: popup.followsSelection ? undefined : startTranslationDrag },
         h('span', { className: 'elr-launcher-dot' }),
         h('span', { title: t('popup.dismissHint') }, t('popup.title')),
         h('span', { className: 'elr-spacer' }),
@@ -8327,8 +8321,20 @@ function Reader(props) {
       // (v18 #3) Grippable edges (N/S/E/W + the four corners), so the card can be
       // resized from any border instead of only the bottom-right corner.
       resizeHandles(
-        (patch) => setPopup((prev) => prev ? { ...prev, ...patch, followsSelection: false, manualSize: true } : prev),
-        popupMinimum.w, popupMinimum.h, popupViewport, { cancelRef: popupDragCancelRef },
+        (patch) => {
+          const current = inlinePopupRef.current;
+          const tools = selectionToolsRef.current;
+          if (!current) return;
+          const next = { ...current, ...patch, manualSize: true };
+          if (current.followsSelection && tools) {
+            const { box, position } = selectionTranslationLayout(tools.rect, next, popupMinimum.h);
+            setPopup({ ...next, ...box });
+            setSelectionTools((previous) => previous?.range === tools.range ? { ...previous, position } : previous);
+          } else setPopup(next);
+        },
+        popupMinimum.w, popupMinimum.h, popupViewport, {
+          edges: popup.followsSelection ? ['e', 's', 'se'] : RESIZE_EDGES, cancelRef: popupDragCancelRef,
+        },
       )
     ),
     floatingHost
@@ -8496,10 +8502,7 @@ function Reader(props) {
       !menu.figure ? h('button', {
         className: 'elr-menu-item',
         onClick: () => {
-          // The sentence the term sits in is what carries its local sense, so it
-          // is sent separately from the whole paper text.
-          const quoted = String(menu.surrounding || '').trim();
-          explainTerm(menu.text, quoted);
+          explainTerm(menu.text, '', menu.anchors);
           setMenu(null);
         },
       }, t('term.explain')) : null,
@@ -8651,6 +8654,11 @@ function Reader(props) {
     floatingCardNodes,
     termBubbleNode,
     ghostNode,
+    figurePicking ? createPortal(h(FigurePicker, {
+      container: containerRef, onConfirm: confirmFigureBox, onCancel: () => setFigurePickMode(false),
+      onTooSmall: () => notify(t('figure.tooSmall'), 'warn'),
+      labels: { title: t('figure.screenshot'), cancel: t('figure.cancelCapture'), confirm: t('figure.confirmCapture') },
+    }), floatingHost) : null,
     cardMenu,
     cardContext ? createPortal(h('div', {
       ref: cardContextRef, className: 'elr-card-menu elr-card-context' + toneCls,
@@ -8719,7 +8727,8 @@ const dictionaries = {
     'figure.sort.time-asc': 'Analysis time · Oldest first',
     'figure.sort.time-desc': 'Analysis time · Newest first',
     'figure.cancel': 'Cancel',
-    'figure.selectHint': 'Drag a box around the figure on a single PDF page. Press Esc to cancel.',
+    'figure.selectHint': 'Draw and adjust a box on one PDF page, then confirm. Press Esc to cancel.',
+    'figure.cancelCapture': 'Cancel screenshot', 'figure.confirmCapture': 'Confirm and analyze',
     'figure.empty': 'Hover over a figure or table, or right-click it to analyze it.',
     'figure.working': 'Analyzing the selected figure…',
     'figure.page': 'Page {page}',
@@ -8895,7 +8904,8 @@ const dictionaries = {
     'figure.sort.time-asc': '分析时间 · 最早优先',
     'figure.sort.time-desc': '分析时间 · 最新优先',
     'figure.cancel': '取消',
-    'figure.selectHint': '在同一页拖动框住插图，按 Esc 取消。',
+    'figure.selectHint': '在同一页框选并调整范围，点击对勾后解析。按 Esc 取消。',
+    'figure.cancelCapture': '取消截图', 'figure.confirmCapture': '确认并解析',
     'figure.empty': '在原文中悬停或右键图表，选择「解释图片」或「解释表格」。',
     'figure.working': '正在解析所选插图…',
     'figure.page': '第 {page} 页',

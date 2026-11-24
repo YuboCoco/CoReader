@@ -81,10 +81,11 @@ function inlineFraction(runs, start) {
 export function readingLines(items) {
   const runs = items.flatMap(({ str, transform, width, height, fontName }) => {
     if (!str?.trim() || !transform) return [];
-    const [, , , scale, left, y] = transform;
+    const [a, b, , scale, left, y] = transform;
     const size = Math.abs(height || scale);
     if (!size || !Number.isFinite(left) || !Number.isFinite(y)) return [];
     const text = str.normalize('NFC').replace(/[\ufb00-\ufb06]/g, (ligature) => ligature.normalize('NFKC'));
+    if (Math.abs(b) > Math.abs(a) && /^\s*arxiv:\d/i.test(text)) return [];
     return [{ text, left, right: left + (width || 0), y, size, fontName }];
   });
   const rows = [];
@@ -99,8 +100,15 @@ export function readingLines(items) {
     const sameBaseline = row && shift <= Math.min(2, row.size * .22) && gap >= -row.size * .45;
     // PDF.js can insert line endings inside raised fractions or footnote markers.
     // Keep the main baseline fixed while attaching the smaller glyph runs.
-    const inline = row && !sameBaseline && size <= row.size * .82 && shift <= row.size * .82
-      && gap >= -row.size * 2.4 && left >= row.left;
+    const lowered = row && size <= row.size * .82 && gap >= -row.size * 2.4 && left >= row.left;
+    const tail = row?.fragments.at(-1);
+    const followsMath = row && size <= row.size * 1.12 && gap >= -row.size && gap <= row.size * .85
+      && /^[\p{L}\p{N}∑∏−+._]{1,6}$/u.test(run.text.trim())
+      && (tail?.inline || /[=+−∑∏]\s*$/u.test(tail?.text || '')
+        || (/^[PXY∑∏][\p{L}\p{N}−]*$/u.test(run.text.trim())
+          && runs.slice(index + 1, index + 4).some((next) => Math.abs(next.y - row.y) <= 1.5
+            && next.left >= right - 1 && next.left <= right + 1.15 * row.size && /\p{L}{3}/u.test(next.text))));
+    const inline = row && !sameBaseline && shift <= row.size * .88 && (lowered || followsMath);
     const joins = (sameBaseline || inline) && gap < Math.min(row.size * 1.7, 16);
     if (!joins) {
       row = { text: '', left, right: left, y, size, inlineMath: [], inlineMathBounds: [], fragments: [] };
@@ -164,12 +172,25 @@ export function headingFromLine(line, bodySize = 0) {
   return null;
 }
 
+export function appendReadingLine(text, line) {
+  const hyphenated = /\p{L}-$/u.test(text) && /^\p{Ll}/u.test(line);
+  if (!hyphenated) return text + ' ' + line;
+  return (compoundTail.test(line) ? text : text.slice(0, -1)) + line;
+}
+
 export function paragraphBlocks(lines, view = []) {
   const ordered = lines.filter((line) => line.text.trim() && Number.isFinite(line.y));
   const sizes = ordered.map((line) => line.size).filter((value) => value > 0).sort((a, b) => a - b);
   const bodySize = sizes[Math.floor(sizes.length / 2)] || 10;
   const [leftEdge = 0, bottom = 0, rightEdge = 0, top = 0] = view;
   const edge = (top - bottom) * .065;
+  const standardGaps = ordered.slice(1).map((line, index) => {
+    const previous = ordered[index];
+    const gap = previous.y - line.y;
+    return Math.abs(line.left - previous.left) <= bodySize * .55 && Math.abs(line.size - previous.size) <= bodySize * .18
+      && line.text.length >= 20 && previous.text.length >= 20 && gap >= bodySize * .7 && gap <= bodySize * 1.48 ? gap : 0;
+  }).filter(Boolean).sort((a, b) => a - b);
+  const leading = standardGaps.length >= 3 ? standardGaps[Math.floor(standardGaps.length / 2)] : 0;
   const result = [];
   let paragraph = null;
   let previous = null;
@@ -193,13 +214,12 @@ export function paragraphBlocks(lines, view = []) {
     const columnJump = paragraph && Number.isFinite(line.left) && Math.abs(line.left - paragraph.x) > Math.max(50, (rightEdge - leftEdge) * .17);
     const previousEnds = sentenceEnd.test(previous?.text || '');
     const listItem = bulletStart.test(text);
-    if (paragraph && (heading || isCaption || listItem || verticalGap < -lineSize * .3 || verticalGap > lineSize * 1.75
+    const extraLeading = leading && previousEnds && verticalGap >= Math.max(lineSize * 1.3, leading * 1.42);
+    if (paragraph && (heading || isCaption || listItem || extraLeading || verticalGap < -lineSize * .3 || verticalGap > lineSize * 1.75
       || columnJump || ((indent || line.runIn) && previousEnds) || Math.abs((previous.size || bodySize) - lineSize) > bodySize * .3)) save();
     if (!paragraph) paragraph = { text, x: left, right, y: box[3], bottom: box[1], heading, listItem, inlineMath: [...(line.inlineMath || [])], boxes: [box] };
     else {
-      const hyphenated = /\p{L}-$/u.test(paragraph.text) && /^\p{Ll}/u.test(text);
-      if (hyphenated && !compoundTail.test(text)) paragraph.text = paragraph.text.slice(0, -1);
-      paragraph.text += (hyphenated ? '' : ' ') + text;
+      paragraph.text = appendReadingLine(paragraph.text, text);
       paragraph.x = Math.min(paragraph.x, left);
       paragraph.right = Math.max(paragraph.right, right);
       paragraph.y = Math.max(paragraph.y, box[3]);
@@ -323,6 +343,41 @@ export function blockForAnchor(blocks, anchor) {
     }
   }
   return best;
+}
+
+export function termContextWindow(text, start, length, limit = 3200) {
+  if (text.length <= limit) return text.trim();
+  const spare = Math.max(0, limit - length);
+  let left = Math.max(0, Math.min(start - Math.floor(spare / 2), text.length - limit));
+  let right = left + limit;
+  // Trim partial words when there is a nearby boundary, while retaining the selection.
+  if (left > 0 && /\S/u.test(text[left - 1])) {
+    const boundary = text.slice(left, Math.min(left + 32, start)).search(/\s/u);
+    if (boundary >= 0) left += boundary + 1;
+  }
+  if (right < text.length && /\S/u.test(text[right])) {
+    const tail = text.slice(Math.max(start + length, right - 32), right);
+    const boundary = tail.search(/\s\S*$/u);
+    if (boundary >= 0) right -= tail.length - boundary;
+  }
+  return text.slice(left, right).trim();
+}
+
+export function paragraphTermContext(blocks, index, term) {
+  const chosen = blocks[index];
+  if (!chosen) return '';
+  const preceding = blocks.slice(Math.max(0, index - 2), index).map((block) => block.text).join('\n\n');
+  const following = blocks.slice(index + 1, index + 3).map((block) => block.text).join('\n\n');
+  const occurrence = chosen.text.toLowerCase().indexOf(term.toLowerCase());
+  const start = occurrence >= 0 ? occurrence : Math.floor(chosen.text.length / 2);
+  const focused = '选中段落：\n' + termContextWindow(chosen.text, start, term.length, 2200);
+  const beforeLabel = preceding ? '\n\n上文：\n' : '';
+  const afterLabel = following ? '\n\n下文：\n' : '';
+  const spare = 3200 - focused.length - beforeLabel.length - afterLabel.length;
+  const beforeLimit = Math.min(preceding.length, Math.max(Math.floor(spare / 2), spare - following.length));
+  const afterLimit = spare - beforeLimit;
+  return focused + beforeLabel + termContextWindow(preceding, preceding.length, 0, beforeLimit)
+    + afterLabel + termContextWindow(following, 0, 0, afterLimit);
 }
 
 export function sourceScrollOffset(current, pageStart, pageEnd, viewportSize, focusStart, focusEnd, inset = 0) {

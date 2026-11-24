@@ -109,13 +109,13 @@ CoReader 把论文库、双语对照、批注和模型助读放在一起。导�
 
 ## 开始使用
 
-1. **安装或解压**。支持 Windows 10/11 x64。安装版运行下载的 EXE，便携版完整解压后双击 `CoReader.exe`。[下载安装版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.0/CoReader-0.1.0-Setup-win-x64.exe) · [下载便携版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.0/CoReader-0.1.0-win-x64.zip)
+1. **安装或解压**。支持 Windows 10/11 x64。安装版运行下载的 EXE，便携版完整解压后双击 `CoReader.exe`。[下载安装版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.1/CoReader-0.1.1-Setup-win-x64.exe) · [下载便携版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.1/CoReader-0.1.1-win-x64.zip)
 2. **打开论文**。在首页左侧点击「打开 PDF」或「从文件夹导入」。打开论文后，通过顶部控制条切换原文与对照，从左下角打开目录、文内搜索或设置。
 3. **翻译或提问**。划词后点击翻译即可使用随包附带的离线模型。需要问答或解析时，从「设置 → 模型与账号」连接服务商，再设置问答模型。
 
 版本号可在首页左下角或设置面板查看。应用启动时会在后台检查 GitHub 正式版本，发现新版本时会提示并提供发布页入口。
 
-**macOS 13.3 及以上** 按处理器下载对应 ZIP，完整解压后打开 `CoReader.app`。支持 macOS 系统菜单、原生窗口按钮、拖动顶栏及 `⌘O` 打开 PDF。数据保存在 `~/Library/Application Support/English Lit Reader`。[下载 Apple Silicon 版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.0/CoReader-0.1.0-mac-arm64.zip) · [下载 Intel 版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.0/CoReader-0.1.0-mac-x64.zip)
+**macOS 13.3 及以上** 按处理器下载对应 ZIP，完整解压后打开 `CoReader.app`。支持 macOS 系统菜单、原生窗口按钮、拖动顶栏及 `⌘O` 打开 PDF。数据保存在 `~/Library/Application Support/English Lit Reader`。[下载 Apple Silicon 版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.1/CoReader-0.1.1-mac-arm64.zip) · [下载 Intel 版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.1/CoReader-0.1.1-mac-x64.zip)
 
 GitHub 上的 macOS ZIP 使用临时签名。Mac 实机运行与 Apple 公证仍待完成。
 
@@ -124,9 +124,12 @@ GitHub 上的 macOS ZIP 使用临时签名。Mac 实机运行与 Apple 公证仍
 | 接入方式 | 操作 |
 | --- | --- |
 | **ChatGPT 订阅** | 在 ChatGPT 卡片中发起连接，在系统浏览器完成授权。可用模型取决于账号权限。 |
-| **DeepSeek、Kimi、GLM** | 在对应卡片中填写平台 API Key，验证后保存。DeepSeek 和 Kimi 支持查询 API 余额。 |
+| **DeepSeek、GLM** | 在对应卡片中填写平台 API Key，验证后保存。DeepSeek 支持查询 API 余额。 |
 | **Claude** | 从连接设置打开 Claude Console 获取 API Key，再回到 CoReader 验证。请求后可查看服务返回的限流余量。 |
-| **WorkBuddy** | 在官方 CodeBuddy CLI 登录国内版或国际版账号，再点击「检测本机账号」。[CodeBuddy CLI 登录指南](https://www.codebuddy.ai/docs/cli/quickstart) |
+| **Kimi** | 在 Kimi 卡片中切换接入方式。「Kimi API」可配置开放平台 API Key 和查看余额。「Kimi Code」需安装新版 [Kimi Code CLI](https://www.kimi.com/code/docs/kimi-code-cli/guides/getting-started)，然后在浏览器授权。 |
+| **火山方舟** | 填写火山方舟 API Key 读取豆包模型目录，或填写已开通的 Model ID 或推理接入点 ID 并验证。 |
+| **WorkBuddy** | 登录 [CodeBuddy CLI](https://www.codebuddy.cn/docs/cli/quickstart)，在 WorkBuddy 卡片中点击「检测 CodeBuddy CLI 账号」。 |
+| **自定义 API** | 输入 OpenAI 兼容的 Base URL 和可选 API Key。可自动读取模型目录，也可填写模型 ID 并发送短请求验证。支持 HTTPS 和本机回环 HTTP。 |
 | **离线翻译** | 从「任务模型 → 翻译」选择内置模型，无需账号。 |
 
 问答和翻译可分别选模型。在线模型列表根据已连接账号更新，推理强度按模型支持情况显示。配置完成后可用「测试问答模型」验证连接。

@@ -4,6 +4,7 @@ import 'pdfjs-dist/web/pdf_viewer.css';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { connectionNames } from '../model-capabilities.mjs';
+import { extractPaperMetadata } from './pdf-metadata.mjs';
 
 export { katex };
 const api = window.reader;
@@ -102,7 +103,15 @@ export function reviveStoredFile(record) {
   };
 }
 
-export async function indexPaperPageCount(id, signal) {
+export async function indexOpenPaper(id, pdf, signal) {
+  if (!paperId.test(id)) return null;
+  signal.throwIfAborted();
+  const details = await extractPaperMetadata(pdf);
+  signal.throwIfAborted();
+  return api.indexPaper(id, pdf.numPages, details);
+}
+
+async function withStoredPdf(id, signal, read) {
   if (!paperId.test(id)) return null;
   signal.throwIfAborted();
   const url = new URL('/documents/' + id, location.href).href;
@@ -111,14 +120,38 @@ export async function indexPaperPageCount(id, signal) {
   const dispose = () => cleanup ||= task.destroy().catch(() => {});
   signal.addEventListener('abort', dispose, { once: true });
   try {
-    const { numPages } = await task.promise;
-    signal.throwIfAborted();
-    await api.savePaperPageCount(id, numPages);
-    return numPages;
+    return await read(await task.promise);
   } finally {
     signal.removeEventListener('abort', dispose);
     await dispose();
   }
+}
+
+export function indexPaper(id, signal) {
+  return withStoredPdf(id, signal, (pdf) => indexOpenPaper(id, pdf, signal));
+}
+
+export function renderPaperCover(id, signal) {
+  return withStoredPdf(id, signal, async (pdf) => {
+    const page = await pdf.getPage(1);
+    signal.throwIfAborted();
+    const base = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({ scale: 560 / Math.max(base.width, base.height) });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const task = page.render({ canvas, viewport, background: '#fff' });
+    const cancel = () => task.cancel();
+    signal.addEventListener('abort', cancel, { once: true });
+    try {
+      await task.promise;
+      signal.throwIfAborted();
+      return canvas.toDataURL('image/webp', .85);
+    } finally {
+      signal.removeEventListener('abort', cancel);
+      canvas.width = canvas.height = 0;
+    }
+  });
 }
 
 export async function openPaper(file) {

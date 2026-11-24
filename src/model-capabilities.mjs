@@ -1,5 +1,5 @@
 export const connectionNames = {
-  chatgpt: 'ChatGPT', deepseek: 'DeepSeek', kimi: 'Kimi', glm: 'GLM', claude: 'Claude', workbuddy: 'WorkBuddy',
+  chatgpt: 'ChatGPT', deepseek: 'DeepSeek', kimi: 'Kimi', glm: 'GLM', claude: 'Claude', workbuddy: 'WorkBuddy', doubao: '火山方舟', 'kimi-code': 'Kimi Code', compatible: '自定义 API',
 };
 
 export const defaultLocalTranslationModel = 'haidass-translate-143m';
@@ -26,7 +26,8 @@ const cli = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 const openaiCore = ['low', 'medium', 'high', 'xhigh'];
 const glm = ['low', 'high', 'max'];
 const claude = ['low', 'medium', 'high', 'xhigh', 'max'];
-const providerChoices = { codex: cli, workbuddy: cli, openai, chatgpt: openai, deepseek, kimi, glm, claude,
+
+const providerChoices = { codex: cli, workbuddy: cli, 'kimi-code': Object.keys(effortLabels).slice(1), openai, chatgpt: openai, deepseek, kimi, glm, claude,
   compatible: Object.keys(effortLabels).slice(1) };
 
 export function providerEfforts(provider) {
@@ -38,6 +39,7 @@ export function documentedEfforts(provider, model = '') {
     if (/^(?:deepseek-flash|deepseek-v4-(?:flash|pro)|deepseek-v4\.1-flash)(?:-vision-exp)?$/.test(model)) return deepseek;
     return null;
   }
+  if (provider === 'kimi-code') return [];
   if (provider === 'kimi') return /^kimi-k3(?:\.1-pro(?:-highspeed)?)?$/.test(model) ? kimi : null;
   if (provider === 'glm') return /^glm-5\.3(?:-flashx?)?$/.test(model) ? glm : [];
   if (provider === 'claude') return [];

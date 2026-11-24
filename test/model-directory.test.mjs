@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { availableEfforts, mergeModelOptions } from '../src/model-capabilities.mjs';
 import { fetchApiModelDirectory, normalizeModelDirectory } from '../src/model-directory.mjs';
+import { apiModelEndpoints, complete, makeMessages, modelSelection } from '../src/model.mjs';
 
 test('model-specific metadata overrides documented choices and distinguishes unknown from unavailable', () => {
   const models = normalizeModelDirectory([
@@ -41,4 +42,44 @@ test('HTTP model discovery fetches only the authenticated catalog and omits non-
   await assert.rejects(fetchApiModelDirectory('compatible', 'https://example.test/v1', '', {
     fetcher: async () => new Response(null, { status: 405 }),
   }), /未提供可用模型目录/);
+});
+
+test('the Ark catalog offers Doubao chat models with their context and image capabilities', async () => {
+  const entries = await fetchApiModelDirectory('doubao', apiModelEndpoints.doubao, 'fake-ark-key', {
+    fetcher: async (address, options) => {
+      assert.equal(address, 'https://ark.cn-beijing.volces.com/api/v3/models');
+      assert.equal(options.headers.Authorization, 'Bearer fake-ark-key');
+      return Response.json({ data: [
+        { id: 'doubao-seed-2-1-pro-260915', domain: 'VLM', token_limits: { context_window: 1048576 },
+          modalities: { input_modalities: ['text', 'image'], output_modalities: ['text'] } },
+        { id: 'doubao-video', domain: 'VideoGeneration' },
+        { id: 'doubao-seed-image', domain: 'VLM', modalities: { output_modalities: ['image'] } },
+        { id: 'deepseek-v4-flash', domain: 'LLM' },
+      ] });
+    },
+  });
+  assert.deepEqual(entries, [{
+    id: 'doubao-seed-2-1-pro-260915', label: 'doubao-seed-2-1-pro-260915', images: 'yes', contextWindow: 1048576,
+  }]);
+});
+
+test('Doubao endpoints and GLM send authenticated chat requests to the official provider', async () => {
+  for (const [provider, model, endpoint] of [
+    ['doubao', 'ep-20261124123456-example', 'https://ark.cn-beijing.volces.com/api/v3'],
+    ['glm', 'glm-5.3', 'https://open.bigmodel.cn/api/paas/v4'],
+  ]) {
+    const config = modelSelection({ provider, model, endpoint: 'https://user-supplied.test' });
+    const messages = makeMessages('test');
+    const answer = await complete(config, 'fixture-key', messages, {
+      fetcher: async (address, options) => {
+        assert.equal(address, endpoint + '/chat/completions');
+        assert.equal(options.method, 'POST');
+        assert.equal(options.headers.Authorization, 'Bearer fixture-key');
+        assert.deepEqual(JSON.parse(options.body), { model, messages, stream: true, max_tokens: 4096 });
+        return new Response('data: {"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+          { headers: { 'content-type': 'text/event-stream' } });
+      },
+    });
+    assert.equal(answer, 'OK');
+  }
 });

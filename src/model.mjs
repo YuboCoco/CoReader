@@ -9,15 +9,16 @@ export const apiModelEndpoints = {
   deepseek: defaultModel.endpoint,
   kimi: kimiEndpoint,
   glm: 'https://open.bigmodel.cn/api/paas/v4',
+  doubao: 'https://ark.cn-beijing.volces.com/api/v3',
   claude: 'https://api.anthropic.com/v1',
 };
-export const modelProviders = [...Object.keys(apiModelEndpoints), 'compatible', 'openai', 'chatgpt', 'workbuddy', 'codex'];
+export const modelProviders = [...Object.keys(apiModelEndpoints), 'compatible', 'openai', 'chatgpt', 'workbuddy', 'codex', 'kimi-code'];
 
 export function modelSelection(input) {
   const provider = modelProviders.includes(input?.provider) ? input.provider : 'deepseek';
   const model = typeof input?.model === 'string' ? input.model.trim().slice(0, 200) : '';
   if (!model) throw new Error('请填写模型 ID。');
-  if (provider === 'workbuddy' || provider === 'codex') {
+  if (['workbuddy', 'codex', 'kimi-code'].includes(provider)) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_.:/-]*$/.test(model)) throw new Error('CLI 模型 ID 格式无效。');
     const efforts = providerEfforts(provider);
     return {
@@ -26,19 +27,8 @@ export function modelSelection(input) {
       contextWindow: contextSize(input?.contextWindow, provider === 'codex' ? 128000 : 16384), images: imageMode(input?.images),
     };
   }
-  let endpoint;
-  try {
-    endpoint = new URL(apiModelEndpoints[provider] || (provider === 'compatible'
-      ? input?.endpoint?.trim() : 'https://api.openai.com/v1'));
-  } catch {
-    throw new Error('请输入有效的 API 地址。');
-  }
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
-  if ((endpoint.protocol !== 'https:' && !(local && endpoint.protocol === 'http:'))
-    || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
-    throw new Error('API 地址应为 HTTPS。可以为本机模型填写回环 HTTP 地址。');
-  }
-  const address = endpoint.href.replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
+  const address = normalizeApiEndpoint(apiModelEndpoints[provider] || (provider === 'compatible'
+    ? input?.endpoint : 'https://api.openai.com/v1'));
   const efforts = providerEfforts(provider);
   const effort = efforts.includes(input?.effort) ? input.effort : 'default';
   const knownContext = (provider === 'deepseek' && /^(deepseek-flash|deepseek-v4(?:\b|-))/.test(model))
@@ -49,6 +39,21 @@ export function modelSelection(input) {
   const label = provider === 'deepseek' && /^deepseek-(?:flash|v4-flash(?:-vision-exp)?)$/.test(model)
     ? 'DeepSeek V4.1 Flash' : (typeof input?.label === 'string' ? input.label.trim().slice(0, 120) || model : model);
   return { provider, endpoint: address, model, effort, label, contextWindow, images };
+}
+
+export function normalizeApiEndpoint(value) {
+  let url;
+  try {
+    url = new URL(typeof value === 'string' ? value.trim() : '');
+  } catch {
+    throw new Error('请输入有效的 API 地址。');
+  }
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if ((url.protocol !== 'https:' && !(local && url.protocol === 'http:'))
+    || url.username || url.password || /[?#]/.test(url.href)) {
+    throw new Error('请输入不带账号、查询参数或片段的 HTTPS 地址。本机模型可使用 localhost 或回环地址的 HTTP。');
+  }
+  return url.href.replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
 }
 
 function contextSize(input, fallback) {
@@ -63,7 +68,7 @@ function imageMode(value) {
 export function makeMessages(operation, source, context) {
   const instructions = {
     translation: '将选中的学术英语准确译成简体中文。保留段落、专名、数字和公式，术语保持一致。只输出译文。',
-    term: '用简体中文解释选中的英文论文术语。先用一句话说明含义，再结合提供的原句说明它在文中的用途，可用通俗例子。上下文不足时明确区分通用含义与论文特定用法。',
+    term: '用简体中文解释选中的英文论文术语。优先根据标为「选中段落」的文字判断词义，相邻段落只作补充。没有段落标注时，根据提供的语境判断词义。先用一句话下定义，再说明它在本文中的作用。只有当上下文明确信息时，才给出论文特定解释；仍有歧义时说明哪些含义可能相关。',
     test: 'Reply with OK.',
   };
   const label = operation === 'translation' ? '待翻译原文' : '术语';

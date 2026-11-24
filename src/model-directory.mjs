@@ -15,8 +15,10 @@ export function normalizeModelDirectory(items, provider) {
     if (typeof id !== 'string' || !idPattern.test(id) || models.has(id) || item.hidden
       || (provider === 'openai' && apiNonText.test(id))
       || (provider === 'claude' && item.lifecycle === 'retired')
+      || (provider === 'doubao' && (!/^(?:doubao|ep)-/i.test(id) || (item.domain && !['LLM', 'VLM'].includes(item.domain))))
       || (provider === 'glm' && (!id.startsWith('glm-') || /(?:^|-)(?:ocr|image|asr|tts|embedding|realtime|voice)(?:-|$)/i.test(id)))) continue;
-    if (Array.isArray(item.output_modalities) && !item.output_modalities.includes('text')) continue;
+    const outputModalities = item.output_modalities ?? (provider === 'doubao' ? item.modalities?.output_modalities : undefined);
+    if (Array.isArray(outputModalities) && !outputModalities.includes('text')) continue;
     const rawLabel = item.displayName || item.display_name || item.label || item.name;
     const label = typeof rawLabel === 'string' ? rawLabel.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 120) : '';
     const claudeEffort = provider === 'claude' ? item.capabilities?.effort : null;
@@ -24,9 +26,13 @@ export function normalizeModelDirectory(items, provider) {
       : item.supportedReasoningEfforts ?? item.supported_reasoning_efforts ?? item.reasoning_efforts;
     const efforts = item.supportsReasoning === false ? [] : advertisedEfforts(declared, provider);
     const defaultEffort = item.defaultReasoningEffort ?? item.default_reasoning_effort;
-    const contextWindow = Number(item.contextWindow ?? item.context_window ?? item.context_length ?? item.max_input_tokens ?? item.maxInputTokens);
+    const contextWindow = Number(item.contextWindow ?? item.context_window ?? item.context_length ?? item.max_input_tokens ?? item.maxInputTokens
+      ?? (provider === 'doubao' ? item.token_limits?.context_window : undefined));
     const claudeImages = provider === 'claude' ? item.capabilities?.image_input?.supported : undefined;
-    const images = typeof claudeImages === 'boolean' ? (claudeImages ? 'yes' : 'no')
+    const arkInputs = provider === 'doubao' ? item.modalities?.input_modalities : undefined;
+    const images = provider === 'kimi-code' && ['yes', 'no'].includes(item.images) ? item.images
+      : Array.isArray(arkInputs) ? (arkInputs.includes('image') ? 'yes' : 'no')
+      : typeof claudeImages === 'boolean' ? (claudeImages ? 'yes' : 'no')
       : provider === 'glm' && /^glm-5\.3(?:-flashx?)?$/.test(id) ? (id === 'glm-5.3' ? 'no' : 'yes') : undefined;
     models.set(id, {
       id, label: label || id,

@@ -5,11 +5,12 @@ import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { defaultModel, openLibrary } from './library.mjs';
-import { apiModelEndpoints, complete, makeMessages, modelSelection } from './model.mjs';
+import { apiModelEndpoints, complete, makeMessages, modelSelection, normalizeApiEndpoint } from './model.mjs';
 import { availableEfforts, connectionNames, defaultLocalTranslationModel, localTranslationModels } from './model-capabilities.mjs';
 import { fetchApiModelDirectory, normalizeModelDirectory } from './model-directory.mjs';
 import { claudeRateLimits, readDeepSeekBalance, readKimiBalance } from './provider-usage.mjs';
 import { createChatGPTAuth } from './chatgpt.mjs';
+import { createKimiCode } from './kimi-code.mjs';
 import { analyzeFigure, analyzePaper, organizeReferences } from './research.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { runReaderRequest } from './reader-requests.mjs';
@@ -39,7 +40,7 @@ const offlineTranslators = new Map(Object.keys(localTranslationModels).map((id) 
 const activeResearch = new Set();
 const activeAgentPapers = new Set();
 const connectionProviders = Object.keys(connectionNames);
-const apiProviders = Object.keys(apiModelEndpoints);
+const apiProviders = [...Object.keys(apiModelEndpoints), 'compatible'];
 const balanceReaders = { deepseek: readDeepSeekBalance, kimi: readKimiBalance };
 const balances = new Map();
 let claudeLimits;
@@ -64,6 +65,8 @@ const profile = dataOverride && isAbsolute(dataOverride)
   ? dataOverride : join(app.getPath('appData'), 'English Lit Reader');
 mkdirSync(profile, { recursive: true });
 app.setPath('userData', profile);
+const kimiCode = createKimiCode({ home: join(profile, 'kimi-code'), signal: appLifetime.signal,
+  openBrowser: (url) => shell.openExternal(url) });
 app.setName('CoReader');
 const ownsApp = app.requestSingleInstanceLock();
 if (!ownsApp) {
@@ -107,6 +110,8 @@ function hasConnection(provider) {
   }
   const profile = providerConfig(provider);
   if (provider === 'workbuddy') return library.getSetting('workbuddy-connected', Boolean(profile.model));
+  if (provider === 'kimi-code') return library.getSetting('kimi-code-connected', false);
+  if (provider === 'compatible') return Boolean(profile.endpoint);
   return apiProviders.includes(provider) && Boolean(profile.secret);
 }
 
@@ -158,13 +163,14 @@ function savedKey(previous = currentConfig()) {
 }
 
 function requireKey(config, key) {
-  if (apiProviders.includes(config.provider) && !key) throw new Error('请先在账号连接卡片中配置服务商 API Key。');
+  if (config.provider !== 'compatible' && apiProviders.includes(config.provider) && !key) throw new Error('请先在账号连接卡片中配置服务商 API Key。');
 }
 
 async function discoverModels(input) {
   const { provider } = input;
   if (!connectionProviders.includes(provider)) throw new Error('请选择服务商。');
   const stored = providerConfig(provider);
+  const endpoint = input.endpoint ?? stored.endpoint;
   let scope = '';
   let accountName = '';
   let list;
@@ -173,6 +179,8 @@ async function discoverModels(input) {
     if (!account.connected) throw new Error('登录并授权后可检测账号模型。');
     scope = account.active;
     list = () => chatgpt.models();
+  } else if (provider === 'kimi-code') {
+    list = () => kimiCode.models({ refresh: input.refresh });
   } else if (provider === 'workbuddy') {
     const command = await locateCodeBuddy();
     if (!command) throw new Error('安装官方 CodeBuddy CLI 后可读取可用模型。');
@@ -185,12 +193,13 @@ async function discoverModels(input) {
   } else {
     const key = input.key ?? savedKey(stored);
     requireKey(stored, key);
+    const verified = !input.endpoint && input.key === undefined && ['glm', 'doubao', 'compatible'].includes(provider)
+      ? normalizeModelDirectory([{ id: stored.verifiedModel }], provider) : [];
+    if (verified.length && provider !== 'glm') return { models: verified };
     scope = createHash('sha256').update(key).digest('hex');
     list = async () => {
-      const verified = provider === 'glm' && input.key === undefined
-        ? normalizeModelDirectory([{ id: stored.verifiedModel }], provider) : [];
       try {
-        const result = await fetchApiModelDirectory(provider, stored.endpoint, key, {
+        const result = await fetchApiModelDirectory(provider, endpoint, key, {
           signal: appLifetime.signal, ...(provider === 'claude' ? { fetcher: fetchThroughSystem } : {}),
         });
         return [...result, ...verified.filter(({ id }) => !result.some((entry) => entry.id === id))];
@@ -200,7 +209,7 @@ async function discoverModels(input) {
       }
     };
   }
-  const cacheKey = [provider, stored.endpoint, scope].join('|');
+  const cacheKey = JSON.stringify([provider, endpoint, scope, stored.verifiedModel]);
   const cached = modelDirectories.get(cacheKey);
   if (!input.refresh && cached && Date.now() < cached.until) return cached.result;
   const entry = { until: Date.now() + directoryLifetimeMs, result: null };
@@ -216,29 +225,39 @@ async function discoverModels(input) {
 async function modelConnection(provider, refresh = false) {
   if (!connectionProviders.includes(provider)) throw new Error('请选择服务商。');
   if (!hasConnection(provider)) return { provider, connected: false, models: [] };
+  const profile = providerConfig(provider);
+  const details = provider === 'compatible' ? { endpoint: profile.endpoint, verifiedModel: profile.verifiedModel } : {};
   try {
     const { models, accountName } = await discoverModels({ provider, refresh });
-    return { provider, connected: true, models, accountName };
+    return { provider, connected: true, models, accountName, ...details };
   } catch (error) {
-    return { provider, connected: true, models: [], problem: error.message };
+    return { provider, connected: true, models: [], problem: error.message, ...details };
   }
 }
 
-async function verifyGlmModel(credential, id) {
-  const models = normalizeModelDirectory([{ id }], 'glm');
-  if (!models.length) throw new Error('请输入有效的 GLM 文本模型 ID。');
-  const effort = availableEfforts('glm', id, models[0]).ids.includes('low') ? 'low' : 'default';
-  const config = modelSelection({ provider: 'glm', model: id, effort });
+async function verifyApiModel(provider, credential, id, endpoint) {
+  const models = normalizeModelDirectory([{ id }], provider);
+  if (!models.length) throw new Error(provider === 'doubao'
+    ? '请输入火山方舟的 Model ID 或推理接入点 ID。' : '请输入有效的模型 ID。');
+  const effort = availableEfforts(provider, id, models[0]).ids.includes('low') ? 'low' : 'default';
+  const config = modelSelection({ provider, model: id, effort, endpoint });
   const signal = AbortSignal.any([appLifetime.signal, AbortSignal.timeout(45000)]);
   await complete(config, credential, makeMessages('test'), { signal, maxTokens: 1024 });
   return { models, verifiedModel: id };
 }
 
-async function updateConnection(provider, { key, model, disconnect } = {}) {
-  if (provider !== 'workbuddy' && !apiProviders.includes(provider)) throw new Error('请选择可配置的账号。');
+async function updateConnection(provider, { key, model, endpoint, disconnect } = {}) {
+  if (provider !== 'workbuddy' && !apiProviders.includes(provider) && !(provider === 'kimi-code' && disconnect === true)) {
+    throw new Error('请选择可配置的账号。');
+  }
   if (disconnect) {
-    const settings = provider === 'workbuddy' ? { 'workbuddy-connected': false }
-      : { ['model-' + provider]: { ...providerConfig(provider), secret: '', verifiedModel: '' } };
+    if (provider === 'kimi-code') {
+      await kimiCode.disconnect();
+      clearKimiCodeDirectory();
+    }
+    const settings = ['workbuddy', 'kimi-code'].includes(provider) ? { [provider + '-connected']: false }
+      : { ['model-' + provider]: { ...providerConfig(provider), secret: '', verifiedModel: '',
+        ...(provider === 'compatible' ? { endpoint: '' } : {}) } };
     const current = currentConfig();
     if (current.provider === provider) settings.model = defaultModel;
     const translation = translationPreference();
@@ -250,29 +269,36 @@ async function updateConnection(provider, { key, model, disconnect } = {}) {
   }
   const credential = provider === 'workbuddy' ? undefined : checkKey(key);
   requireKey({ provider }, credential);
-  const requestedModel = provider === 'glm' && typeof model === 'string' ? model.trim() : '';
+  const customEndpoint = provider === 'compatible' ? normalizeApiEndpoint(endpoint) : undefined;
+  const supportsModelId = provider === 'glm' || provider === 'doubao' || provider === 'compatible';
+  const requestedModel = supportsModelId && typeof model === 'string' ? model.trim() : '';
   let result;
-  if (requestedModel) result = await verifyGlmModel(credential, requestedModel);
+  if (requestedModel) result = await verifyApiModel(provider, credential, requestedModel, customEndpoint);
   else {
     try {
-      result = await discoverModels({ provider, key: credential, refresh: true });
+      result = await discoverModels({ provider, key: credential, endpoint: customEndpoint, refresh: true });
     } catch (error) {
-      if (provider !== 'glm' || error.code !== 'NO_MODEL_CATALOG') throw error;
+      if (error.code !== 'NO_MODEL_CATALOG' || !supportsModelId) throw error;
+      if (provider === 'doubao') throw new Error('方舟模型目录暂不可用，请填写 Model ID 或推理接入点 ID。');
+      if (provider === 'compatible') throw new Error('该接口未提供模型目录，请填写模型 ID。');
     }
-    if (provider === 'glm' && !result?.models.length) result = await verifyGlmModel(credential, 'glm-5.3-flash');
+    if (provider === 'glm' && !result?.models.length) result = await verifyApiModel(provider, credential, 'glm-5.3-flash');
   }
-  if (!result.models.length) throw new Error('该账号没有返回可用的文本模型。');
+  if (!result?.models.length && provider === 'compatible') throw new Error('该接口未返回可用模型，请填写模型 ID。');
+  if (!result.models.length) throw new Error(provider === 'doubao'
+    ? '方舟未返回可用的豆包模型，请填写已开通的 Model ID 或推理接入点 ID。' : '该账号没有返回可用的文本模型。');
   if (provider === 'workbuddy') {
     library.setSetting('workbuddy-connected', true);
   } else {
-    const secret = protect(credential);
-    const credentials = { secret, ...(provider === 'glm' ? { verifiedModel: result.verifiedModel || '' } : {}) };
+    const secret = credential ? protect(credential) : '';
+    const credentials = { secret, ...(supportsModelId ? { verifiedModel: result.verifiedModel || '' } : {}),
+      ...(customEndpoint ? { endpoint: customEndpoint } : {}) };
     const settings = { ['model-' + provider]: { ...providerConfig(provider), ...credentials } };
     const current = currentConfig();
     if (current.provider === provider) settings.model = { ...current, ...credentials };
     library.setSettings(settings);
   }
-  return { provider, connected: true, ...result };
+  return { provider, connected: true, ...result, ...(customEndpoint ? { endpoint: customEndpoint } : {}) };
 }
 
 async function connectionUsage(provider, refresh) {
@@ -308,11 +334,17 @@ async function getCredential(config, key) {
     if (chatgpt.status().active !== active) throw new Error('ChatGPT 账号已切换，请重试。');
     return token;
   }
+  if (config.provider === 'compatible') {
+    const profile = providerConfig('compatible');
+    if (config.endpoint !== profile.endpoint) throw new Error('自定义 API 地址已更改，请重试。');
+    return savedKey(profile);
+  }
   requireKey(config, key);
   return key;
 }
 
 function completeModel(config, key, messages, options) {
+  if (config.provider === 'kimi-code') return kimiCode.complete(config, messages, options);
   if (config.provider === 'workbuddy') {
     const signal = AbortSignal.any([appLifetime.signal, ...(options?.signal ? [options.signal] : [])]);
     return runCodeBuddy(config, messages, { ...options, signal, workDir: join(app.getPath('userData'), 'codebuddy-runner') });
@@ -638,6 +670,25 @@ async function* pdfsInFolder(root, errors) {
   }
 }
 
+function clearKimiCodeDirectory() {
+  for (const key of modelDirectories.keys()) {
+    if (key.startsWith('["kimi-code",')) modelDirectories.delete(key);
+  }
+}
+
+async function kimiCodeLogin(action) {
+  let result;
+  if (action === 'begin') result = await kimiCode.beginLogin();
+  else if (action === 'poll') result = await kimiCode.pollLogin();
+  else if (action === 'cancel') return kimiCode.cancelLogin();
+  else throw new Error('无效的 Kimi Code 授权操作。');
+  if (result.status === 'authenticated') {
+    clearKimiCodeDirectory();
+    library.setSetting('kimi-code-connected', true);
+  }
+  return result;
+}
+
 function attachActions() {
   const importLibraryPapers = async (paths, category, errors = []) => {
     const papers = new Set();
@@ -670,6 +721,8 @@ function attachActions() {
   registerHandler('paper:category-exclude', (_event, ids, category) => library.removePapersFromCategory(ids, category));
   registerHandler('paper:tag-create', (_event, name) => library.createPaperTag(name));
   registerHandler('paper:details', (_event, id, details) => library.updatePaperDetails(id, details));
+  registerHandler('paper:abstract-translation', (_event, id, source, translated) =>
+    library.savePaperAbstractTranslation(id, source, translated));
   registerHandler('paper:choose', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'], filters: [{ name: 'PDF', extensions: ['pdf'] }],
@@ -681,6 +734,7 @@ function attachActions() {
   registerHandler('paper:reopen', (_event, id) => library.reopen(id));
   registerHandler('paper:position', (_event, id, page, zoom, pageCount) => library.position(id, page, zoom, pageCount));
   registerHandler('paper:page-count', (_event, id, count) => library.savePaperPageCount(id, count));
+  registerHandler('paper:index', (_event, id, count, details) => library.indexPaper(id, count, details));
   registerHandler('paper:records', (_event, id) => library.records(id));
   registerHandler('reader:data', (_event, id) => readerData(id));
   registerHandler('reader:save', (_event, id, kind, value) => library.saveReaderData(id, kind, value));
@@ -698,6 +752,7 @@ function attachActions() {
   registerHandler('model:connection', (_event, provider, refresh) => modelConnection(provider, refresh === true));
   registerHandler('model:connection-update', (_event, provider, input) => updateConnection(provider, input));
   registerHandler('model:usage', (_event, provider, refresh) => connectionUsage(provider, refresh === true));
+  registerHandler('kimi-code:login', (_event, action) => kimiCodeLogin(action));
   registerHandler('chatgpt:status', () => chatgpt.status());
   registerHandler('chatgpt:login', (_event, account) => chatgpt.signIn(account));
   registerHandler('chatgpt:select', (_event, account) => chatgpt.select(account));

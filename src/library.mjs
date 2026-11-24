@@ -89,6 +89,7 @@ export function openLibrary(root) {
   `);
   const tagsOf = (tags) => [...new Set((Array.isArray(tags) ? tags : [])
     .map((tag) => text(tag, 48).normalize('NFKC').toLowerCase()).filter(Boolean))].slice(0, 64);
+  const paperFields = { title: 400, authors: 600, year: 12, venue: 240, doi: 240, arxiv: 80, abstract: 10000 };
   const registerTag = db.prepare('INSERT OR IGNORE INTO paper_tags VALUES (?)');
   const uniquePaperIds = (ids) => {
     if (!Array.isArray(ids) || !ids.length || ids.length > 2000) throw new Error('请选择要操作的论文。');
@@ -166,15 +167,32 @@ export function openLibrary(root) {
     updatePaperDetails(id, details) {
       requirePaper(id);
       const saved = catalogById.get(id);
-      const metadata = Object.fromEntries(Object.entries({
-        title: 400, authors: 600, year: 12, venue: 240, doi: 240, arxiv: 80, abstract: 10000,
-      }).map(([key, max]) => [key, text(details?.[key], max)]));
+      const metadata = JSON.parse(saved?.metadata || '{}');
+      for (const [key, max] of Object.entries(paperFields)) {
+        if (Object.hasOwn(details ?? {}, key)) metadata[key] = text(details[key], max);
+      }
+      if (metadata.abstractTranslation?.source !== metadata.abstract) delete metadata.abstractTranslation;
+      if (metadata.abstract && typeof details?.abstractTranslation === 'string') {
+        const translated = text(details.abstractTranslation, 30000);
+        if (translated) metadata.abstractTranslation = { source: metadata.abstract, text: translated };
+      }
       metadata.tags = tagsOf(details?.tags);
       metadata.status = ['reading', 'read'].includes(details?.status) ? details.status : 'unread';
       transaction(() => {
         for (const tag of metadata.tags) registerTag.run(tag);
         saveCatalog.run(id, saved?.category ?? null, JSON.stringify(metadata));
       });
+    },
+    savePaperAbstractTranslation(id, source, translation) {
+      requirePaper(id);
+      const saved = catalogById.get(id);
+      const metadata = JSON.parse(saved?.metadata || '{}');
+      const translated = text(translation, 30000);
+      if (!translated || !source || source !== metadata.abstract) throw new Error('论文摘要已变更，请重新打开详情。');
+      const record = { source, text: translated };
+      metadata.abstractTranslation = record;
+      saveCatalog.run(id, saved?.category ?? null, JSON.stringify(metadata));
+      return record;
     },
     classifyPapers(ids, target) {
       const selected = uniquePaperIds(ids);
@@ -262,6 +280,24 @@ export function openLibrary(root) {
       requirePaper(id);
       if (!Number.isSafeInteger(pageCount) || pageCount < 1) throw new Error('无效的论文页数。');
       db.prepare('UPDATE documents SET page_count=? WHERE id=?').run(pageCount, id);
+    },
+    indexPaper(id, pageCount, details) {
+      requirePaper(id);
+      if (!Number.isSafeInteger(pageCount) || pageCount < 1) throw new Error('无效的论文页数。');
+      return transaction(() => {
+        const saved = catalogById.get(id);
+        const metadata = JSON.parse(saved?.metadata || '{}');
+        const added = {};
+        if (!metadata.metadataIndexed) {
+          for (const [key, max] of Object.entries(paperFields)) {
+            const value = text(details?.[key], max);
+            if (value && !metadata[key]) added[key] = value;
+          }
+          saveCatalog.run(id, saved?.category ?? null, JSON.stringify({ ...metadata, ...added, metadataIndexed: true }));
+        }
+        db.prepare('UPDATE documents SET page_count=? WHERE id=?').run(pageCount, id);
+        return { ...added, pageCount, metadataIndexed: true };
+      });
     },
     records(id) {
       requirePaper(id);

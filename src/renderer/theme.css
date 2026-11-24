@@ -8,6 +8,7 @@
   --elr-glass-docked-fill: 62%;
   --elr-glass-floating-fill: 89%;
   --elr-glass-chrome-fill: 89%;
+  --elr-glass-reading-fill: 41%;
   --elr-glass-dialog-fill: 87%;
   --elr-glass-docked-blur: 27px;
   --elr-glass-floating-blur: 34px;
@@ -27,6 +28,7 @@
   --elr-glass-docked-fill: 68%;
   --elr-glass-floating-fill: 94%;
   --elr-glass-chrome-fill: 94%;
+  --elr-glass-reading-fill: 85%;
   --elr-glass-dialog-fill: 87%;
   --elr-glass-docked-blur: 24px;
   --elr-glass-floating-blur: 31px;

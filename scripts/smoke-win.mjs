@@ -424,7 +424,7 @@ try {
   assert.ok(initialCardDimensions[1] < 100);
   const verifyCard = async (name) => {
     await modelCenter.getByRole('button', { name: '管理 ' + name + ' 连接', exact: true }).waitFor();
-    await currentCard().locator('img.connection-icon').evaluate((image) => image.decode());
+    await currentCard().locator('img.connection-icon').evaluateAll((images) => Promise.all(images.map((image) => image.decode())));
     assert.deepEqual(await cardDimensions(), initialCardDimensions);
   };
   const openAccount = async (name) => {
@@ -513,6 +513,11 @@ try {
   assert.equal(await questionModel().inputValue(), 'deepseek:deepseek-flash');
   await nextCard().click();
   let kimiDetails = await openAccount('Kimi');
+  assert.equal(await modelCenter.locator('#connection-kimi-code').count(), 0);
+  await kimiDetails.getByRole('button', { name: 'Kimi Code', exact: true }).click();
+  await kimiDetails.getByRole('button', { name: '登录 Kimi Code', exact: true }).waitFor();
+  await kimiDetails.getByLabel('Kimi API Key', { exact: true }).waitFor({ state: 'hidden' });
+  await kimiDetails.getByRole('button', { name: 'Kimi API', exact: true }).click();
   await kimiDetails.getByLabel('Kimi API Key', { exact: true }).fill('fixture-kimi');
   await kimiDetails.getByRole('button', { name: '验证并连接', exact: true }).click();
   await kimiDetails.getByText('¥49.58894', { exact: true }).waitFor();
@@ -534,8 +539,12 @@ try {
 
   await openModels();
   await previousCard().click();
+  await verifyCard('自定义 API');
+  await previousCard().click();
+  await verifyCard('火山方舟');
+  await previousCard().click();
   const workBuddy = await openAccount('WorkBuddy');
-  await workBuddy.getByRole('button', { name: '检测本机账号', exact: true }).click();
+  await workBuddy.getByRole('button', { name: '检测 CodeBuddy CLI 账号', exact: true }).click();
   await workBuddy.getByRole('button', { name: '刷新模型', exact: true }).waitFor();
   await closeAccount(workBuddy);
   await questionModel().selectOption('workbuddy:fixture-workbuddy-model');

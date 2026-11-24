@@ -18,10 +18,13 @@ CoReader 0.1.0 · Windows x64
 
 模型连接
 · ChatGPT 订阅：点击「连接 ChatGPT」，在系统浏览器完成授权。可在卡片中切换账号、刷新模型和打开官方用量页面。授权和模型请求跟随 Windows 系统代理设置。
-· DeepSeek、Kimi：输入各自平台的 API Key，点击「验证并连接」。卡片可查询 API 可用余额。
+· DeepSeek：输入平台 API Key，点击「验证并连接」。卡片可查询 API 可用余额。
 · GLM：使用智谱开放平台 API Key。可填具体模型 ID，或在目录不可用时用默认模型进行一次简短验证。
 · Claude：点击账号卡片，从连接设置打开 Claude Console 创建 API Key，再回到阅读器验证。发起请求后，卡片可查看服务返回的限流余量；累计用量可在 Claude Console 查看。
-· WorkBuddy：在官方 CodeBuddy CLI 登录国内站或国际站，在卡片中点击「检测本机账号」。换号后点击「刷新模型」。安装指南 https://www.codebuddy.ai/docs/cli/quickstart
+· Kimi：在同一张卡片里切换「Kimi API」和「Kimi Code」。Kimi API 可配置开放平台 API Key、查询余额。Kimi Code 需安装新版 Kimi Code CLI，再点击「登录 Kimi Code」在浏览器授权。
+· 火山方舟：填写方舟 API Key 读取模型目录，或指定已开通的 Model ID 或推理接入点 ID。
+· WorkBuddy：先登录 CodeBuddy CLI，再点击「检测 CodeBuddy CLI 账号」。
+· 自定义 API：填写 OpenAI 兼容的 API 地址、可选 API Key，以及可选的模型 ID。模型 ID 留空时从服务读取模型目录。
 · 任务列表只显示已连接账号返回的模型，翻译也可使用离线模型。
 
 电子文献与已保存的研究记录可离线查看。发起模型任务时，相关原文或裁剪图像会发送到所选服务。云端登录和实际用量需使用自己的账号。

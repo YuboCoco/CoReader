@@ -52,11 +52,11 @@ export function ModelCenter({ version, availableUpdate, onClose, onSave, onConne
     return () => { mounted.current = false; };
   }, []);
 
-  async function refresh(provider) {
+  async function refresh(provider, force = true) {
     connectionUpdates.current[provider] = true;
     setUpdating((count) => count + 1);
     try {
-      const connection = await api.getModelConnection(provider, true);
+      const connection = await api.getModelConnection(provider, force);
       applyConnection(connection);
       onConnectionsChange();
       return connection;
@@ -123,8 +123,8 @@ export function ModelCenter({ version, availableUpdate, onClose, onSave, onConne
     </div>
     <section className="model-center-pane" aria-label="模型配置" hidden={tab !== 'models'}>
       {problem && <p className="model-center-error" role="alert">{problem}</p>}
-      <AccountConnections connections={connections} onUpdate={update} onRefresh={(provider) => provider === 'chatgpt'
-        ? useAccount(() => api.chatgptStatus(), 'refresh') : refresh(provider)}
+      <AccountConnections connections={connections} onUpdate={update} onRefresh={(provider, force) => provider === 'chatgpt'
+        ? useAccount(() => api.chatgptStatus(), 'refresh') : refresh(provider, force)}
         chatgpt={{ account, pending: accountPending, problem: accountProblem,
           onLogin: (id) => useAccount(() => api.chatgptLogin(id), 'login'),
           onCancel: () => api.chatgptCancel().catch(() => {}),
@@ -199,6 +199,11 @@ function ReadingSettings({ value, onChange }) {
     </div>
     <div className="display-setting-group">
       <h3>阅读操作</h3>
+      <label>阅读工具栏位置
+        <select value={value.capsulePosition || 'top'} onChange={(event) => onChange({ capsulePosition: event.target.value })}>
+          <option value="top">页面顶部</option><option value="bottom">页面底部</option>
+        </select>
+      </label>
       <p className="settings-note">按住 Ctrl 并拖动鼠标左键移动 PDF 页面。</p>
     </div>
   </div>;

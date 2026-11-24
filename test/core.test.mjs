@@ -95,6 +95,35 @@ test('paper categories preserve documents and hide retired tag rules', async () 
   }
 });
 
+test('abstract translations persist immediately and follow the exact source abstract', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'elr-abstract-translation-'));
+  let library;
+  try {
+    const file = join(directory, 'Abstract.pdf');
+    await writeFile(file, '%PDF-1.7 abstract');
+    library = openLibrary(directory);
+    const { id } = await library.importFile(file);
+    library.indexPaper(id, 1, { abstract: 'Original abstract' });
+    const record = library.savePaperAbstractTranslation(id, 'Original abstract', '中文摘要');
+    assert.deepEqual(record, { source: 'Original abstract', text: '中文摘要' });
+    library.close();
+    library = openLibrary(directory);
+    const current = () => library.paperLibrary().papers.find((paper) => paper.id === id);
+    assert.equal(current().abstract, 'Original abstract');
+    assert.deepEqual(current().abstractTranslation, record);
+    library.updatePaperDetails(id, { title: 'Edited title' });
+    assert.deepEqual(current().abstractTranslation, record);
+    library.updatePaperDetails(id, { abstract: 'Edited abstract' });
+    assert.equal(current().abstractTranslation, undefined);
+    assert.throws(() => library.savePaperAbstractTranslation(id, 'Original abstract', '过期译文'), /已变更/);
+    library.updatePaperDetails(id, { abstract: 'New abstract', abstractTranslation: '新译文' });
+    assert.deepEqual(current().abstractTranslation, { source: 'New abstract', text: '新译文' });
+  } finally {
+    library?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('an older paper library recovers reading positions and retains reusable tags', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'elr-catalog-migration-'));
   let library;
