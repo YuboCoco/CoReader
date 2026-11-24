@@ -2,6 +2,7 @@ name: Release CoReader 0.1.1
 
 on:
   push:
+    branches: [codex/release-v0.1.1]
     tags: [v0.1.1]
 
 permissions:
@@ -18,6 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: refs/tags/v0.1.1
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
@@ -61,6 +63,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: refs/tags/v0.1.1
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
