@@ -4,7 +4,7 @@
 
 <h1 align="center">CoReader</h1>
 
-<p align="center">面向英文论文的 Windows PDF 阅读器</p>
+<p align="center">面向英文论文的 Windows 与 macOS PDF 阅读器</p>
 
 <p align="center">
   <a href="https://github.com/YuboCoco/CoReader/releases/latest">版本发布</a> ·
@@ -32,7 +32,7 @@ CoReader 把论文库、双语对照、批注和模型助读放在一起。导�
 
 - **原文与译文对照** 可翻译单段、本页、本章或全文。悬停段落会联动高亮原文和译文。译文侧保留从原文裁切的图、表与独立公式，并支持定位原文和重译此段。
 - **划词操作** 选中文字即可翻译、解释术语、添加高亮和批注，或引用到阅读助手。按住 `Shift` 可以继续划选并一次翻译多段。
-- **本地翻译** Windows 安装包和便携包内置 Haidass-Translate-143M 与腾讯 Hy-MT2-1.8B，两款模型均可在 CPU 上离线运行。
+- **本地翻译** Windows 和 macOS 安装包与便携包内置 Haidass-Translate-143M 与腾讯 Hy-MT2-1.8B，两款模型均可在 CPU 上离线运行。
 
 [![PDF 划词工具条及原文与译文并排显示的翻译浮层](docs/screenshots/selection-translation.webp)](docs/screenshots/selection-translation.webp)
 
@@ -115,6 +115,10 @@ CoReader 把论文库、双语对照、批注和模型助读放在一起。导�
 
 版本号可在首页左下角或设置面板查看。应用启动时会在后台检查 GitHub 正式版本，发现新版本时会提示并提供发布页入口。
 
+**macOS 13.3 及以上** 按处理器下载对应 ZIP，完整解压后打开 `CoReader.app`。支持 macOS 系统菜单、原生窗口按钮、拖动顶栏及 `⌘O` 打开 PDF。数据保存在 `~/Library/Application Support/English Lit Reader`。[下载 Apple Silicon 版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.0/CoReader-0.1.0-mac-arm64.zip) · [下载 Intel 版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.0/CoReader-0.1.0-mac-x64.zip)
+
+GitHub 上的 macOS ZIP 使用临时签名。Mac 实机运行与 Apple 公证仍待完成。
+
 ## 模型与账号
 
 | 接入方式 | 操作 |
@@ -135,7 +139,7 @@ CoReader 把论文库、双语对照、批注和模型助读放在一起。导�
 
 ## 从源码构建
 
-使用 **Windows x64 和 Node.js 24**。从源码启动时可先验证阅读界面，再下载离线运行所需的模型资源。
+使用 **Node.js 24**。从源码启动时可先验证阅读界面，再下载离线运行所需的模型资源。
 
 ```powershell
 git clone https://github.com/YuboCoco/CoReader.git
@@ -144,7 +148,9 @@ npm ci
 npm run dev
 ```
 
-```powershell
+``### Windows x64
+
+`powershell
 npm run prepare:translation:win
 npm run prepare:layout:win
 npm test
@@ -152,6 +158,19 @@ npm run package:win
 ```
 
 打包产物默认写入 `release/`，同时生成 `CoReader-latest/` 供直接运行。安装 **Inno Setup 6.7+** 后，运行 `npm run installer:win` 生成 Windows 安装程序。若 `ISCC.exe` 不在 PATH 中，将 `COREADER_ISCC` 指向编译器路径。可用 `COREADER_INNO_ZH` 指定简体中文 `.isl` 文件。打包后可用 `node scripts/smoke-win.mjs` 运行桌面集成测试。
+
+### macOS
+
+在 macOS 上运行以下命令。默认构建当前机器的架构，指定另一架构时，向准备翻译资源和打包两个命令传入相同的 `arm64` 或 `x64`。
+
+```sh
+npm run prepare:translation:mac
+npm run prepare:layout:mac
+npm test
+npm run package:mac
+```
+
+构建生成 `.app`、便携 ZIP 和 DMG。可在对应架构的 Mac 上运行 `node scripts/smoke-mac.mjs release/CoReader-darwin-$(node -p process.arch)/CoReader.app` 验证 PDF、原生窗口和离线引擎。默认构建使用临时签名，面向公众的免提示分发需要 Apple Developer ID 签名和公证。
 
 CoReader 使用 Electron、React、Vite、PDF.js 和 SQLite。离线翻译由本地 llama.cpp 运行时执行，PDF 版面识别使用 ONNX Runtime。
 

@@ -2917,7 +2917,8 @@ function Reader(props) {
     if (!reader || fullscreenPendingRef.current) return;
     fullscreenPendingRef.current = true;
     try {
-      if (document.fullscreenElement === reader) await document.exitFullscreen();
+      if (window.reader?.platform === 'darwin') await window.reader.toggleFullscreen();
+      else if (document.fullscreenElement === reader) await document.exitFullscreen();
       else await reader.requestFullscreen();
     } catch (_) {
       notify(t('fullscreen.failed'), 'error');
@@ -7031,7 +7032,11 @@ function Reader(props) {
     setFigurePickMode(false);
     pdfReading.changeMode(next);
   };
-  const fullscreenLabel = t(isFullscreen ? 'fullscreen.exit' : 'fullscreen.enter');
+  const openFromMenu = React.useEffectEvent(openPdfPicker);
+  React.useEffect(() => window.reader?.onOpenPaper?.(() => openFromMenu()), []);
+
+  const fullscreenActive = isFullscreen || props.nativeFullscreen;
+  const fullscreenLabel = t(fullscreenActive ? 'fullscreen.exit' : 'fullscreen.enter');
   const comparison = pdfReading.mode === 'compare';
   const readingCapsule = hasPdf ? h('div', {
     className: 'elr-reader-capsule', role: 'group', 'aria-label': 'PDF 阅读工具',
@@ -7134,7 +7139,7 @@ function Reader(props) {
       h('button', {
         type: 'button', className: 'elr-icon-btn elr-fullscreen-btn',
         'aria-label': fullscreenLabel, title: fullscreenLabel, onClick: toggleFullscreen,
-      }, h('span', { className: 'elr-fullscreen-icon' + (isFullscreen ? ' is-active' : ''), 'aria-hidden': true },
+      }, h('span', { className: 'elr-fullscreen-icon' + (fullscreenActive ? ' is-active' : ''), 'aria-hidden': true },
         h('span'), h('span'), h('span'), h('span')
       )),
       props.onMinimize ? h('button', { className: 'elr-icon-btn', onClick: props.onMinimize }, t('minimize')) : null,

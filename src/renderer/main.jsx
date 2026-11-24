@@ -6,6 +6,8 @@ import { ModelCenter } from './model-center.jsx';
 import './reader.css';
 
 const api = window.reader;
+const isMac = api.platform === 'darwin';
+if (isMac) document.documentElement.dataset.desktopPlatform = 'darwin';
 const fonts = import.meta.glob('../../assets/fonts/MiSansVF.ttf', { eager: true, query: '?url', import: 'default' });
 const miSans = fonts['../../assets/fonts/MiSansVF.ttf'];
 if (miSans) document.fonts.add(new FontFace('MiSans', 'url("' + miSans + '")', { weight: '100 900', display: 'swap' }));
@@ -62,6 +64,15 @@ function App({ issue: startupIssue }) {
   const [version, setVersion] = useState('');
   const [update, setUpdate] = useState(null);
   const [dismissed, setDismissed] = useState(false);
+  const [nativeFullscreen, setNativeFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!isMac) return;
+    return api.onWindowFullscreen((active) => {
+      document.documentElement.toggleAttribute('data-native-fullscreen', active);
+      setNativeFullscreen(active);
+    });
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -86,6 +97,7 @@ function App({ issue: startupIssue }) {
   }, []);
 
   return <div className="desktop-app">
+    {isMac && !nativeFullscreen && <div className="desktop-mac-toolbar" aria-hidden="true">CoReader</div>}
     {issue && <aside className="desktop-error" role="alert">
       <span>{issue}</span><button className="quiet" aria-label="关闭提示" onClick={() => setIssue('')}>×</button>
     </aside>}
@@ -94,7 +106,7 @@ function App({ issue: startupIssue }) {
       <a href={update.url}>查看发布</a>
       <button type="button" aria-label="关闭更新提示" onClick={() => setDismissed(true)}>×</button>
     </aside>}
-    <Reader t={translate} version={version} modelRevision={revision} onModelSettings={() => setShowModelCenter(true)} onPdfPassword={setPassword} />
+    <Reader t={translate} version={version} nativeFullscreen={nativeFullscreen} modelRevision={revision} onModelSettings={() => setShowModelCenter(true)} onPdfPassword={setPassword} />
     {password && <PdfPassword request={password} onClose={() => setPassword(null)} />}
     {showModelCenter && <ModelCenter version={version} availableUpdate={update} onClose={() => setShowModelCenter(false)}
       onConnectionsChange={() => setRevision((previous) => previous + 1)} onSave={() => {

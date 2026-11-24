@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, protocol, safeStorage, shell } from 'electron';
 import { createReadStream, mkdirSync, writeFileSync } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
@@ -20,6 +20,7 @@ import { detectPdfLayout } from './layout-model.mjs';
 import { findAppUpdate } from './app-updates.mjs';
 
 const origin = 'litreader://app';
+const isMac = process.platform === 'darwin';
 const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 const preload = fileURLToPath(new URL('./preload.cjs', import.meta.url));
 const appIcon = fileURLToPath(new URL('../assets/coreader-cr.png', import.meta.url));
@@ -33,7 +34,8 @@ let updateCheck;
 const translationBundle = app.isPackaged ? join(process.resourcesPath, 'haidass')
   : fileURLToPath(new URL('../release/runtime/haidass/', import.meta.url));
 const offlineTranslators = new Map(Object.keys(localTranslationModels).map((id) =>
-  [id, createLocalTranslator(translationBundle, appLifetime.signal, id)]));
+  [id, createLocalTranslator(translationBundle, appLifetime.signal, id,
+    !app.isPackaged && isMac ? 'engine-darwin-' + process.arch : 'engine')]));
 const activeResearch = new Set();
 const activeAgentPapers = new Set();
 const connectionProviders = Object.keys(connectionNames);
@@ -803,15 +805,42 @@ function attachActions() {
 function createWindow() {
   mainWindow = new BrowserWindow({
     title: 'CoReader', icon: appIcon, width: 1360, height: 880, minWidth: 760, minHeight: 550,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b2028' : '#f4f6f9', autoHideMenuBar: true,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b2028' : '#f4f6f9',
+    ...(isMac ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 14 } } : { autoHideMenuBar: true }),
     show: process.env.ENGLISH_LIT_READER_HIDDEN !== '1',
     webPreferences: { preload, nodeIntegration: false, contextIsolation: true, sandbox: true },
   });
-  mainWindow.removeMenu();
+  if (isMac) {
+    const window = mainWindow;
+    window.on('enter-full-screen', () => window.webContents.send('window:fullscreen-changed', true));
+    window.on('leave-full-screen', () => window.webContents.send('window:fullscreen-changed', false));
+  } else {
+    mainWindow.removeMenu();
+  }
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
   mainWindow.on('closed', () => { mainWindow = undefined; });
   return mainWindow.loadURL(origin + '/');
+}
+
+function installMacMenu() {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { role: 'appMenu' },
+    { label: '文件', submenu: [
+      { id: 'open-pdf', label: '打开 PDF…', accelerator: 'Command+O', click: () => mainWindow?.webContents.send('window:open-paper') },
+      { type: 'separator' },
+      { role: 'close' },
+    ] },
+    { role: 'editMenu' },
+    { role: 'windowMenu' },
+  ]));
+}
+
+function startupFailure(error) {
+  const message = '初始化阅读器失败。' + (error?.message || '');
+  if (startupStatus) reportStartup('ERROR ' + message);
+  else dialog.showErrorBox('CoReader 启动失败', message);
+  app.exit(1);
 }
 
 if (ownsApp) {
@@ -833,14 +862,15 @@ if (ownsApp) {
     });
     serveApp();
     attachActions();
+    if (isMac) installMacMenu();
     return createWindow();
-  }).catch((error) => {
-    const message = '初始化阅读器失败。' + (error?.message || '');
-    if (startupStatus) reportStartup('ERROR ' + message);
-    else dialog.showErrorBox('CoReader 启动失败', message);
-    app.exit(1);
+  }).catch(startupFailure);
+  app.on('activate', () => {
+    if (isMac && library && !mainWindow) createWindow().catch(startupFailure);
   });
-  app.on('window-all-closed', () => app.quit());
+  app.on('window-all-closed', () => {
+    if (!isMac) app.quit();
+  });
   app.on('before-quit', () => {
     appLifetime.abort();
     chatgpt?.cancel();

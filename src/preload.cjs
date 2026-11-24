@@ -6,7 +6,16 @@ async function call(channel, ...args) {
   return result.value;
 }
 
+function subscribe(channel, callback) {
+  const listener = (_event, value) => callback(value);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
+
 contextBridge.exposeInMainWorld('reader', {
+  platform: process.platform,
+  onOpenPaper: (callback) => subscribe('window:open-paper', callback),
+  onWindowFullscreen: (callback) => subscribe('window:fullscreen-changed', callback),
   choosePaper: () => call('paper:choose'),
   dropPaper: (file) => call('paper:drop', webUtils.getPathForFile(file)),
   recent: () => call('paper:recent'),

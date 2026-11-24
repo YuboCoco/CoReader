@@ -149,18 +149,18 @@ function localJson(port, key, path, signal, value) {
   });
 }
 
-export function createLocalTranslator(bundle, lifetime, modelId = defaultLocalTranslationModel) {
-  const engine = join(bundle, 'engine');
+export function createLocalTranslator(bundle, lifetime, modelId = defaultLocalTranslationModel, engineDirectory = 'engine') {
+  const engine = join(bundle, engineDirectory);
   const useHyMt = modelId === 'hy-mt2-1.8b';
   const endpoint = useHyMt ? '/v1/chat/completions' : '/completion';
   const { weights, label } = localTranslationModels[modelId];
   let active;
 
   async function launch(instance) {
-    const executable = join(engine, 'llama-server.exe');
+    const executable = join(engine, process.platform === 'win32' ? 'llama-server.exe' : 'llama-server');
     const model = join(bundle, weights);
     try { await Promise.all([access(executable), access(model)]); }
-    catch { throw new Error(label + ' 的离线翻译文件缺失，请从完整的 Windows ZIP 解压后运行。'); }
+    catch { throw new Error(label + ' 的离线翻译文件缺失，请从完整的 CoReader 安装包或便携包运行。'); }
 
     const port = await localPort();
     lifetime.throwIfAborted();
@@ -197,7 +197,7 @@ export function createLocalTranslator(bundle, lifetime, modelId = defaultLocalTr
       lifetime.throwIfAborted();
       throw new Error('离线翻译引擎启动超时，请重试。');
     }
-    throw new Error('离线翻译引擎未能启动，请检查 Windows x64 运行环境。');
+    throw new Error('离线翻译引擎未能启动，请检查当前系统和处理器架构。');
   }
 
   lifetime.addEventListener('abort', () => active?.child?.kill(), { once: true });

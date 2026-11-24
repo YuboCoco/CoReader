@@ -11,7 +11,10 @@
     "dev": "vite build && electron .",
     "build": "vite build --configLoader runner",
     "test": "node --test",
-    "prepare:layout:win": "node scripts/prepare-layout-win.mjs",
+    "prepare:layout:win": "node scripts/prepare-layout.mjs",
+    "prepare:translation:mac": "node scripts/prepare-translation-mac.mjs",
+    "prepare:layout:mac": "node scripts/prepare-layout.mjs",
+    "package:mac": "npm run build && node scripts/package-mac.mjs",
     "prepare:translation:win": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-haidass-win.ps1",
     "package:win": "npm run build && node scripts/package-win.mjs",
     "installer:win": "npm run package:win && node scripts/package-installer-win.mjs"

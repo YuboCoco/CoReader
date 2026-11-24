@@ -15,13 +15,23 @@ function codeBuddyEnvironment() {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
     !/^(?:CODEBUDDY_|ANTHROPIC_|NODE_OPTIONS$|ELECTRON_RUN_AS_NODE$)/i.test(key)));
   const customProfile = process.env.CODEBUDDY_CONFIG_DIR;
-  return { ...env, ...(customProfile && isAbsolute(customProfile) ? { CODEBUDDY_CONFIG_DIR: customProfile } : {}),
+  return { ...env, ...(process.platform === 'darwin' ? { PATH: codeBuddyPaths().join(delimiter) } : {}),
+    ...(customProfile && isAbsolute(customProfile) ? { CODEBUDDY_CONFIG_DIR: customProfile } : {}),
     DISABLE_AUTOUPDATER: '1', DISABLE_TELEMETRY: '1', DISABLE_ERROR_REPORTING: '1',
     CODEBUDDY_CODE_DISABLE_BACKGROUND_TASKS: '1', CODEBUDDY_DISABLE_BACKGROUND_TASKS: '1' };
 }
 
+function codeBuddyPaths(env = process.env) {
+  const paths = (env.PATH || env.Path || '').split(delimiter).filter(isAbsolute);
+  if (process.platform === 'darwin') {
+    if (env.HOME && isAbsolute(env.HOME)) paths.push(join(env.HOME, '.local', 'bin'));
+    paths.push('/opt/homebrew/bin', '/usr/local/bin');
+  }
+  return [...new Set(paths)];
+}
+
 export async function locateCodeBuddy(env = process.env) {
-  const pathDirs = (env.PATH || env.Path || '').split(delimiter).filter(isAbsolute);
+  const pathDirs = codeBuddyPaths(env);
   const nativeDirs = env.LOCALAPPDATA ? [join(env.LOCALAPPDATA, 'codebuddy', 'bin'), ...pathDirs] : pathDirs;
   const command = process.platform === 'win32' ? 'codebuddy.exe' : 'codebuddy';
   for (const dir of nativeDirs) {

@@ -5,7 +5,7 @@ import { copyFile, rename, rm, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { layoutWeights } from '../src/layout-spec.mjs';
 
-const directory = resolve('release/runtime/layout');
+const directory = resolve(process.env.ELR_RELEASE_DIR || 'release', 'runtime', 'layout');
 const target = join(directory, layoutWeights.file);
 mkdirSync(directory, { recursive: true });
 
@@ -24,7 +24,7 @@ try {
   const partial = target + '.' + randomUUID() + '.part';
   try {
     if (process.argv[2]) await copyFile(process.argv[2], partial);
-    else execFileSync('curl.exe', ['-fLSs', '--max-time', '300', '-o', partial, layoutWeights.url], { stdio: 'inherit' });
+    else execFileSync(process.platform === 'win32' ? 'curl.exe' : 'curl', ['-fLSs', '--max-time', '300', '-o', partial, layoutWeights.url], { stdio: 'inherit' });
     await verify(partial);
     await rename(partial, target);
   } finally {
