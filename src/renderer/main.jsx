@@ -1,9 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Reader, installCss, setHostScheme, translate } from './reader-view.js';
+import { Reader, installCss, setHostScheme, translate, readReaderSettings, subscribeReaderSettings } from './reader-view.js';
+import { installLiquidGlass } from './liquid-glass.mjs';
 import { loadLibrary } from './desktop-runtime.js';
 import { ModelCenter } from './model-center.jsx';
+import { OnboardingTour, shouldStartOnboarding } from './onboarding-tour.jsx';
 import './reader.css';
+import './liquid-glass.css';
+import { motionTiming, reduceMotion } from './surface-motion.js';
 
 const api = window.reader;
 const isMac = api.platform === 'darwin';
@@ -12,24 +16,31 @@ const fonts = import.meta.glob('../../assets/fonts/MiSansVF.ttf', { eager: true,
 const miSans = fonts['../../assets/fonts/MiSansVF.ttf'];
 if (miSans) document.fonts.add(new FontFace('MiSans', 'url("' + miSans + '")', { weight: '100 900', display: 'swap' }));
 
+const STARTUP_HOLD_MS = 2000;
+
 async function finishStartup() {
   const splash = document.getElementById('startup-screen');
   if (!splash) return;
+  const dismiss = () => {
+    splash.remove();
+    const root = document.getElementById('root');
+    if (root) root.inert = false;
+  };
   try {
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches && !document.hidden) {
+    if (!reduceMotion() && !document.hidden) {
       await Promise.allSettled(splash.getAnimations({ subtree: true }).map((animation) => animation.finished));
-      if (!document.hidden) {
-        await splash.animate([{ opacity: 1 }, { opacity: 0 }], {
-          delay: 2000,
-          duration: 160,
-          easing: 'cubic-bezier(.23, 1, .32, 1)',
-          fill: 'forwards',
-        }).finished;
-      }
+    }
+    if (splash.isConnected && !document.hidden) {
+      await new Promise((resolve) => window.setTimeout(resolve, STARTUP_HOLD_MS));
+    }
+    if (splash.isConnected && !document.hidden) {
+      splash.style.pointerEvents = 'none';
+      const root = document.getElementById('root');
+      if (root) root.inert = false;
+      await splash.animate([{ opacity: 1 }, { opacity: 0 }], { ...motionTiming('sm', 'exit'), fill: 'forwards' }).finished;
     }
   } finally {
-    splash.remove();
-    document.getElementById('root').inert = false;
+    dismiss();
   }
 }
 
@@ -58,6 +69,7 @@ function PdfPassword({ request, onClose }) {
 
 function App({ issue: startupIssue }) {
   const [showModelCenter, setShowModelCenter] = useState(false);
+  const [showTour, setShowTour] = useState(false);
   const [password, setPassword] = useState(null);
   const [revision, setRevision] = useState(0);
   const [issue, setIssue] = useState(startupIssue);
@@ -77,7 +89,9 @@ function App({ issue: startupIssue }) {
   useEffect(() => {
     let active = true;
     api.windowReady().catch(() => {});
-    finishStartup().catch(() => {});
+    finishStartup().catch(() => {}).finally(() => {
+      if (active && shouldStartOnboarding()) setShowTour(true);
+    });
     api.appVersion().then((value) => { if (active) setVersion(value); }).catch(() => {});
     api.checkForUpdate().then((value) => { if (active) setUpdate(value); }).catch(() => {});
     const showError = (event) => setIssue(event.detail);
@@ -109,10 +123,12 @@ function App({ issue: startupIssue }) {
     <Reader t={translate} version={version} nativeFullscreen={nativeFullscreen} modelRevision={revision} onModelSettings={() => setShowModelCenter(true)} onPdfPassword={setPassword} />
     {password && <PdfPassword request={password} onClose={() => setPassword(null)} />}
     {showModelCenter && <ModelCenter version={version} availableUpdate={update} onClose={() => setShowModelCenter(false)}
+      onReplayTour={() => { setShowModelCenter(false); setShowTour(true); }}
       onConnectionsChange={() => setRevision((previous) => previous + 1)} onSave={() => {
       setShowModelCenter(false);
       setRevision((previous) => previous + 1);
     }} />}
+    <OnboardingTour active={showTour} onFinish={() => setShowTour(false)} />
   </div>;
 }
 
@@ -125,6 +141,7 @@ const updateScheme = () => {
 system.addEventListener('change', updateScheme);
 updateScheme();
 installCss();
+installLiquidGlass(readReaderSettings, subscribeReaderSettings);
 
 loadLibrary().then(() => '', (error) => error.message).then((issue) => {
   createRoot(document.getElementById('root')).render(<App issue={issue} />);

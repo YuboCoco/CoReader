@@ -1,7 +1,22 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import ChevronRight from 'kubai-icons-react/icons/chevron-right';
+import Files from 'kubai-icons-react/icons/files';
+import TagPlus from 'kubai-icons-react/icons/tag-plus';
+import FileText from 'kubai-icons-react/duotone/icons/file-text';
+import Folder from 'kubai-icons-react/duotone/icons/folder';
+import FolderOpen from 'kubai-icons-react/duotone/icons/folder-open';
+import FolderPlus from 'kubai-icons-react/duotone/icons/folder-plus';
+import Grid from 'kubai-icons-react/duotone/icons/grid';
+import History from 'kubai-icons-react/duotone/icons/history';
+import Inbox from 'kubai-icons-react/duotone/icons/inbox';
+import List from 'kubai-icons-react/duotone/icons/list';
+import Search from 'kubai-icons-react/duotone/icons/search';
+import Table from 'kubai-icons-react/duotone/icons/table';
+import { animateSharedDialog, visibleRect } from './surface-motion.js';
 import appIcon from '../../assets/coreader-cr.png';
 import wordmark from '../../assets/coreader-wordmark-duo.png';
-import { indexPaper, postReader, renderPaperCover } from './desktop-runtime.js';
+import { ensurePdfJs, indexPaper, postReader, renderPaperCover } from './desktop-runtime.js';
+import { EmptySkeleton, EmptyState } from './empty-state.jsx';
 import './paper-library.css';
 
 const api = window.reader;
@@ -31,30 +46,22 @@ function ReadingProgress({ paper, indexedPages, compact = false }) {
   </div>;
 }
 
+const libraryIcons = {
+  all: Files, recent: History, uncategorized: Inbox, folder: Folder, paper: FileText,
+  search: Search, folderPlus: FolderPlus, folderOpen: FolderOpen, tagPlus: TagPlus,
+  list: List, table: Table, gallery: Grid, chevron: ChevronRight,
+};
+
 function Icon({ name }) {
-  const paths = {
-    all: 'M4 5h16M4 12h16M4 19h16',
-    recent: 'M12 7v5l3 2m6-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
-    uncategorized: 'M4 4h16l2 11v4H2v-4L4 4zm-2 11h6l1 2h6l1-2h6',
-    folder: 'M3 7V5h6l2 2h10v12H3z',
-    tag: 'M3 4h9l9 9-8 8-10-10zm4 4h.1',
-    paper: 'M6 3h8l4 4v14H6zm8 0v5h4M9 12h6m-6 4h6',
-    search: 'M15.5 15.5 21 21m-3-10a7 7 0 1 1-14 0 7 7 0 0 1 14 0z',
-    plus: 'M12 4v16M4 12h16',
-    list: 'M8 6h12M8 12h12M8 18h12M4 6h.1M4 12h.1M4 18h.1',
-    table: 'M3 5h18v14H3zm0 5h18m-18 4h18M13 5v14',
-    gallery: 'M4 4h6v6H4zm10 0h6v6h-6zM4 14h6v6H4zm10 0h6v6h-6z',
-    chevron: 'm9 5 7 7-7 7',
-  };
-  return <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
-    strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
+  const Glyph = libraryIcons[name];
+  return <Glyph size={17} trigger="none" style={{ '--kd-b': 'color-mix(in srgb, currentColor 40%, transparent)' }} />;
 }
 
 const covers = new Map();
 const coverLanes = [Promise.resolve(), Promise.resolve(), Promise.resolve()];
 let nextCoverLane = 0;
 
-function PaperCover({ paper, open }) {
+function PaperCover({ paper, open, onOpenCover, onCoverReady }) {
   const ref = useRef(null);
   const [src, setSrc] = useState(() => covers.get(paper.id) || '');
   useEffect(() => {
@@ -80,9 +87,17 @@ function PaperCover({ paper, open }) {
     observer.observe(ref.current);
     return () => { observer.disconnect(); controller?.abort(); };
   }, [paper.id, src]);
+  const image = useRef(null);
+  useLayoutEffect(() => {
+    if (image.current?.complete && image.current.naturalWidth) onCoverReady?.(paper.id, image.current);
+  }, [paper.id, src, onCoverReady]);
   return <button type="button" ref={ref} className="pl-cover" title={paperTitle(paper)}
-    aria-label={'阅读 ' + paperTitle(paper)} onClick={() => open(paper)}>
-    {src ? <img src={src} alt="" draggable={false} /> : <Icon name="paper" />}
+    aria-label={'阅读 ' + paperTitle(paper)} onClick={(event) => {
+      if (onOpenCover) onOpenCover(paper, image.current, !event.detail);
+      else open(paper);
+    }}>
+    {src ? <img ref={image} src={src} alt="" draggable={false} onLoad={(event) => onCoverReady?.(paper.id, event.currentTarget)} />
+      : <Icon name="paper" />}
   </button>;
 }
 
@@ -163,9 +178,65 @@ function PaperAbstract({ paper, onSaved }) {
 
 function PaperTagPicker({ catalog, selected, onChange, onCreate, busy }) {
   const [creating, setCreating] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState('');
   const [value, setValue] = useState('');
-  const options = catalog.filter((tag) => !selected.includes(tag));
+  const wrapRef = useRef(null);
+  const triggerRef = useRef(null);
+  const searchRef = useRef(null);
+  const listRef = useRef(null);
   const full = selected.length >= 64;
+  const query = normalize(filter.trim());
+  const filtered = query ? catalog.filter((tag) => normalize(tag).includes(query)) : catalog;
+
+  useEffect(() => {
+    if (!open) return;
+    requestAnimationFrame(() => searchRef.current?.focus());
+    const onPointerDown = (event) => {
+      if (!wrapRef.current?.contains(event.target)) {
+        setOpen(false);
+        setFilter('');
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [open]);
+
+  function closePanel(focusTrigger = false) {
+    setOpen(false);
+    setFilter('');
+    if (focusTrigger) triggerRef.current?.focus();
+  }
+
+  function toggleTag(tag) {
+    if (busy) return;
+    if (selected.includes(tag)) {
+      onChange(selected.filter((item) => item !== tag));
+    } else if (!full) {
+      onChange([...selected, tag]);
+    }
+  }
+
+  function onPanelKeyDown(event) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closePanel(true);
+      return;
+    }
+    const items = [...(listRef.current?.querySelectorAll('[role="option"]:not(:disabled)') || [])];
+    if (!items.length) return;
+    const idx = items.indexOf(document.activeElement);
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      items[idx < 0 ? 0 : (idx + 1) % items.length]?.focus();
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (idx <= 0) searchRef.current?.focus();
+      else items[idx - 1]?.focus();
+    }
+  }
+
   async function create() {
     if (!value.trim() || busy || full) return;
     if (await onCreate(value)) {
@@ -173,6 +244,11 @@ function PaperTagPicker({ catalog, selected, onChange, onCreate, busy }) {
       setCreating(false);
     }
   }
+
+  const triggerText = selected.length
+    ? '已选 ' + selected.length + ' 个标签 · 选择或搜索'
+    : catalog.length ? '选择或搜索已有标签' : '暂无已有标签';
+
   return <fieldset className="pl-tag-picker">
     <legend>标签</legend>
     {selected.length > 0 && <div className="pl-selected-tags">
@@ -180,13 +256,44 @@ function PaperTagPicker({ catalog, selected, onChange, onCreate, busy }) {
         title={'移除标签 ' + tag} onClick={() => onChange(selected.filter((item) => item !== tag))}>{tag}<span aria-hidden="true">×</span></button>)}
     </div>}
     <div className="pl-tag-controls">
-      <select aria-label="选择已有标签" value="" disabled={busy || full || !options.length}
-        onChange={(event) => { if (event.target.value) onChange([...selected, event.target.value]); }}>
-        <option value="" disabled>{options.length ? '选择已有标签' : '暂无可选标签'}</option>
-        {options.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
-      </select>
+      <div className="pl-tag-menu-wrap" ref={wrapRef}>
+        <button ref={triggerRef} type="button" className="pl-tag-menu-trigger" disabled={busy || !catalog.length}
+          aria-haspopup="listbox" aria-expanded={open} aria-controls="pl-existing-tag-listbox"
+          onClick={() => setOpen((current) => !current)}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown' && !busy && catalog.length) {
+              event.preventDefault();
+              setOpen(true);
+            } else if (event.key === 'Escape' && open) {
+              event.preventDefault();
+              event.stopPropagation();
+              closePanel(true);
+            }
+          }}>
+          <span>{triggerText}</span>
+          <span className="pl-menu-caret" aria-hidden="true" />
+        </button>
+        {open && <div className="pl-tag-combobox" onKeyDown={onPanelKeyDown}>
+          <input ref={searchRef} type="search" className="pl-tag-search" value={filter}
+            role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="pl-existing-tag-listbox"
+            aria-label="搜索已有标签" placeholder="搜索标签…"
+            onChange={(event) => setFilter(event.target.value)} />
+          <div id="pl-existing-tag-listbox" ref={listRef} className="pl-tag-listbox" role="listbox"
+            aria-label="已有标签" aria-multiselectable="true">
+            {filtered.length > 0 ? filtered.map((tag) => {
+              const checked = selected.includes(tag);
+              const disabled = busy || (!checked && full);
+              return <button key={tag} type="button" role="option" aria-selected={checked} disabled={disabled}
+                className="pl-tag-option" onClick={() => toggleTag(tag)}>
+                <input type="checkbox" tabIndex={-1} aria-hidden="true" checked={checked} readOnly />
+                <span>{tag}</span>
+              </button>;
+            }) : <EmptyState size="menu" live title={'没有匹配「' + filter.trim() + '」的标签'} />}
+          </div>
+        </div>}
+      </div>
       <button type="button" disabled={busy || full} aria-expanded={creating} onClick={() => setCreating(!creating)}>
-        <Icon name="plus" />创建标签
+        <Icon name="tagPlus" />创建标签
       </button>
     </div>
     {creating && <div className="pl-tag-controls">
@@ -219,9 +326,36 @@ function categoryTree(categories) {
   return walk(null, 0, '');
 }
 
-function LibraryDialog({ title, cancel, submit, busy, issue, children, action = '保存', destructive, details, tone }) {
+function LibraryDialog({ title, cancel, submit, busy, issue, children, action = '保存', destructive, details, tone, origin }) {
   const ref = useRef(null);
-  useEffect(() => { ref.current.showModal(); }, []);
+  useLayoutEffect(() => {
+    const dialog = ref.current;
+    dialog.showModal();
+    if (!origin) return undefined;
+    const source = origin.button.closest('li, tr');
+    const titleParts = [source?.querySelector('.pl-paper-title')];
+    const titleInput = [dialog.querySelector('input[name="title"]')];
+    const last = origin.running.current;
+    const previous = last?.source === source ? last.stop?.capture() : null;
+    last?.stop?.();
+    const stop = animateSharedDialog(dialog, source, titleParts, titleInput, origin.keyboard, false, previous);
+    return () => {
+      const frame = stop?.capture();
+      const results = origin.button.closest('.pl-results');
+      stop?.();
+      if (dialog.open && origin.button.isConnected) {
+        origin.running.current = { source, stop: animateSharedDialog(dialog, source, titleParts, titleInput, origin.keyboard, true, frame) };
+        dialog.close();
+        queueMicrotask(() => {
+          if (!results?.isConnected || document.querySelector('dialog:modal')) return;
+          const active = document.activeElement;
+          if ((active === document.body || active === origin.button) && !visibleRect(origin.button, results.getBoundingClientRect())) {
+            results.focus({ preventScroll: true });
+          }
+        });
+      }
+    };
+  }, [origin]);
   return <dialog ref={ref} className={'pl-dialog' + (details ? ' is-details' : '') + tone} aria-label={title}
     onCancel={(event) => { event.preventDefault(); if (!busy) cancel(); }}
     onKeyDown={(event) => { if (event.key === 'Escape') event.stopPropagation(); }}>
@@ -237,13 +371,16 @@ function LibraryDialog({ title, cancel, submit, busy, issue, children, action = 
   </dialog>;
 }
 
-export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerError, tone }) {
+export function PaperLibrary({ onOpen, onOpenCover, onCoverReady, onOpenFile, onSettings, version, readerError, tone }) {
   const [data, setData] = useState(empty);
   const [indexedPages, setIndexedPages] = useState(() => new Map());
   const indexedPapers = useRef(new Set());
   const [scope, setScope] = useState(() => localStorage.getItem('elr.library-scope') || 'all');
   const [layout, setLayout] = useState(() => localStorage.getItem('elr.library-view') === 'table' ? 'table' : 'list');
   const [gallery, setGallery] = useState(() => localStorage.getItem('elr.library-gallery') === 'true');
+  useEffect(() => {
+    if (gallery && data.papers.length) void ensurePdfJs().catch(() => {});
+  }, [gallery, data.papers.length]);
   const [coverWidth, setCoverWidth] = useState(() => {
     const saved = Number(localStorage.getItem('elr.library-cover-width'));
     return saved >= 128 && saved <= 340 ? saved : 176;
@@ -256,18 +393,35 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
   const [sort, setSort] = useState('recent');
   const [selected, setSelected] = useState(new Set());
   const [editor, setEditor] = useState(null);
+  const detailMotion = useRef(null);
+  useEffect(() => () => detailMotion.current?.stop?.(), []);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [loadFailed, setLoadFailed] = useState(false);
   const [busy, setBusy] = useState('loading');
   const [drop, setDrop] = useState(null);
   const inFlight = useRef(false);
   const alive = useRef(false);
 
+  function loadPaperLibrary() {
+    setBusy('loading');
+    setLoadFailed(false);
+    setError('');
+    api.paperLibrary().then((value) => {
+      if (alive.current) {
+        setData(value);
+        setLoadFailed(false);
+      }
+    }).catch(() => {
+      if (alive.current) setLoadFailed(true);
+    }).finally(() => {
+      if (alive.current) setBusy('');
+    });
+  }
+
   useEffect(() => {
     alive.current = true;
-    api.paperLibrary().then((value) => { if (alive.current) setData(value); })
-      .catch((err) => { if (alive.current) setError(err.message); })
-      .finally(() => { if (alive.current) setBusy(''); });
+    loadPaperLibrary();
     return () => { alive.current = false; };
   }, []);
   useEffect(() => {
@@ -348,13 +502,21 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
     localStorage.setItem('elr.library-gallery', String(enabled));
   }
 
-  function toggleLayout() {
-    if (gallery) {
-      showGallery(false);
+  function selectViewMode(mode) {
+    if (mode === 'gallery') {
+      if (gallery) return;
+      showGallery(true);
       return;
     }
-    setLayout(nextLayout);
-    localStorage.setItem('elr.library-view', nextLayout);
+    if (!gallery && layout === mode) return;
+    if (gallery) {
+      setGallery(false);
+      localStorage.setItem('elr.library-gallery', 'false');
+    }
+    if (layout !== mode) {
+      setLayout(mode);
+      localStorage.setItem('elr.library-view', mode);
+    }
   }
 
   async function mutate(action, after, label = 'save') {
@@ -522,7 +684,9 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
   const selectPaper = (paper) => <input type="checkbox" checked={selected.has(paper.id)}
     aria-label={'选择 ' + paperTitle(paper)} onChange={() => togglePaper(paper.id)} />;
   const details = (paper) => <button type="button" className="pl-plain" title="论文详情"
-    aria-label={'编辑 ' + paperTitle(paper)} onClick={() => showEditor({ kind: 'details', paper })}>详情</button>;
+    aria-label={'编辑 ' + paperTitle(paper)} onClick={(event) => showEditor({
+      kind: 'details', paper, origin: { button: event.currentTarget, keyboard: !event.detail, running: detailMotion },
+    })}>详情</button>;
 
   return <div className={'pl-home' + (drop === 'all' ? ' is-drop' : '')}
     onDragOver={(event) => dragOver(event, null)}
@@ -540,7 +704,7 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
         {link('uncategorized', scopes.uncategorized, 'uncategorized', data.papers.filter((paper) => !paper.category).length)}
       </nav>
       <div className="pl-section-heading"><span>分类</span><button type="button" className="pl-icon" title="新建分类"
-        aria-label="新建分类" onClick={() => showEditor({ kind: 'category', parent: active?.id || null })}><Icon name="plus" /></button></div>
+        aria-label="新建分类" onClick={() => showEditor({ kind: 'category', parent: active?.id || null })}><Icon name="folderPlus" /></button></div>
       <nav className="pl-folders" aria-label="自定义分类">
         {categories.filter((item) => !isHidden(item)).map((item) => link(item.id, item.name,
           'folder', categoryCount(item), item.depth, item.hasChildren))}
@@ -549,7 +713,7 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
         <div className="pl-sidebar-actions" role="group" aria-label="导入论文">
           <button type="button" onClick={onOpenFile}>打开 PDF</button>
           <button type="button" className="pl-primary" disabled={Boolean(busy)} onClick={() => importFiles(null, active?.id || null)}>
-            <Icon name="plus" />{busy === 'import' ? '导入中…' : '从文件夹导入'}
+            <Icon name="folderOpen" />{busy === 'import' ? '导入中…' : '从文件夹导入'}
           </button>
         </div>
         <div className="pl-sidebar-utility">
@@ -576,11 +740,16 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
           <option value="recent">最近打开</option><option value="title">标题顺序</option><option value="year">年份倒序</option>
         </select>
         <div className="pl-views" role="group" aria-label="论文显示方式">
-          <button type="button" className="pl-icon" aria-label="切换列表和表格"
-            title={'切换到' + ((gallery ? layout : nextLayout) === 'list' ? '列表' : '表格')} onClick={toggleLayout}>
-            <Icon name={layout} />
+          <button type="button" className="pl-view-button" aria-pressed={!gallery && layout === 'list'}
+            onClick={(event) => selectViewMode('list', !event.detail)}>
+            <Icon name="list" />列表
           </button>
-          <button type="button" className="pl-view-button" aria-pressed={gallery} title="平铺显示论文首页" onClick={() => showGallery(!gallery)}>
+          <button type="button" className="pl-view-button" aria-pressed={!gallery && layout === 'table'}
+            onClick={(event) => selectViewMode('table', !event.detail)}>
+            <Icon name="table" />表格
+          </button>
+          <button type="button" className="pl-view-button" aria-pressed={gallery} title="平铺显示论文首页"
+            onClick={(event) => selectViewMode('gallery', !event.detail)}>
             <Icon name="gallery" />视图
           </button>
         </div>
@@ -595,14 +764,43 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
           <button type="button" disabled={Boolean(busy)} onClick={() => showEditor({ kind: 'move', ids: picked })}>分类到…</button>
           {active && <button type="button" disabled={Boolean(busy)} onClick={removeFromCategory}>移出分类</button>}</>}
       </div>}
-      <div className="pl-results" ref={resultsRef}>
-        {visible.length === 0 ? <div className="pl-empty">
-          <div><Icon name="paper" /></div>
-          <strong>{busy === 'loading' ? '正在读取论文库…' : query || tag || status ? '没有匹配的论文' : '这里还没有论文'}</strong>
-          {!busy && !query && !tag && !status && <p>将 PDF 拖到这里收录{active ? '到当前分类' : ''}。</p>}
-        </div> : gallery ? <ul className="pl-gallery" style={{ '--pl-cover-width': coverWidth + 'px' }}>
+      <div className="pl-results" ref={resultsRef} tabIndex={-1}>
+        {busy === 'loading' && visible.length === 0 ? (
+          <EmptySkeleton variant="library" rows={5} label="正在读取论文库…" />
+        ) : loadFailed && visible.length === 0 ? (
+          <EmptyState
+            size="page"
+            icon="alert"
+            title="无法读取论文库"
+            description="本地文献库暂时无法访问，原有论文文件未受影响。"
+            primaryAction={{ label: '重试', variant: 'secondary', retry: true, spinning: busy === 'loading', onClick: loadPaperLibrary }}
+          />
+        ) : visible.length === 0 ? (query || tag || status ? (
+          <EmptyState
+            size="page"
+            wireframe="search"
+            live
+            title={query.trim() ? '没有匹配「' + query.trim() + '」的论文' : '当前筛选下没有论文'}
+            description="检查关键词拼写，或清除筛选条件查看全部论文。"
+            primaryAction={{
+              label: query.trim() && !tag && !status ? '清除搜索' : '清除筛选',
+              variant: 'secondary',
+              onClick: () => { setQuery(''); setTag(''); setStatus(''); },
+            }}
+            secondaryAction={active ? { label: '搜索全部论文', variant: 'ghost', onClick: () => selectScope('all') } : undefined}
+          />
+        ) : (
+          <EmptyState
+            size="page"
+            wireframe="library"
+            title={active ? '此分类还没有论文' : '还没有收录论文'}
+            description={'将 PDF 拖到这里，或点击下方按钮导入第一篇文献' + (active ? '到当前分类' : '') + '。'}
+            primaryAction={{ label: '导入 PDF', onClick: onOpenFile }}
+            secondaryAction={{ label: '导入文件夹', variant: 'secondary', onClick: () => importFiles(null, active?.id || null) }}
+          />
+        )) : gallery ? <ul className="pl-gallery" style={{ '--pl-cover-width': coverWidth + 'px' }}>
           {visible.map((paper) => <li key={paper.id} draggable onDragStart={(event) => startDrag(event, paper)}>
-            <PaperCover paper={paper} open={onOpen} />
+            <PaperCover paper={paper} open={onOpen} onOpenCover={onOpenCover} onCoverReady={onCoverReady} />
             <div className="pl-gallery-caption">
               {openTitle(paper)}
               <div className="pl-gallery-actions">
@@ -649,7 +847,7 @@ export function PaperLibrary({ onOpen, onOpenFile, onSettings, version, readerEr
       </div>
     </section>
     {editor && <LibraryDialog key={editor.kind + (editor.paper?.id || '')} tone={tone} busy={Boolean(busy)}
-      details={editor.kind === 'details'} issue={error} submit={submit}
+      details={editor.kind === 'details'} origin={editor.origin} issue={error} submit={submit}
       cancel={() => { setEditor(null); setError(''); }}
       title={editor.kind === 'details' ? '论文详情' : editor.kind === 'move' ? '分类论文' : editor.kind === 'remove' ? '删除分类'
         : editor.category ? '编辑分类' : '新建分类'}

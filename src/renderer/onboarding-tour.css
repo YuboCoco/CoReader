@@ -1,0 +1,177 @@
+/* First-run interactive onboarding tour overlay */
+
+.elr-tour-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 420;
+  pointer-events: none;
+}
+
+.elr-tour-spotlight {
+  position: fixed;
+  inset: 0 auto auto 0;
+  border-radius: var(--radius-md, 12px);
+  border: 2px solid var(--dsw-alias-brand-primary);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--dsw-alias-brand-primary) 24%, transparent),
+    0 0 0 9999px rgb(10 16 28 / .34);
+  pointer-events: none;
+  transition:
+    transform 260ms var(--ease-out-strong, cubic-bezier(.22, 1, .36, 1)),
+    width 260ms var(--ease-out-strong, cubic-bezier(.22, 1, .36, 1)),
+    height 260ms var(--ease-out-strong, cubic-bezier(.22, 1, .36, 1));
+}
+
+.elr-tour-card {
+  position: fixed;
+  inset: 0 auto auto 0;
+  width: min(332px, calc(100vw - 32px));
+  padding: 16px;
+  box-sizing: border-box;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--radius-lg, 16px);
+  background: var(--dsw-alias-bg-overlay);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 14px 36px rgb(8 15 28 / .26);
+  pointer-events: auto;
+  display: grid;
+  gap: 8px;
+  transition: transform 260ms var(--ease-out-strong, cubic-bezier(.22, 1, .36, 1));
+  animation: elr-tour-in 240ms var(--ease-out, cubic-bezier(0, 0, .58, 1)) both;
+}
+
+@keyframes elr-tour-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.elr-tour-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.elr-tour-step {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--dsw-alias-brand-primary);
+}
+
+.elr-tour-skip {
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs, 4px);
+  cursor: pointer;
+}
+
+.elr-tour-skip:hover {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.elr-tour-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--dsw-alias-label-primary);
+}
+
+.elr-tour-body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.elr-tour-status {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.elr-tour-status.is-done {
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-state-success-primary);
+  font-weight: 600;
+}
+
+.elr-tour-quick {
+  display: flex;
+  gap: 8px;
+}
+
+.elr-tour-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.elr-tour-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.elr-tour-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-border-l2);
+}
+
+.elr-tour-dots span[data-done="true"] {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.elr-tour-dots span[data-active="true"] {
+  width: 16px;
+  background: var(--dsw-alias-brand-primary);
+}
+
+.elr-tour-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.elr-tour-btn {
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.elr-tour-btn:hover {
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.elr-tour-btn.primary {
+  border-color: var(--dsw-alias-brand-primary);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-brand-primary);
+  font-weight: 650;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .elr-tour-spotlight,
+  .elr-tour-card {
+    transition: none;
+    animation: none;
+  }
+}

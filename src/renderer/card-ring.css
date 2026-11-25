@@ -1,0 +1,39 @@
+/* Outside-view card ring stage inside Account Connections */
+
+.connection-ring-stage {
+  position: relative;
+  width: 100%;
+  height: clamp(270px, 44vh, 340px);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-overlay);
+  user-select: none;
+  touch-action: pan-y;
+}
+
+.connection-ring-stage:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+
+.connection-ring-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+
+.connection-ring-canvas:active {
+  cursor: grabbing;
+}
+
+.connection-ring-fallback {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 18px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  text-align: center;
+}

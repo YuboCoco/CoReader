@@ -2,7 +2,7 @@
 .subscription-content { padding: 0 20px 18px; }
 .subscription-content h3 { margin: 16px 0 8px; font-size: 13px; color: var(--dsw-alias-label-secondary); font-weight: 600; }
 .subscription-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: start; }
-.subscription-card { min-width: 0; border: 1px solid var(--dsw-alias-border-l1); border-radius: 9px; background: var(--dsw-alias-bg-layer-1); }
+.subscription-card { min-width: 0; border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--radius-sm); background: var(--dsw-alias-bg-layer-1); }
 .subscription-card-wide { grid-column: 1 / -1; }
 .subscription-card summary { display: grid; grid-template-columns: auto auto 1fr 8px; align-items: center; gap: 7px; padding: 10px 12px; cursor: pointer; list-style: none; border-radius: inherit; }
 .subscription-card summary::-webkit-details-marker { display: none; }

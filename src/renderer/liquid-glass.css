@@ -1,0 +1,161 @@
+
+/* The renderer's legacy stylesheet is injected after the app styles. Match
+   these material properties specifically without changing its geometry. */
+html:root [data-elr-liquid][data-elr-liquid-ink] {
+  --dsw-alias-label-primary: var(--elr-liquid-primary);
+  --dsw-alias-label-secondary: var(--elr-liquid-secondary);
+  --elr-frosted-background: var(--elr-liquid-background);
+  --elr-frosted-filter: var(--elr-liquid-filter);
+  --elr-frosted-rim: var(--elr-liquid-shadow);
+  background: var(--elr-liquid-background);
+  backdrop-filter: var(--elr-liquid-filter);
+  box-shadow: var(--elr-liquid-shadow);
+  color: var(--elr-liquid-primary);
+}
+
+html:root :is(.elr-sec[data-elr-floating-card], .elr-drag-ghost)[data-elr-liquid]::after {
+  box-shadow: none;
+}
+
+html:root .elr-reading-round[data-elr-liquid]:is(:active, [aria-expanded="true"]) {
+  box-shadow: var(--elr-liquid-shadow), inset 0 0 0 28px color-mix(in srgb, currentColor 15%, transparent);
+}
+
+html:root [data-elr-liquid][data-elr-liquid-ink][data-elr-liquid-strong-labels] {
+  --dsw-alias-label-secondary: var(--elr-liquid-primary);
+}
+
+[data-elr-liquid="light"][data-elr-liquid-ink="light"] {
+  --dsw-alias-bg-layer-1: #353d48;
+  --dsw-alias-bg-layer-2: #2c3440;
+  --dsw-alias-bg-base: #303844;
+  --dsw-alias-bg-overlay: #303844;
+  --dsw-alias-border-l1: #556170;
+  --dsw-alias-border-l2: #7a8794;
+  --dsw-alias-brand-primary: #aeccea;
+  --dsw-alias-state-error-primary: #f4afb2;
+  --dsw-alias-state-success-primary: #a5d4b5;
+  --dsw-alias-state-warn-primary: #e6c28c;
+  --elr-card-content-bg: #303844;
+}
+
+[data-elr-liquid-ink="light"] .elr-popup-result-box,
+[data-elr-liquid-ink="light"] .elr-popup-textarea {
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 82%, transparent);
+}
+
+html:root :is(.elr-reader-capsule, .elr-pdf-outline, .elr-parallel-actions)[data-elr-liquid] {
+  transition-property: --elr-liquid-density, --elr-liquid-protection, --elr-liquid-brightness,
+    --elr-liquid-saturation, --elr-liquid-base, --elr-liquid-primary, --elr-liquid-secondary, --elr-liquid-hover;
+  transition-duration: var(--duration-sm), var(--duration-sm), var(--duration-sm), var(--duration-sm),
+    var(--duration-sm), var(--duration-sm), var(--duration-sm), var(--duration-feedback);
+  transition-timing-function: var(--ease-in-out), var(--ease-in-out), var(--ease-in-out), var(--ease-in-out),
+    var(--ease-in-out), var(--ease-in-out), var(--ease-in-out), var(--ease-out);
+}
+
+[data-elr-liquid] :where(.elr-reader-page, .elr-find-count, .elr-popup-title, .desktop-update > strong) {
+  mix-blend-mode: var(--elr-liquid-ink-blend);
+}
+
+:where(.elr-reader-capsule, .elr-selection-tools, .elr-reading-round, .elr-find, .elr-popup, .elr-note-bubble)[data-elr-liquid]
+  :where(button:not(:disabled, :focus-visible, [aria-pressed="true"], .elr-selection-swatch, .is-destructive) svg) {
+  color: var(--elr-liquid-icon);
+  opacity: var(--elr-liquid-icon-opacity);
+  mix-blend-mode: var(--elr-liquid-ink-blend);
+}
+
+html:root :is(.elr-reader-capsule, .elr-selection-tools, .elr-pdf-outline, .elr-reader-options, .elr-zoom-menu,
+    .elr-card-menu, .elr-menu, .elr-agent-model-menu, .elr-parallel-actions)[data-elr-liquid]
+  :is(button, .elr-card-menu-row):hover:not(:disabled, [aria-pressed="true"], [aria-selected="true"], .elr-selection-swatch) {
+  background-color: var(--elr-liquid-row-hover);
+  box-shadow: inset 0 0 0 .5px var(--elr-liquid-row-outline);
+}
+html:root :is(.elr-reader-capsule, .elr-selection-tools, .elr-pdf-outline, .elr-reader-options, .elr-zoom-menu,
+    .elr-card-menu, .elr-menu, .elr-agent-model-menu, .elr-parallel-actions)[data-elr-liquid]
+  :is(button[aria-pressed="true"], button[aria-selected="true"], button[aria-current="location"]):not(:disabled) {
+  background-color: var(--elr-liquid-row-selected);
+  box-shadow: inset 0 0 0 .5px var(--elr-liquid-row-outline);
+}
+
+html:root .elr-term-popover[data-elr-liquid]::before {
+  background: color-mix(in srgb, var(--elr-liquid-base) 62%, var(--dsw-alias-bg-layer-1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:root :is(.elr-reader-capsule, .elr-pdf-outline, .elr-parallel-actions)[data-elr-liquid] { transition: none; }
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+  html:root [data-elr-liquid][data-elr-liquid-ink] {
+    --elr-liquid-background: var(--elr-liquid-base);
+    --elr-liquid-filter: none;
+    --elr-liquid-ink-blend: normal;
+  }
+  html:root [data-elr-liquid][data-elr-liquid-ink]::backdrop { backdrop-filter: none; }
+}
+
+@media (forced-colors: active) {
+  html:root [data-elr-liquid][data-elr-liquid-ink] {
+    --elr-liquid-primary: CanvasText;
+    --elr-liquid-secondary: CanvasText;
+    --elr-liquid-icon: CanvasText;
+    --elr-liquid-icon-opacity: 1;
+    --elr-liquid-background: Canvas;
+    --elr-liquid-shadow: none;
+    border-color: CanvasText;
+  }
+}
+
+.settings .elr-glass-switch {
+  appearance: none;
+  display: grid;
+  align-items: center;
+  justify-self: start;
+  width: 36px;
+  min-height: 0;
+  height: 20px;
+  margin: 0;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  cursor: pointer;
+}
+
+.elr-glass-switch::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-secondary);
+}
+
+.settings .elr-glass-switch:checked {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-brand-primary);
+}
+
+.elr-glass-switch:checked::before {
+  justify-self: end;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+@media (forced-colors: active) {
+  .settings .elr-glass-switch {
+    forced-color-adjust: none;
+    border-color: CanvasText;
+    background: Canvas;
+  }
+  .elr-glass-switch::before { background: CanvasText; }
+  .settings .elr-glass-switch:checked { border-color: Highlight; background: Highlight; }
+  .elr-glass-switch:checked::before { background: HighlightText; }
+  .settings .elr-glass-switch:focus-visible { outline-color: Highlight; }
+}
+
+.elr-glass-slider {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4ch;
+  gap: 8px;
+  align-items: center;
+}
+.elr-glass-slider input { margin: 0; accent-color: var(--dsw-alias-brand-primary); }
+.elr-glass-slider output { text-align: end; font-variant-numeric: tabular-nums; }

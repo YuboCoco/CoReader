@@ -2,10 +2,36 @@
 // Native Windows storage and model requests are provided by desktop-runtime.js.
 import React from 'react';
 import { createPortal } from 'react-dom';
+import ChevronDown from 'kubai-icons-react/icons/chevron-down';
+import ChevronLeft from 'kubai-icons-react/icons/chevron-left';
+import ChevronRight from 'kubai-icons-react/icons/chevron-right';
+import ChevronUp from 'kubai-icons-react/icons/chevron-up';
+import Languages from 'kubai-icons-react/icons/languages';
+import Scan from 'kubai-icons-react/icons/scan';
+import CircleHelp from 'kubai-icons-react/duotone/icons/circle-help';
+import Copy from 'kubai-icons-react/duotone/icons/copy';
+import FileText from 'kubai-icons-react/duotone/icons/file-text';
+import Home from 'kubai-icons-react/duotone/icons/home';
+import Info from 'kubai-icons-react/duotone/icons/info';
+import LayoutDashboard from 'kubai-icons-react/duotone/icons/layout-dashboard';
+import PanelBottom from 'kubai-icons-react/duotone/icons/panel-bottom';
+import Play from 'kubai-icons-react/duotone/icons/play';
+import Quote from 'kubai-icons-react/duotone/icons/quote';
+import RotateCw from 'kubai-icons-react/duotone/icons/rotate-cw';
+import Search from 'kubai-icons-react/duotone/icons/search';
+import Settings from 'kubai-icons-react/duotone/icons/settings';
+import Sidebar from 'kubai-icons-react/duotone/icons/sidebar';
+import TextSize from 'kubai-icons-react/duotone/icons/text-size';
+import ZoomIn from 'kubai-icons-react/duotone/icons/zoom-in';
+import { EmptyState } from './empty-state.jsx';
+import ZoomOut from 'kubai-icons-react/duotone/icons/zoom-out';
 import * as desktop from './desktop-runtime.js';
 import { AgentPanel } from './agent-panel.jsx';
 import { PaperLibrary } from './paper-library.jsx';
 import { FigurePicker } from './figure-picker.jsx';
+import { LayoutIcon } from './layout-icons.jsx';
+import { animateComparePane, animateSelectionSurface, boxTransform, comparePaneCopy, coverVisual,
+  fittedImageRect, motionDuration, motionEasing, motionTiming, reduceMotion, scrollWithMotion } from './surface-motion.js';
 import { OriginalPdfMediaAction, PdfOutline, PdfSplitHandle, PdfTranslations,
   useOriginalPdfMedia, usePdfReading } from './pdf-reading.jsx';
 import { blockForAnchor, equationNumber, paragraphBlocks, paragraphTermContext, readingLines, termContextWindow,
@@ -19,8 +45,8 @@ const h = React.createElement;
 const MAX_SELECTION = 6000;
 const PAGE_THEMES = ['default', 'paper', 'eye', 'ivory', 'mist', 'sage', 'linen'];
 const UI_TONES = {
-  light: ['blue', 'green', 'amber', 'pink'],
-  dark: ['navy', 'ink', 'forest', 'plum', 'ember'],
+  light: ['blue', 'green', 'amber', 'pink', 'prism-light'],
+  dark: ['navy', 'ink', 'forest', 'plum', 'ember', 'prism-dark'],
   duo: ['duo-blue', 'duo-orange', 'duo-green', 'duo-purple'],
 };
 const FIGURE_SORT_ORDERS = ['document-asc', 'document-desc', 'time-asc', 'time-desc'];
@@ -46,9 +72,6 @@ const SIDE_MIN = SIDE_CARD_MIN_W + CARD_GRID_PADDING * 2 + 16;
 const SIDE_DEFAULT = SIDE_MIN;
 const SIDE_DUAL_MIN = SIDE_CARD_MIN_W * 2 + CARD_GRID_PADDING * 2 + CARD_GRID_GAP + 16;
 const SIDE_READER_SHARE = .3;
-const CARD_FOLD_DURATION = 420;
-const CARD_FOLD_EASE = 'cubic-bezier(.22,.7,.2,1)';
-const CARD_FOLD_TRANSITION = CARD_FOLD_DURATION + 'ms ' + CARD_FOLD_EASE;
 const CARD_FONT_MIN = 11;
 const CARD_FONT_DEFAULT = 13;
 const CARD_FONT_MAX = 24;
@@ -138,13 +161,6 @@ function sameHighlightLocation(first, second) {
 const SELECTION_TOOL_WIDTH = 274;
 const SELECTION_TOOL_HEIGHT = 42;
 const SELECTION_TOOL_GAP = 8;
-const SELECTION_TOOL_ICONS = {
-  note: 'M6 3h8l4 4v14H6z M14 3v5h4 M9 12h6 M9 16h6',
-  translate: 'M3 5h11 M8.5 3v2 M5 8c1 4 4 6 7 8 M12 5c-.5 5-3.5 8.5-8 11 M13 21l4.5-10 4.5 10 M14.5 18h6',
-  term: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0z M9 9a3 3 0 0 1 6 0c0 2-3 2-3 5 M12 18h.01',
-  agent: 'M4 5h6v6c0 4-2 6-6 7v-3c2-1 3-2 3-4H4z M14 5h6v6c0 4-2 6-6 7v-3c2-1 3-2 3-4h-3z',
-};
-
 const { readStore, writeStore, reviveStoredFile, getStoredFile, deleteStoredFile, openPaper, fetchReader, postReader, savePosition } = desktop;
 const fileCache = new Map();
 
@@ -334,6 +350,7 @@ const DEFAULT_SHARED = {
   // below) and gives the toolbar a real three-way choice.
   spreadMode: 0,
   capsulePosition: 'top',
+  glassEnabled: true, glassTintLight: 1, glassTintDark: 1,
   theme: 'default',
   // (v40) Overall UI tone. `theme` above only recolours the PAPER (the page
   // itself), which is a reading preference; this one tints the reader's own
@@ -561,6 +578,10 @@ const writeShared = (patch) => {
 // keys or forcing a reload of the reading surface.
 const readReaderSettings = () => readShared();
 const writeReaderSettings = (patch) => writeShared(patch);
+const subscribeReaderSettings = (listener) => {
+  sharedListeners.add(listener);
+  return () => sharedListeners.delete(listener);
+};
 scheduleSnapshot();
 function useShared(key) {
   const [, force] = React.useReducer((n) => n + 1, 0);
@@ -673,9 +694,9 @@ const CSS = [
   // (v15 #4) Both columns are independent scroll roots. `min-height: 0` +
   // `overflow: hidden` on the flex parent lets each column own its scrollbar.
   '.elr-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }',
-  '.elr-side { --elr-sidebar-available: calc(100% - min(' + SIDE_READER_MIN_W + 'px, ' + (SIDE_READER_SHARE * 100) + '%) - ' + PANE_DIVIDER_SIZE + 'px); display: flex; flex-direction: column; box-sizing: border-box; min-width: min(' + SIDE_MIN + 'px, var(--elr-sidebar-available)); max-width: min(70%, var(--elr-sidebar-available)); min-height: 0; overflow: hidden; overscroll-behavior: contain; transition: transform ' + CARD_FOLD_TRANSITION + '; }',
+  '.elr-side { --elr-sidebar-available: calc(100% - min(' + SIDE_READER_MIN_W + 'px, ' + (SIDE_READER_SHARE * 100) + '%) - ' + PANE_DIVIDER_SIZE + 'px); display: flex; flex-direction: column; box-sizing: border-box; min-width: min(' + SIDE_MIN + 'px, var(--elr-sidebar-available)); max-width: min(70%, var(--elr-sidebar-available)); min-height: 0; overflow: hidden; overscroll-behavior: contain; transition: transform var(--duration-md) var(--ease-out); }',
   '.elr-side[data-dual-columns] { min-width: min(' + SIDE_DUAL_MIN + 'px, var(--elr-sidebar-available)); max-width: var(--elr-sidebar-available); }',
-  '.elr-side.is-stowed { position: absolute; inset: 0 0 0 auto; transform: translateX(100%); pointer-events: none; }',
+  '.elr-side.is-stowed { position: absolute; inset: 0 0 0 auto; transform: translateX(100%); transition: transform var(--duration-exit-md) var(--ease-in); pointer-events: none; }',
   '.elr-body.dock-bottom .elr-side.is-stowed { inset: auto 0 0; transform: translateY(100%); }',
   // (v25 #3) The analysis column always stacks its tabs header above its body,
   // including in the horizontal bottom dock where `side` itself is a row.
@@ -707,14 +728,14 @@ const CSS = [
   // A fixed-width track with a grip that grows along the track.
   '.elr-divider { box-sizing: border-box; flex: 0 0 ' + PANE_DIVIDER_SIZE + 'px; position: relative; display: grid; place-items: center; cursor: col-resize; touch-action: none; user-select: none; background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 78%, transparent); border-inline: 1px solid var(--dsw-alias-border-l1); }',
   '.elr-divider::before { content: ""; position: absolute; inset: 0 -5px; }',
-  '.elr-divider::after { content: ""; width: 4px; height: 56px; max-height: 100%; border-radius: 999px; background: var(--dsw-alias-brand-primary); opacity: .68; transform: scaleY(.46); transition: transform 200ms cubic-bezier(.25,.65,.3,1), opacity 140ms ease-out; pointer-events: none; }',
+  '.elr-divider::after { content: ""; width: 4px; height: 56px; max-height: 100%; border-radius: 999px; background: var(--dsw-alias-brand-primary); opacity: .68; transform: scaleY(.46); transition: transform var(--duration-feedback) var(--ease-out), opacity var(--duration-feedback) var(--ease-out); pointer-events: none; }',
   '.elr-divider:is(:hover,.active,:focus-visible)::after { transform: scaleY(1); opacity: 1; }',
   '.elr-divider.axis-row { cursor: row-resize; border-inline: 0; border-block: 1px solid var(--dsw-alias-border-l1); }',
   '.elr-divider.axis-row::before { inset: -5px 0; }',
   '.elr-divider.axis-row::after { width: 56px; height: 4px; max-width: 100%; transform: scaleX(.46); }',
   '.elr-divider.axis-row:is(:hover,.active,:focus-visible)::after { transform: scaleX(1); }',
   '.elr-divider:focus-visible { outline: 1px solid var(--dsw-alias-brand-primary); outline-offset: -1px; }',
-  '@media (prefers-reduced-motion: reduce) { .elr-divider::after { transition: none; } }',
+  '@media (prefers-reduced-motion: reduce) { .elr-divider::after { transition-property: opacity; } }',
   '.elr-body.is-resizing-panes { user-select: none; }',
   '.elr-body.is-resizing-panes .elr-feature-column > .elr-sec { transition: none; }',
   '.elr-resizer { z-index: 6; }',
@@ -728,7 +749,7 @@ const CSS = [
   // 功能栏 only added empty space under a stuck list, and shrinking it left the
   // list clipped with no scrollbar. Now the card hands its own height down to the
   // list, which scrolls inside whatever room it is given.
-  '.elr-sec { position: relative; flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); overflow: hidden; transition: border-color .12s ease, box-shadow .12s ease; }',
+  '.elr-sec { position: relative; flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); overflow: hidden; transition: border-color var(--duration-feedback) var(--ease-out), box-shadow var(--duration-feedback) var(--ease-out); }',
   // (v37) In the right dock the cards SHARE the column height instead of each
   // sitting at its natural height: `flex: 1 1 auto` lets them grow into a taller
   // 功能栏 and shrink into a shorter one, and `min-height: 84px` stops a card from
@@ -761,11 +782,22 @@ const CSS = [
   '.elr-card-dock-target > .elr-side-body { background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, transparent); }',
   // (v31 #2) The floating clone that follows the pointer while reordering.
   // It is portalled to <body>, positioned fixed, and never receives events.
-  '.elr-drag-ghost { position: fixed; inset: 0 auto auto 0; z-index: 200; pointer-events: none; box-sizing: border-box; display: grid; place-items: center; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 15px; color: var(--dsw-alias-label-primary); overflow: hidden; }',
+  '.elr-drag-ghost { position: fixed; inset: 0 auto auto 0; z-index: 200; pointer-events: none; box-sizing: border-box; display: grid; place-items: center; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--radius-lg, 16px); color: var(--dsw-alias-label-primary); overflow: hidden; will-change: transform; }',
+  '.elr-drag-ghost.is-lifting { animation: elr-drag-lift-pop 160ms cubic-bezier(.34, 1.45, .64, 1) both; }',
+  '@keyframes elr-drag-lift-pop { from { opacity: .82; filter: drop-shadow(0 2px 4px rgb(10 18 30 / .10)); } to { opacity: 1; filter: drop-shadow(0 10px 26px rgb(10 18 30 / .22)); } }',
   '.elr-drag-ghost-label { max-width: 100%; max-height: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(13px + var(--elr-card-font-adjust, 0px)); font-weight: 650; }',
   '.elr-drag-ghost.is-vertical .elr-drag-ghost-label { writing-mode: vertical-rl; }',
-  // While a card is in flight the other cards offer themselves as targets.
-  '.elr-side-top.drag-active .elr-sec:not(.dragging):not(.over) { border-style: dashed; }',
+  'body.elr-card-dragging, body.elr-card-dragging * { cursor: grabbing !important; }',
+  // Faint 15% text-color drop hint line that grows from its middle and glides between gaps.
+  '.elr-drop-line { position: fixed; inset: 0 auto auto 0; z-index: 195; pointer-events: none; border-radius: 999px; background: color-mix(in srgb, var(--dsw-alias-label-primary) 15%, transparent); transform-origin: center center; transition: transform 150ms cubic-bezier(.22, 1, .36, 1), width 150ms cubic-bezier(.22, 1, .36, 1), height 150ms cubic-bezier(.22, 1, .36, 1); }',
+  '.elr-drop-line.is-horizontal { animation: elr-drop-line-grow-x 160ms cubic-bezier(.22, 1, .36, 1) both; }',
+  '.elr-drop-line.is-vertical { animation: elr-drop-line-grow-y 160ms cubic-bezier(.22, 1, .36, 1) both; }',
+  '@keyframes elr-drop-line-grow-x { from { scale: 0 1; opacity: 0; } to { scale: 1 1; opacity: 1; } }',
+  '@keyframes elr-drop-line-grow-y { from { scale: 1 0; opacity: 0; } to { scale: 1 1; opacity: 1; } }',
+  // Ripple avoidance on sibling cards while dragging (transform-only, quick spring).
+  '.elr-side-top.drag-active .elr-sec[data-elr-docked-card]:not(.dragging) { will-change: transform; transition: transform 250ms var(--elr-reorder-spring, cubic-bezier(.22, 1.12, .36, 1)) var(--elr-ripple-delay, 0ms), border-color var(--duration-feedback) var(--ease-out), box-shadow var(--duration-feedback) var(--ease-out); transform: translate3d(var(--elr-ripple-x, 0px), var(--elr-ripple-y, 0px), 0); }',
+  '@supports (animation-timing-function: linear(0, 1)) { :root { --elr-reorder-spring: linear(0, .42, .88, 1.03, 1.04, 1.01, 1); } }',
+  '@media (prefers-reduced-motion: reduce) { .elr-drag-ghost.is-lifting, .elr-drop-line.is-horizontal, .elr-drop-line.is-vertical { animation: none; } .elr-drop-line { transition: none; } .elr-side-top.drag-active .elr-sec[data-elr-docked-card]:not(.dragging) { transition: none; transform: none; } }',
   // (v17 #2) `min-height: 0` instead of a hard 120px: a fixed minimum made the
   // analysis/translation column overflow the side panel (which clips) instead
   // of letting `.elr-out` scroll on its own. `flex-basis: 0` is what makes the
@@ -816,11 +848,10 @@ const CSS = [
   '.elr-sel-card { background: transparent; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }',
   // Let the card frame provide a single surface behind the title and content.
   '.elr-function-head { flex: 0 0 54px; height: 54px; min-height: 54px; box-sizing: border-box; display: flex; color: var(--dsw-alias-label-primary); font-size: calc(13px + var(--elr-card-font-adjust, 0px)); font-weight: 650; }',
-  '.elr-card-toggle { flex: 1 1 auto; min-width: 0; min-height: 0; display: grid; place-items: center; padding: 4px; border: 0; border-radius: 14px; background: transparent; color: inherit; font: inherit; text-align: center; cursor: grab; user-select: none; touch-action: none; }',
+  '.elr-card-toggle { flex: 1 1 auto; min-width: 0; min-height: 0; display: grid; place-items: center; padding: 4px; border: 0; border-radius: 14px; background: transparent; color: inherit; font: inherit; text-align: center; cursor: pointer; user-select: none; touch-action: none; }',
   '.elr-card-toggle:focus-visible { outline: 1px solid var(--dsw-alias-brand-primary); outline-offset: -1px; }',
   '.elr-card-label { max-width: 100%; max-height: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
-  '.elr-card-toggle:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, transparent); }',
-  '.elr-card-toggle:active { cursor: grabbing; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 11%, transparent); }',
+  '.elr-card-toggle:active { cursor: grabbing; }',
   '.elr-card-content { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; }',
   '.elr-selection-content { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; padding: var(--elr-card-content-gap) var(--elr-card-inset) var(--elr-card-inset) var(--elr-card-leading); overflow: hidden auto; }',
   '.elr-floating-card .elr-selection-content { overscroll-behavior: contain; }',
@@ -1221,7 +1252,7 @@ const CSS = [
   '.elr-card-rz { position: absolute; top: 0; bottom: 0; width: 7px; cursor: col-resize; background: transparent; touch-action: none; z-index: 3; }',
   '.elr-card-rz.is-right { right: 0; }',
   '.elr-card-rz.is-left { left: 0; }',
-  '.elr-card-rz::before { content: ""; position: absolute; top: 0; bottom: 0; width: 1px; background: var(--dsw-alias-border-l1); opacity: 0; transition: opacity .12s ease; }',
+  '.elr-card-rz::before { content: ""; position: absolute; top: 0; bottom: 0; width: 1px; background: var(--dsw-alias-border-l1); opacity: 0; transition: opacity var(--duration-feedback) var(--ease-out); }',
   '.elr-card-rz.is-right::before { right: 0; }',
   '.elr-card-rz.is-left::before { left: 0; }',
   '.elr-card-rz:hover::before, .elr-card-rz:active::before { opacity: 1; background: var(--dsw-alias-brand-primary); }',
@@ -1337,13 +1368,13 @@ const CSS = [
   // Apple-inspired desktop surface.
   '.elr-view { font-family: inherit; letter-spacing: -.005em; background: var(--dsw-alias-bg-base); }',
   '.elr-head { min-height: 48px; box-sizing: border-box; padding: 8px 14px; background: var(--dsw-alias-bg-layer-1); border-bottom: 1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 72%, transparent); box-shadow: 0 1px 0 rgba(255,255,255,.32), 0 4px 16px rgba(20,28,45,.035); backdrop-filter: saturate(150%) blur(18px); -webkit-backdrop-filter: saturate(150%) blur(18px); }',
-  '.elr-head .elr-select, .elr-head .elr-btn, .elr-head .elr-icon-btn { min-height: 30px; border-radius: 9px; border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 72%, transparent); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 80%, transparent); transition: background-color 140ms ease, border-color 140ms ease, transform 100ms ease, box-shadow 140ms ease; }',
+  '.elr-head .elr-select, .elr-head .elr-btn, .elr-head .elr-icon-btn { min-height: 30px; border-radius: 9px; border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 72%, transparent); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 80%, transparent); transition: background-color var(--duration-feedback) var(--ease-out), border-color var(--duration-feedback) var(--ease-out), transform var(--duration-feedback) var(--ease-out), box-shadow var(--duration-feedback) var(--ease-out); }',
   '.elr-head .elr-select:hover, .elr-head .elr-btn:hover:not(:disabled), .elr-head .elr-icon-btn:hover { background: var(--dsw-alias-bg-layer-1); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 42%, var(--dsw-alias-border-l2)); box-shadow: 0 2px 8px rgba(20,28,45,.07); }',
   '.elr-head .elr-btn:active:not(:disabled), .elr-head .elr-icon-btn:active { transform: scale(.97); }',
   '.elr-head .elr-btn.active { color: var(--dsw-alias-brand-primary); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 64%, transparent); }',
   '.elr-body, .elr-main, .elr-side { background: var(--dsw-alias-bg-base); }',
   '.elr-toolbar { min-height: 44px; box-sizing: border-box; padding: 7px 12px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 75%, transparent); backdrop-filter: saturate(150%) blur(16px); -webkit-backdrop-filter: saturate(150%) blur(16px); }',
-  '.elr-toolbar .elr-btn, .elr-toolbar .elr-select, .elr-toolbar .elr-icon-btn { min-height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 76%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 65%, transparent); transition: background-color 140ms ease, border-color 140ms ease, transform 100ms ease, box-shadow 140ms ease; }',
+  '.elr-toolbar .elr-btn, .elr-toolbar .elr-select, .elr-toolbar .elr-icon-btn { min-height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 76%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 65%, transparent); transition: background-color var(--duration-feedback) var(--ease-out), border-color var(--duration-feedback) var(--ease-out), transform var(--duration-feedback) var(--ease-out), box-shadow var(--duration-feedback) var(--ease-out); }',
   '.elr-toolbar .elr-btn:hover:not(:disabled), .elr-toolbar .elr-select:hover, .elr-toolbar .elr-icon-btn:hover { background: var(--dsw-alias-bg-layer-1); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, var(--dsw-alias-border-l2)); box-shadow: 0 2px 9px rgba(20,28,45,.06); }',
   '.elr-toolbar .elr-btn:active:not(:disabled), .elr-toolbar .elr-icon-btn:active { transform: scale(.97); }',
   '.elr-toolbar { position: relative; z-index: 200; isolation: isolate; }',
@@ -1356,11 +1387,11 @@ const CSS = [
   '.elr-side-body { gap: 10px; padding: 0 11px 11px; }',
   '.elr-sec { border-color: color-mix(in srgb, var(--dsw-alias-border-l1) 83%, transparent); border-radius: 14px; background: var(--dsw-alias-bg-layer-1); box-shadow: 0 1px 1px rgba(20,28,45,.025), 0 6px 18px rgb(12 20 34 / .14); }',
   '.elr-body:not(.dock-bottom) .elr-sec:hover:not(.over) { box-shadow: 0 4px 8px rgb(12 20 34 / .12), 0 8px 20px rgb(12 20 34 / .13); }',
-  '.elr-card-control { border-radius: 8px; transition: background-color 140ms ease, transform 100ms ease; }',
+  '.elr-card-control { border-radius: 8px; transition: background-color var(--duration-feedback) var(--ease-out), transform var(--duration-feedback) var(--ease-out); }',
   '.elr-card-control:hover { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent); }',
   '.elr-card-control:active { transform: scale(.92); }',
   '.elr-tabs { gap: 3px; padding: 8px 12px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 86%, transparent); border-bottom-color: color-mix(in srgb, var(--dsw-alias-border-l1) 72%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }',
-  '.elr-tab { border-radius: 9px; padding: 7px 12px; border-bottom: 0; transition: background-color 140ms ease, color 140ms ease, transform 100ms ease; }',
+  '.elr-tab { border-radius: 9px; padding: 7px 12px; border-bottom: 0; transition: background-color var(--duration-feedback) var(--ease-out), color var(--duration-feedback) var(--ease-out), transform var(--duration-feedback) var(--ease-out); }',
   '.elr-tab:hover { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent); color: var(--dsw-alias-brand-primary); }',
   '.elr-tab.active { color: var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 11%, var(--dsw-alias-bg-layer-1)); border-bottom: 0; font-weight: 650; }',
   '.elr-tab:active { transform: scale(.97); }',
@@ -1375,7 +1406,7 @@ const CSS = [
   '.elr-pdf-wrap { background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 84%, transparent); }',
   '.elr-view :is(button, select, input, textarea):focus-visible { outline: 2px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 72%, transparent); outline-offset: 2px; }',
   '.elr-view :is(button, .elr-btn, .elr-tab, .elr-seg, .elr-icon-btn) { -webkit-tap-highlight-color: transparent; }',
-  '@media (prefers-reduced-motion: reduce) { .elr-view *, .elr-view *::before, .elr-view *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; } }',
+  '@media (prefers-reduced-motion: reduce) { .elr-view :is(.elr-head .elr-btn, .elr-head .elr-icon-btn, .elr-toolbar .elr-btn, .elr-toolbar .elr-icon-btn, .elr-card-control, .elr-tab):active { transform: none; } .elr-selection-tools button:active:not(:disabled) { scale: none; } }',
   // Final readability and layering fixes for the Apple-style surface.
   '.settings { background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l2); box-shadow: 0 20px 60px rgba(15,23,42,.22); }',
   '.settings:is(.model-center,.connection-detail)::backdrop { background: var(--elr-glass-scrim); backdrop-filter: blur(8px); }',
@@ -1495,19 +1526,22 @@ const CSS = [
   '.elr-feature-column > .elr-sec { box-sizing: border-box; min-height: 0; max-height: var(--elr-card-max-height); }',
   '.elr-feature-column > .elr-sec:not(.is-collapsed) { min-height: ' + CARD_MIN_H + 'px; }',
   '.elr-feature-column > .elr-sec.is-collapsed { flex: 0 0 54px; min-height: 54px; max-height: 54px; }',
-  '.elr-feature-column > .elr-sec.is-compact { flex: 0 0 auto; min-height: 0; }',
+  '.elr-feature-column > .elr-sec.is-compact:not(.is-collapsed) { flex: 0 0 auto; min-height: 0; }',
   '.elr-body.dock-bottom .elr-feature-column > [data-elr-docked-card] { min-height: 0; }',
-  '.elr-body.dock-bottom .elr-feature-column > .elr-sec.is-compact { width: ' + BOTTOM_COMPACT_CARD_WIDTH + 'px; min-width: 0; }',
-  '.elr-body:not(.dock-bottom) .elr-feature-column > .elr-sec.is-compact { height: calc-size(auto, size * 1.5); }',
+  '.elr-body.dock-bottom .elr-feature-column > .elr-sec.is-compact:not(.is-collapsed) { width: ' + BOTTOM_COMPACT_CARD_WIDTH + 'px; min-width: 0; }',
+  '.elr-body:not(.dock-bottom) .elr-feature-column > .elr-sec.is-compact:not(.is-collapsed) { height: calc-size(auto, size * 1.5); }',
   '.elr-body:not(.dock-bottom) [data-elr-docked-card="agent"]:not(.is-collapsed), [data-elr-floating-card="agent"].is-open { min-height: ' + AGENT_CARD_MIN_H + 'px; }',
   '.elr-sec.is-compact .elr-out-empty { padding: 6px var(--elr-card-content-gap); }',
   '.elr-sec.is-compact .elr-selection-panes { flex: 0 0 auto; grid-template: auto / minmax(0,1fr); min-height: 0; }',
   '.elr-sec.is-compact .elr-selection-panes > :first-child { grid-row: auto; grid-template-rows: auto 30px; }',
   '.elr-sec.is-compact :is(.elr-sel-actions, .elr-selection-panes > :not(:first-child)) { display: none; }',
   '.elr-feature-column > .elr-sec.is-collapsed .elr-analysis-card-inner { min-height: 54px; }',
-  '.elr-sec > :first-child > .elr-card-fold-content { opacity: 1; transition: opacity ' + CARD_FOLD_TRANSITION + '; }',
-  '.elr-sec.is-collapsed > :first-child > .elr-card-fold-content { opacity: 0; pointer-events: none; }',
-  '.elr-feature-grid.is-folding-cards { overflow-anchor: none; }',
+  '.elr-sec > :first-child > .elr-card-fold-content { opacity: 1; transition: opacity var(--duration-md) var(--ease-out); }',
+  '.elr-sec.is-collapsed > :first-child > .elr-card-fold-content { opacity: 0; transition: opacity var(--duration-exit-md) var(--ease-in); pointer-events: none; }',
+  '.elr-feature-grid.is-folding-cards { overflow-anchor: none; contain: layout; }',
+  '.elr-sec[data-elr-folding] { overflow: clip; }',
+  '.elr-sec[data-elr-folding="closing-height"] > :first-child > .elr-card-fold-content { box-sizing: border-box; min-height: var(--elr-fold-content-size); }',
+  '.elr-body.dock-bottom [data-elr-docked-card][data-elr-folding="closing-width"] > :first-child > .elr-card-fold-content { box-sizing: border-box; min-width: var(--elr-fold-content-size); }',
   '.elr-workspace-tab { --elr-frosted-fill: var(--elr-glass-chrome-fill); position: absolute; z-index: 95; right: 0; top: 50%; translate: 0 -50%; writing-mode: vertical-rl; padding: 12px 8px; border: 1px solid transparent; border-radius: 12px 0 0 12px; color: var(--dsw-alias-label-primary); font: inherit; letter-spacing: .09em; background: var(--elr-frosted-background); backdrop-filter: var(--elr-frosted-filter); box-shadow: var(--elr-frosted-rim), 0 3px 13px rgba(0,0,0,.17); cursor: pointer; }',
   '.elr-body.dock-bottom .elr-workspace-tab { inset: auto auto 0 50%; translate: -50% 0; writing-mode: horizontal-tb; padding: 6px 17px; border-radius: 12px 12px 0 0; }',
   '.elr-workspace-tab:hover { color: var(--dsw-alias-brand-primary); }',
@@ -1526,17 +1560,18 @@ const CSS = [
   '.elr-card-layout-row .elr-layout-delete { display: grid; place-items: center; padding: 0; }',
   '.elr-card-layout-row .elr-layout-delete:hover { color: var(--dsw-alias-state-error-primary); }',
   '.elr-card-layout-limit { padding: 3px; font-size: 12px; color: var(--dsw-alias-state-warn-primary); }',
-  '.elr-feature-column > .elr-sec, .elr-floating-card { transition: box-shadow .34s ease; }',
+  '.elr-feature-column > .elr-sec, .elr-floating-card { transition: box-shadow var(--duration-feedback) var(--ease-out); }',
   '.elr-body.dock-bottom .elr-feature-column > .elr-sec.is-collapsed { flex: 0 0 54px; width: 54px; min-width: 54px; max-width: 54px; min-height: 0; max-height: none; }',
-  '@media (prefers-reduced-motion: reduce) { .elr-side, .elr-floating-card > :first-child > .elr-card-fold-content { transition: none; } }',
-  '.elr-sec[data-elr-docked-card], .elr-sec[data-elr-floating-card], .elr-drag-ghost { background: var(--elr-frosted-background); border: 1px solid transparent; border-radius: 15px; box-shadow: 0 2px 4px rgb(12 20 34 / .12), 0 8px 18px rgb(12 20 34 / .12); backdrop-filter: var(--elr-frosted-filter); }',
+  '@media (prefers-reduced-motion: reduce) { .elr-side, .elr-side.is-stowed { transition: none; } .elr-sec:not(.dragging) > :first-child > .elr-card-fold-content { transition-duration: var(--duration-reduced); } }',
+  '.elr-sec[data-elr-docked-card], .elr-sec[data-elr-floating-card], .elr-drag-ghost { background: var(--elr-frosted-background); --elr-sec-radius: 15px; border: 1px solid transparent; border-radius: var(--elr-sec-radius); box-shadow: 0 2px 4px rgb(12 20 34 / .12), 0 8px 18px rgb(12 20 34 / .12); backdrop-filter: var(--elr-frosted-filter); }',
   '.elr-sec[data-elr-floating-card], .elr-drag-ghost { --elr-card-fill: var(--elr-glass-floating-fill); --elr-card-blur: var(--elr-glass-floating-blur); box-shadow: 0 3px 8px rgb(10 18 30 / .17), 0 12px 36px rgb(10 18 30 / .24); }',
   '.elr-sec[data-elr-docked-card="recent"] { --elr-card-fill: calc(var(--elr-glass-docked-fill) - 4%); }',
   '.elr-recent-item.current { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 11%, transparent); }',
   '.elr-recent-item:hover { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent); }',
   // Paint the bevel inside the existing border box. Offset, feathered shadows
   // merge at the rounded corners and follow the same light across every card.
-  '.elr-sec[data-elr-docked-card]::after, .elr-sec[data-elr-floating-card]::after, .elr-drag-ghost::after { content: ""; position: absolute; inset: 0; border-radius: 14px; pointer-events: none; z-index: 2; box-shadow: var(--elr-frosted-rim); }',
+  '.elr-sec[data-elr-docked-card]::after, .elr-sec[data-elr-floating-card]::after, .elr-drag-ghost::after { content: ""; position: absolute; inset: 0; border-radius: calc(var(--elr-sec-radius) - 1px); pointer-events: none; z-index: 2; box-shadow: var(--elr-frosted-rim); }',
+  '.elr-sec[data-elr-floating-card][data-elr-folding] { contain: layout; }',
   '.elr-gesturing .elr-feature-grid .elr-sec[data-elr-docked-card] { backdrop-filter: none; }',
   '@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .elr-sec[data-elr-docked-card], .elr-sec[data-elr-floating-card], .elr-drag-ghost { background: var(--dsw-alias-bg-layer-1); backdrop-filter: none; } }',
   '.elr-card-drop-placeholder { --elr-drop-accent: var(--dsw-alias-brand-primary, #2467ab); flex: 0 0 ' + CARD_HEADER_HEIGHT + 'px; min-height: ' + CARD_HEADER_HEIGHT + 'px; box-sizing: border-box; border: 2px solid var(--elr-drop-accent); border-radius: 15px; background: color-mix(in srgb, var(--elr-drop-accent) 24%, var(--dsw-alias-bg-layer-1)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--elr-drop-accent) 42%, transparent), 0 0 0 3px color-mix(in srgb, var(--elr-drop-accent) 24%, transparent), 0 5px 18px rgba(20,28,45,.16); }',
@@ -1839,32 +1874,29 @@ function renderGenerationMetadata(record, selection, t) {
   );
 }
 
+const readerIcons = {
+  play: Play, refresh: RotateCw, copy: Copy, info: Info,
+  dockRight: Sidebar, dockBottom: PanelBottom, font: TextSize, layout: LayoutDashboard,
+  settings: Settings, translate: Languages, capture: Scan, home: Home, search: Search,
+  note: FileText, term: CircleHelp, agent: Quote, previous: ChevronLeft, next: ChevronRight,
+  down: ChevronDown, up: ChevronUp, zoomIn: ZoomIn, zoomOut: ZoomOut,
+};
+
 const readerIconPaths = {
-  play: 'M7 4l10 6-10 6V4z',
-  refresh: 'M15.8 6.5A6.2 6.2 0 1 0 16 13.2M16 3v4.5h-4.5',
-  copy: 'M7 6h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM13 3H4a1 1 0 0 0-1 1v9',
-  info: 'M10 17a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM10 6.5V11m0 2.5h.01',
-  columns: 'M3 4h14v12H3zM10 4v12',
-  rows: 'M3 4h14v12H3zM3 10h14',
-  dockRight: 'M2.5 4h15v12h-15zM13 4v12',
-  dockBottom: 'M2.5 4h15v12h-15zM2.5 12h15',
-  font: 'M2.5 15 6.5 5l4 10M4 11.5h5m7.5 3.5V10m0 1a2.6 2.6 0 1 0 0 3',
   fontMinus: 'M2.5 15 6.5 5l4 10M4 11.5h5m4 .5h4.5',
   fontPlus: 'M2.5 15 6.5 5l4 10M4 11.5h5m4 .5h5m-2.5-2.5v5',
   collapse: 'm5 4 5 4 5-4M5 16l5-4 5 4',
   expand: 'm5 8 5-4 5 4M5 12l5 4 5-4',
-  layout: 'M2.5 4h15v12h-15zM9 4v12m0-6h8.5',
-  settings: 'M7.5 4 8 2.5h4l.5 1.5 1.5 1 1.5-.2 2 3.4-1 1.3v1.6l1 1.3-2 3.4-1.5-.2-1.5 1-.5 1.5H8l-.5-1.5-1.5-1-1.5.2-2-3.4 1-1.3V9.5l-1-1.3 2-3.4 1.5.2 1.5-1zM10 12.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2z',
-  translate: 'M2.5 5.5h9M7 3v2.5M9.8 5.5a11 11 0 0 1-7 9m2-6.5a9 9 0 0 0 5.1 5.4m1.3 3.6 3.2-7 3.1 7m-5.3-2.5h4.3',
-  capture: 'M3 7V3h4m6 0h4v4m0 6v4h-4m-6 0H3v-4m4-3h6m-3-3v6',
-  home: 'M2.7 9.2 10 3l7.3 6.2M4.5 7.8v8.7a.8.8 0 0 0 .8.8h3v-4.9h3.4v4.9h3a.8.8 0 0 0 .8-.8V7.8',
   outline: 'M5 3.5h10a1.5 1.5 0 0 1 1.5 1.5v10a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 15V5A1.5 1.5 0 0 1 5 3.5zM7.3 3.5v13M9.9 7h3.9m-3.9 3h3.9m-3.9 3h2.6',
-  search: 'M13.4 13.4 17 17m-2-7.8a5.8 5.8 0 1 1-11.6 0 5.8 5.8 0 0 1 11.6 0z',
   stowRight: 'M5 5l5 5-5 5m8-11v12',
   stowBottom: 'M5 5l5 5 5-5m-11 8h12',
 };
 
-function readerIcon(name) {
+function readerIcon(name, size = 20) {
+  const Glyph = readerIcons[name];
+  if (Glyph) return h(Glyph, { size, trigger: 'none', style: {
+    '--kd-b': 'color-mix(in srgb, currentColor 40%, transparent)', transform: name === 'dockRight' ? 'scaleX(-1)' : undefined,
+  } });
   return h('svg', { viewBox: '0 0 20 20', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5,
     strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true,
   }, h('path', { d: readerIconPaths[name] }));
@@ -2523,7 +2555,7 @@ function Reader(props) {
   const [figureSort, setFigureSort] = useShared('figureSort');
   const [selectionSplit, setSelectionSplit] = useShared('selectionSplit');
   const [selectionWidthSplit, setSelectionWidthSplit] = useShared('selectionWidthSplit');
-  const [selectionCardOpen, setSelectionCardOpen] = useShared('selectionCardOpen');
+  const [selectionCardOpen] = useShared('selectionCardOpen');
   // (v32 #1) Per-card widths for the side-by-side bottom dock only. `{}` means
   // "no override", which falls back to an even split of the row.
   const [cardWidths, setCardWidths] = useShared('cardWidths');
@@ -2586,8 +2618,8 @@ function Reader(props) {
     if (out.length !== list.length) writeStore(RECENT_KEY, out);
     return out.slice(0, RECENT_MAX);
   });
-  const [recentOpen, setRecentOpen] = useShared('recentOpen');
-  const [marksOpen, setMarksOpen] = useShared('marksOpen');
+  const [recentOpen] = useShared('recentOpen');
+  const [marksOpen] = useShared('marksOpen');
   const [analysisOpen, setAnalysisOpen] = useShared('analysisOpen');
   // (v27) Whether the card manager popover is showing. Purely local: it is a
   // transient menu, not a preference.
@@ -2646,6 +2678,17 @@ function Reader(props) {
   const [nativeUrl, setNativeUrl] = React.useState('');
   const [popup, setPopup] = React.useState(null);
   const [selectionTools, setSelectionTools] = React.useState(null);
+  const selectionPopupElement = React.useRef(null);
+  const selectionPopupMotion = React.useRef(null);
+  const selectionPopupTrigger = React.useRef(null);
+  React.useLayoutEffect(() => {
+    const trigger = selectionPopupTrigger.current;
+    const node = selectionPopupElement.current;
+    if (!trigger || !node) return;
+    selectionPopupTrigger.current = null;
+    selectionPopupMotion.current = animateSelectionSurface(node, trigger.rect, trigger.keyboard, false, selectionPopupMotion.current);
+  }, [popup]);
+  React.useEffect(() => () => selectionPopupMotion.current?.cancel(), []);
   const inlinePopupRef = React.useRef(popup);
   inlinePopupRef.current = popup;
   const selectionToolsRef = React.useRef(selectionTools);
@@ -2687,20 +2730,29 @@ function Reader(props) {
 
   const cancelCardFolds = () => {
     const running = cardFoldAnimations.current;
-    for (const animation of running.values()) animation.cancel();
+    for (const [card, animation] of running) {
+      animation.cancel();
+      card.removeAttribute('data-elr-folding');
+    }
     running.clear();
     sideTopElRef.current?.querySelector('.elr-feature-grid')?.classList.remove('is-folding-cards');
   };
 
   const rememberCardFold = () => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const docked = workspaceStowed ? [] : [...(sideTopElRef.current?.querySelectorAll('[data-elr-docked-card]:not(.dragging)') || [])];
-    const floated = [...floatingHost.querySelectorAll('[data-elr-floating-card]:not(.dragging)')];
-    cardsBeforeFold.current = [...docked, ...floated].map((card) => {
-      const dimension = dock === 'bottom' && card.hasAttribute('data-elr-docked-card') ? 'width' : 'height';
-      return { card, dimension, from: card.getBoundingClientRect()[dimension] };
+    const grid = !workspaceStowed ? sideTopElRef.current?.querySelector('.elr-feature-grid') : null;
+    const scroll = grid && { top: grid.scrollTop, left: grid.scrollLeft };
+    const frames = reduceMotion() ? [] : [
+      ...(grid?.querySelectorAll('[data-elr-docked-card]:not(.dragging)') || []),
+      ...floatingHost.querySelectorAll('[data-elr-floating-card]:not(.dragging)'),
+    ].map((card) => {
+      const content = card.querySelector(':scope > :first-child > .elr-card-fold-content');
+      return { card, from: card.getBoundingClientRect(), contentWidth: content?.offsetWidth, contentHeight: content?.offsetHeight };
     });
+
     cancelCardFolds();
+    // Disable automatic scroll anchoring before React changes the card sizes.
+    grid?.classList.add('is-folding-cards');
+    cardsBeforeFold.current = { grid, scroll, frames };
   };
 
   React.useLayoutEffect(() => {
@@ -2708,26 +2760,56 @@ function Reader(props) {
     if (!before) return;
     cardsBeforeFold.current = null;
     const running = cardFoldAnimations.current;
-    const grid = sideTopElRef.current?.querySelector('.elr-feature-grid');
-    const sizes = before.filter(({ card }) => card.isConnected).map((frame) => ({
-      ...frame, to: frame.card.getBoundingClientRect()[frame.dimension],
-    }));
-    for (const { card, dimension, from, to } of sizes) {
-      if (Math.abs(to - from) < 1) continue;
-      const edge = dimension === 'width' ? 'Width' : 'Height';
-      const frame = (size) => ({
-        [dimension]: size + 'px', ['min' + edge]: size + 'px', ['max' + edge]: size + 'px',
-        flexGrow: 0, flexShrink: 0, flexBasis: size + 'px',
-      });
-      const animation = card.animate([frame(from), frame(to)], { duration: CARD_FOLD_DURATION, easing: CARD_FOLD_EASE });
+    const { grid, scroll } = before;
+    const sizes = before.frames.filter(({ card }) => card.isConnected).map((frame) => ({
+      ...frame, to: frame.card.getBoundingClientRect(), floating: frame.card.hasAttribute('data-elr-floating-card'),
+    })).filter(({ from, to }) => from.width && from.height && to.width && to.height);
+    const horizontal = dock === 'bottom';
+    const dockAxis = horizontal ? 'width' : 'height';
+    const dockEdge = horizontal ? 'Width' : 'Height';
+    const dockedResize = sizes.some(({ from, to, floating }) => !floating && Math.abs(to[dockAxis] - from[dockAxis]) >= 1);
+    const timing = motionTiming('md', 'move');
+
+    for (const { card, from, to, floating, contentWidth, contentHeight } of sizes) {
+      const axis = floating ? 'height' : dockAxis;
+      const resized = Math.abs(to[axis] - from[axis]) >= 1;
+      const x = from.left - to.left;
+      const y = from.top - to.top;
+      if (floating ? !resized && !x && !y : !dockedResize) continue;
+      const contentSize = axis === 'height' ? contentHeight : contentWidth;
+      const preserveContent = contentSize > 0 && card.classList.contains('is-collapsed') && from[axis] > to[axis];
+      const foldingContent = preserveContent ? { '--elr-fold-content-size': contentSize + 'px' } : {};
+      if (resized) card.setAttribute('data-elr-folding', preserveContent ? 'closing-' + axis : '');
+
+      const dockFrame = (rect) => {
+        const size = rect[axis] + 'px';
+        return {
+          [axis]: size, ['min' + dockEdge]: size, ['max' + dockEdge]: size,
+          flexBasis: size, flexShrink: 0, flexGrow: 0, ...foldingContent,
+        };
+      };
+      // Resize in the card layer so the corners, glass and shadows are drawn
+      // at their normal scale. Docked siblings follow the flex layout.
+      const frames = floating ? [
+        { height: from.height + 'px', transform: x || y ? 'translate(' + x + 'px,' + y + 'px)' : 'none', ...foldingContent },
+        { height: to.height + 'px', transform: 'none', ...foldingContent },
+      ] : [dockFrame(from), dockFrame(to)];
+      const animation = card.animate(frames, { ...timing, fill: 'both' });
       animation.id = 'elr-card-fold';
       running.set(card, animation);
-      animation.onfinish = () => {
-        if (running.get(card) === animation) running.delete(card);
-        if (!running.size) grid?.classList.remove('is-folding-cards');
-      };
     }
-    if (running.size) grid?.classList.add('is-folding-cards');
+
+    // Measuring the final layout can temporarily clamp the scroll range.
+    // Restore it once the starting sizes are installed, before the next paint.
+    if (grid) grid.scrollTo({ ...scroll, behavior: 'instant' });
+    if (!running.size) {
+      grid?.classList.remove('is-folding-cards');
+      return;
+    }
+    const batch = [...running];
+    Promise.all(batch.map(([, animation]) => animation.finished)).then(() => {
+      if (batch.every(([card, animation]) => running.get(card) === animation)) cancelCardFolds();
+    }, () => {});
   }, [selectionCardOpen, recentOpen, termsOpen, marksOpen, analysisOpen]);
 
   React.useEffect(() => () => cancelCardFolds(), [dock, paperId]);
@@ -2737,12 +2819,16 @@ function Reader(props) {
     (workspaceStowed ? workspaceTabRef : workspaceCloseRef).current?.focus({ preventScroll: true });
   }, [workspaceStowed]);
 
-  const rememberCardPositions = (draggedKey) => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const rememberCardPositions = (draggedKey, settling = false, ghostBox = null) => {
+    if (reduceMotion() && !settling) return;
     const cards = sideTopElRef.current?.querySelectorAll('[data-elr-docked-card]') || [];
-    cardPositionsBeforeMove.current = new Map([...cards]
+    const boxes = new Map([...cards]
       .filter((card) => card.dataset.elrDockedCard !== draggedKey)
       .map((card) => [card.dataset.elrDockedCard, card.getBoundingClientRect()]));
+    if (settling && draggedKey && ghostBox) {
+      boxes.set(draggedKey, { left: ghostBox.x, top: ghostBox.y, width: ghostBox.w, height: ghostBox.h });
+    }
+    cardPositionsBeforeMove.current = { settling, boxes };
   };
 
   React.useLayoutEffect(() => {
@@ -2755,23 +2841,30 @@ function Reader(props) {
 
     const cards = sideTopElRef.current?.querySelectorAll('[data-elr-docked-card]:not(.dragging)') || [];
     const offsets = [...cards].flatMap((card) => {
-      const previous = before.get(card.dataset.elrDockedCard);
+      const previous = before.boxes.get(card.dataset.elrDockedCard);
       if (!previous) return [];
       const current = card.getBoundingClientRect();
       const x = previous.left - current.left;
       const y = previous.top - current.top;
       return Math.hypot(x, y) >= 1 ? [{ card, x, y }] : [];
     });
+    const reduced = reduceMotion();
+    const springEase = getComputedStyle(document.documentElement).getPropertyValue('--elr-reorder-spring').trim()
+      || 'cubic-bezier(.22, 1.12, .36, 1)';
+    const timing = reduced
+      ? { duration: 0, easing: 'linear' }
+      : before.settling
+        ? { duration: 260, easing: springEase }
+        : motionTiming('sm', 'move');
+    if (reduced) return;
     for (const { card, x, y } of offsets) {
-      const animation = card.animate(
-        [{ transform: 'translate(' + x + 'px,' + y + 'px)' }, { transform: 'translate(0,0)' }],
-        { duration: 210, easing: 'cubic-bezier(.23,1,.32,1)' },
-      );
+      const frames = [{ transform: 'translate3d(' + x + 'px,' + y + 'px,0)' }, { transform: 'translate3d(0,0,0)' }];
+      const animation = card.animate(frames, timing);
       animation.id = 'elr-card-avoidance';
       running.set(card, animation);
       animation.onfinish = () => running.delete(card);
     }
-  }, [ghost, cardDrop]);
+  }, [ghost, cardDrop, sectionOrder, featureCardColumns]);
 
   React.useEffect(() => {
     const running = cardMoveAnimations.current;
@@ -2826,6 +2919,8 @@ function Reader(props) {
   const inputRef = React.useRef(null);
   const selectionSourceRef = React.useRef(null);
   const containerRef = React.useRef(null);
+  const coverFlight = React.useRef(null);
+  const coverOrigin = React.useRef(null);
   const readingSpaceRef = React.useRef(null);
   const readingCapsuleRef = React.useRef(null);
   const viewerElRef = React.useRef(null);
@@ -3103,6 +3198,136 @@ function Reader(props) {
     });
   };
 
+  const cancelCoverFlight = React.useCallback(() => {
+    const flight = coverFlight.current;
+    if (!flight) return;
+    coverFlight.current = null;
+    window.clearTimeout(flight.timeout);
+    window.cancelAnimationFrame(flight.measureFrame);
+    flight.maskedViewer?.removeAttribute('data-cover-opening');
+    flight.animation?.cancel();
+    flight.reveal?.cancel();
+    flight.visual.remove();
+  }, []);
+  const startCoverFlight = (origin, box, returning) => {
+    cancelCoverFlight();
+    const visual = coverVisual(origin.image, box, floatingHost);
+    const maskedViewer = returning ? null : containerRef.current;
+    maskedViewer?.setAttribute('data-cover-opening', '');
+    const flight = { ...origin, box, returning, visual, maskedViewer,
+      // A slow or failed render falls back to the normal PDF viewer.
+      timeout: window.setTimeout(cancelCoverFlight, 1800) };
+    coverFlight.current = flight;
+    return flight;
+  };
+  const finishCoverFlight = React.useCallback((flight, node, box) => {
+    if (!box || Math.abs(box.width / box.height - flight.box.width / flight.box.height) > .05) {
+      cancelCoverFlight();
+      return false;
+    }
+    window.clearTimeout(flight.timeout);
+    const timing = motionTiming('lg', 'move', flight.keyboard);
+    if (!timing.fadeOnly) timing.duration = motionDuration('exit-lg');
+    flight.animation = flight.visual.animate(timing.fadeOnly
+      ? [{ opacity: 1 }, { opacity: 0 }]
+      : [{ transform: 'none', opacity: 1 }, { transform: boxTransform(box, flight.box), opacity: 1, offset: .86 },
+          { transform: boxTransform(box, flight.box), opacity: 0 }], { ...timing, fill: 'both' });
+    flight.reveal = node.animate([{ opacity: 0 }, { opacity: 0, offset: timing.fadeOnly ? 0 : .86 }, { opacity: 1 }],
+      { ...timing, easing: motionEasing('enter') });
+    flight.animation.finished.then(() => {
+      if (coverFlight.current === flight) cancelCoverFlight();
+    }, () => {});
+    return true;
+  }, [cancelCoverFlight]);
+  const openFromCover = (entry, image, keyboard) => {
+    const box = entry.page === 1 && fittedImageRect(image);
+    if (box) startCoverFlight({ id: entry.id, image: image.currentSrc || image.src, keyboard }, box, false);
+    else cancelCoverFlight();
+    openRecent(entry);
+  };
+  const coverReady = React.useCallback((id, image) => {
+    const flight = coverFlight.current;
+    if (!flight?.returning || flight.id !== id || flight.animation) return;
+    const box = fittedImageRect(image);
+    if (box) finishCoverFlight(flight, image, box);
+  }, [finishCoverFlight]);
+  const firstPdfCoverPage = (viewer) => {
+    if (!viewer || viewer.currentPageNumber !== 1 || pdfReadingRef.current?.mode !== 'pdf') return null;
+    if (viewer.getPageView(0)?.viewport?.rotation) return null;
+    const canvas = viewer.getPageView(0)?.div?.querySelector('.canvasWrapper canvas');
+    if (!canvas?.width || !canvas.height) return null;
+    const box = canvas.getBoundingClientRect();
+    const viewport = containerRef.current?.getBoundingClientRect();
+    if (!viewport || box.left < viewport.left - 2 || box.right > viewport.right + 2
+        || box.top < viewport.top - 2 || box.bottom > viewport.bottom + 2 || !box.width || !box.height) return null;
+    return { box, canvas };
+  };
+  const revealOpeningCover = (flight, viewer) => {
+    // PDF.js can fit the page again from its ResizeObserver after pagerendered.
+    const sameBox = (left, right) => ['left', 'top', 'width', 'height']
+      .every((edge) => Math.abs(left[edge] - right[edge]) < .5);
+    let sample;
+    const waitForLayout = () => {
+      if (coverFlight.current !== flight) return;
+      const page = firstPdfCoverPage(viewer);
+      if (!page || (sample && sample.canvas !== page.canvas)) {
+        sample = page;
+        flight.measureFrame = requestAnimationFrame(waitForLayout);
+        return;
+      }
+      if (!sample || !sameBox(sample.box, page.box)) {
+        sample = page;
+        flight.measureFrame = requestAnimationFrame(waitForLayout);
+        return;
+      }
+      if (Math.abs(page.box.width / page.box.height - flight.box.width / flight.box.height) > .05) {
+        cancelCoverFlight();
+        return;
+      }
+      clearTimeout(flight.timeout);
+      const timing = motionTiming('lg', 'move', flight.keyboard);
+      const moveTo = (box, duration) => {
+        const current = boxTransform(flight.visual.getBoundingClientRect(), flight.box);
+        flight.visual.style.transform = current;
+        flight.animation?.cancel();
+        flight.animation = flight.visual.animate([{ transform: current }, { transform: boxTransform(box, flight.box) }], {
+          duration, easing: timing.easing, fill: 'both',
+        });
+        flight.animation.finished.then(handoff, () => {});
+      };
+      const handoff = () => {
+        if (coverFlight.current !== flight) return;
+        const target = firstPdfCoverPage(viewer);
+        if (!target) { cancelCoverFlight(); return; }
+        if (!timing.fadeOnly) {
+          if (!sameBox(flight.visual.getBoundingClientRect(), target.box)) {
+            moveTo(target.box, Math.round(timing.duration * .23));
+            return;
+          }
+          // Reveal the page below the aligned cover, then dissolve just the cover.
+        }
+        flight.maskedViewer?.removeAttribute('data-cover-opening');
+        coverOrigin.current = { id: flight.id, image: flight.image, keyboard: flight.keyboard };
+        flight.reveal = flight.visual.animate([{ opacity: 1 }, { opacity: 0 }], {
+          duration: timing.fadeOnly ? timing.duration : Math.round(timing.duration * .18), easing: motionEasing('exit'), fill: 'both',
+        });
+        flight.reveal.finished.then(() => {
+          if (coverFlight.current === flight) cancelCoverFlight();
+        }, () => {});
+      };
+      if (timing.fadeOnly) {
+        handoff();
+        return;
+      }
+      moveTo(page.box, Math.round(timing.duration * .82));
+    };
+    flight.measureFrame = requestAnimationFrame(waitForLayout);
+  };
+  React.useEffect(() => {
+    window.addEventListener('resize', cancelCoverFlight);
+    return () => { window.removeEventListener('resize', cancelCoverFlight); cancelCoverFlight(); };
+  }, []);
+
   const openRecent = (entry) => {
     if (!entry) return;
     const cached = fileCache.get(entry.id);
@@ -3202,6 +3427,9 @@ function Reader(props) {
   };
 
   const dismissSelectionSurfaces = () => {
+    selectionPopupTrigger.current = null;
+    selectionPopupMotion.current?.cancel();
+    selectionPopupMotion.current = null;
     if (inlinePopupRef.current?.followsSelection) {
       popupDragCancelRef.current?.();
       setPopup(null);
@@ -3308,6 +3536,11 @@ function Reader(props) {
   // (analysis / marks / bibliography stay under their paperId in localStorage and
   // the bytes stay in IndexedDB, so reopening from 近期阅读 restores all of it).
   const closePaper = () => {
+    const origin = coverOrigin.current;
+    const page = origin?.id === readShared().paperId ? firstPdfCoverPage(pdfStateRef.current?.viewer) : null;
+    coverOrigin.current = null;
+    if (page) startCoverFlight(origin, page.box, true);
+    else cancelCoverFlight();
     // Drop any queued decoration pass first: it would run against a teardown DOM.
     if (decorateTimerRef.current) {
       clearTimeout(decorateTimerRef.current);
@@ -3487,6 +3720,8 @@ function Reader(props) {
   const pdfReading = usePdfReading({ paper: paperId, edition: dropSeq, ready: pdfAnalysisReady,
     page: pageNum, setPage: setPageNum, pdfState: pdfStateRef, pdfJob: pdfTextJobRef,
     container: containerRef, readText: readPdfPageText, formatLines: (items) => referenceReadingOrder(readingLines(items)) });
+  const pdfReadingRef = React.useRef(pdfReading);
+  pdfReadingRef.current = pdfReading;
   const showOriginalPdf = pdfReading.mode === 'pdf' || pdfReading.mode === 'compare';
   const originalMediaEnabled = mode === 'pdf' && pdfReading.mode === 'pdf' && pdfAnalysisReady
     && previewMode !== 'native' && !figurePicking;
@@ -4274,7 +4509,14 @@ function Reader(props) {
         setPositionReady(file);
         scheduleDecorateRef.current();
       });
-      eventBus.on('pagerendered', () => scheduleDecorateRef.current());
+      eventBus.on('pagerendered', (event) => {
+        scheduleDecorateRef.current();
+        if (!event.error && !event.cssTransform) document.dispatchEvent(new CustomEvent('reader-glass-backdrop', { detail: event.source?.div }));
+        const flight = coverFlight.current;
+        if (!flight || flight.returning || flight.measureFrame || flight.id !== lastFileRef.current?.desktopId
+            || event.pageNumber !== 1 || event.cssTransform || event.error) return;
+        revealOpeningCover(flight, viewer);
+      });
       pdfStateRef.current = state;
       return state;
     })().catch((error) => {
@@ -5499,9 +5741,24 @@ function Reader(props) {
   const [zoomMenuOpen, setZoomMenuOpen] = React.useState(false);
   const zoomBoxRef = React.useRef(null);
   const zoomPopupRef = React.useRef(null);
+  const zoomCaretRef = React.useRef(null);
+  const setMenuMotionInput = (menu, keyboard) => {
+    if (menu) menu.toggleAttribute('data-keyboard-motion', keyboard);
+  };
+  const setCapsuleMenuOrigin = (event, trigger) => {
+    const menu = event.currentTarget;
+    if (!trigger || !menu.matches(':popover-open')) return;
+    const control = trigger.getBoundingClientRect();
+    const box = menu.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, (control.left + control.width / 2 - box.left) / box.width * 100));
+    menu.style.transformOrigin = x + '% ' + (control.top + control.height / 2 < box.top + box.height / 2 ? 'top' : 'bottom');
+  };
   React.useLayoutEffect(() => {
-    if (zoomMenuOpen) zoomPopupRef.current?.showPopover({ source: zoomBoxRef.current });
-  }, [zoomMenuOpen]);
+    const menu = zoomPopupRef.current;
+    if (!menu) return;
+    if (zoomMenuOpen) menu.showPopover({ source: zoomBoxRef.current });
+    else menu.hidePopover();
+  }, [zoomMenuOpen, hasPdf]);
   const applyZoomPct = (pct) => {
     const s = pdfStateRef.current;
     const numeric = Number(pct);
@@ -5773,7 +6030,7 @@ function Reader(props) {
         left += x - box.left - Math.min(48, box.width * .15);
       }
     }
-    container.scrollTo({ top: Math.max(0, top), left: Math.max(0, left), behavior: 'smooth' });
+    scrollWithMotion(container, { top, left });
   };
 
   const locateMark = (mark, preferVisible = false) => {
@@ -5965,9 +6222,10 @@ function Reader(props) {
     const bottomDock = dockRef.current === 'bottom';
     const originColumnNode = card.closest('.elr-feature-column');
     const originColumn = originColumnNode ? Number(originColumnNode.dataset.featureColumn) : null;
-    const columnBox = originColumnNode?.getBoundingClientRect();
-    const originNext = card.nextElementSibling?.dataset.elrDockedCard;
-    const originPrevious = card.previousElementSibling?.dataset.elrDockedCard;
+    const originCards = originColumnNode
+      ? [...originColumnNode.querySelectorAll('[data-elr-docked-card]')].map((n) => n.dataset.elrDockedCard)
+      : [];
+    const originGapIndex = originCards.indexOf(key);
 
     const dockColumn = sideTopElRef.current?.querySelector('.elr-feature-column');
     const horizontalCapsule = {
@@ -5976,7 +6234,7 @@ function Reader(props) {
     };
     const verticalCapsule = {
       w: CARD_HEADER_HEIGHT,
-      h: Math.max(CARD_HEADER_HEIGHT, columnBox?.height ?? dockColumn?.clientHeight ?? 0),
+      h: Math.max(CARD_HEADER_HEIGHT, originColumnNode?.getBoundingClientRect().height ?? dockColumn?.clientHeight ?? 0),
     };
     const sourceCapsule = bottomDock && originColumnNode ? verticalCapsule : horizontalCapsule;
     const grabX = clampPopup(offsetX / sourceCapsule.w, 0, 1);
@@ -5988,69 +6246,83 @@ function Reader(props) {
       const inDock = containsPoint(panel?.getBoundingClientRect(), x, y);
       const vertical = bottomDock && inDock;
       const capsule = vertical ? verticalCapsule : horizontalCapsule;
-      // Keep the same relative grab point when the capsule changes direction.
-      const box = fitPopupBox({ ...capsule, x: x - grabX * capsule.w, y: y - grabY * capsule.h }, bounds);
-      return { panel, inDock, vertical, box };
+      // Lift the dragged item off the list so it never hides the landing gap:
+      // above a horizontal row, or pulled aside and shrunk to 90% in a vertical list.
+      const liftX = inDock && !bottomDock ? -18 : 0;
+      const liftY = inDock && bottomDock ? -26 : 0;
+      const scale = inDock && !bottomDock ? 0.9 : 1;
+      const box = fitPopupBox({ ...capsule, x: x - grabX * capsule.w + liftX, y: y - grabY * capsule.h + liftY }, bounds);
+      return { panel, inDock, vertical, scale, box };
     };
-    const dockAt = (x, y, { panel, inDock, box }) => {
-      if (!panel) return null;
-      // Until the dragged capsule clears the compact source slot, keep that
-      // slot in the layout. Its rectangle is independent of sibling reflow.
-      let passedOrigin = false;
-      if (columnBox && originColumnNode.isConnected) {
-        const current = originColumnNode.getBoundingClientRect();
-        const slot = originColumnNode.querySelector('.elr-card-drop-placeholder.is-origin')?.getBoundingClientRect();
-        const left = slot?.left ?? current.left + initial.left - columnBox.left;
-        const top = slot?.top ?? current.top + initial.top - columnBox.top;
-        const right = left + (slot?.width ?? (bottomDock ? CARD_HEADER_HEIGHT : initial.width));
-        const bottom = top + (slot?.height ?? (bottomDock ? initial.height : CARD_HEADER_HEIGHT));
-        if (box.x < right && box.x + box.w > left && box.y < bottom && box.y + box.h > top) {
-          return { column: originColumn, origin: true };
-        }
-        passedOrigin = bottomDock ? box.x >= right : box.y >= bottom;
-      }
-      if (!inDock) return null;
+    const dockAt = (x, y, { panel, inDock }) => {
+      if (!panel || !inDock) return null;
       const columns = [...panel.querySelectorAll('.elr-feature-column')];
       const featureColumn = columns.find((node) => x <= node.getBoundingClientRect().right) || columns.at(-1);
       if (!featureColumn) return null;
       const column = Number(featureColumn.dataset.featureColumn);
       const position = bottomDock ? x : y;
-      const placeholder = featureColumn.querySelector('.elr-card-drop-placeholder:not(.is-origin)');
-      if (hover?.column === column && !hover.origin && placeholder) {
-        const slot = placeholder.getBoundingClientRect();
-        const start = bottomDock ? slot.left : slot.top;
-        const end = bottomDock ? slot.right : slot.bottom;
-        if (position >= start - 5 && position <= end + 5) return hover;
-      }
       const candidates = [...featureColumn.querySelectorAll('[data-elr-docked-card]')]
         .filter((node) => node.dataset.elrDockedCard !== key);
-      // Hit testing uses stable layout coordinates while siblings animate.
+      // Hit testing uses stable layout coordinates (offsetLeft/offsetTop) so sibling ripples never cause jitter.
       const columnBounds = featureColumn.getBoundingClientRect();
-      const before = candidates.find((node) => {
-        const midpoint = bottomDock ? columnBounds.left + node.offsetLeft + node.offsetWidth / 2
-          : columnBounds.top + node.offsetTop + node.offsetHeight / 2;
-        return position < midpoint;
-      });
-      const nextKey = before?.dataset.elrDockedCard;
-      if (column === originColumn && nextKey === originNext) {
-        // The adjacent card fills the vacated position as soon as the preview
-        // clears it, even if the pointer hasn't crossed that card's midpoint.
-        if (passedOrigin && originNext) return { column, target: originNext, after: true };
-        if (!passedOrigin && originPrevious) return { column, target: originPrevious, after: false };
+      let gapIndex = candidates.length;
+      for (let i = 0; i < candidates.length; i += 1) {
+        const node = candidates[i];
+        const midpoint = bottomDock
+          ? columnBounds.left + node.offsetLeft - featureColumn.scrollLeft + node.offsetWidth / 2
+          : columnBounds.top + node.offsetTop - featureColumn.scrollTop + node.offsetHeight / 2;
+        if (position < midpoint) {
+          gapIndex = i;
+          break;
+        }
       }
-      return { column, target: (before || candidates.at(-1))?.dataset.elrDockedCard, after: !before };
+      if (column === originColumn && gapIndex === originGapIndex) {
+        return { column, gapIndex, origin: true, lineRect: null };
+      }
+      // Compute the faint drop line centered inside the landing gap.
+      let lineRect = null;
+      if (candidates.length > 0) {
+        const prevNode = gapIndex > 0 ? candidates[gapIndex - 1] : null;
+        const nextNode = gapIndex < candidates.length ? candidates[gapIndex] : null;
+        if (bottomDock) {
+          const prevEnd = prevNode ? columnBounds.left + prevNode.offsetLeft - featureColumn.scrollLeft + prevNode.offsetWidth : null;
+          const nextStart = nextNode ? columnBounds.left + nextNode.offsetLeft - featureColumn.scrollLeft : null;
+          const lineX = prevEnd != null && nextStart != null ? (prevEnd + nextStart) / 2
+            : prevEnd != null ? prevEnd + 4 : nextStart - 4;
+          lineRect = { x: lineX - 1, y: columnBounds.top + 8, w: 2, h: Math.max(24, columnBounds.height - 16), vertical: true };
+        } else {
+          const prevEnd = prevNode ? columnBounds.top + prevNode.offsetTop - featureColumn.scrollTop + prevNode.offsetHeight : null;
+          const nextStart = nextNode ? columnBounds.top + nextNode.offsetTop - featureColumn.scrollTop : null;
+          const lineY = prevEnd != null && nextStart != null ? (prevEnd + nextStart) / 2
+            : prevEnd != null ? prevEnd + 4 : nextStart - 4;
+          lineRect = { x: columnBounds.left + 8, y: lineY - 1, w: Math.max(24, columnBounds.width - 16), h: 2, vertical: false };
+        }
+      } else {
+        lineRect = bottomDock
+          ? { x: columnBounds.left + 8, y: columnBounds.top + 8, w: 2, h: Math.max(24, columnBounds.height - 16), vertical: true }
+          : { x: columnBounds.left + 8, y: columnBounds.top + 8, w: Math.max(24, columnBounds.width - 16), h: 2, vertical: false };
+      }
+      return {
+        column,
+        gapIndex,
+        origin: false,
+        target: (candidates[gapIndex] || candidates.at(-1))?.dataset.elrDockedCard,
+        after: gapIndex >= candidates.length,
+        lineRect,
+      };
     };
 
     let started = false;
     let hover = null;
     let previewVertical;
+    let lastBox = null;
     const painter = frameWriter(({ x, y }) => {
       const location = dragLocation(x, y);
-      const { vertical, box } = location;
+      const { vertical, scale, box } = location;
+      lastBox = box;
       const next = dockAt(x, y, location);
       if (next?.column !== hover?.column || next?.origin !== hover?.origin
-        || next?.target !== hover?.target || next?.after !== hover?.after) {
-        rememberCardPositions(key);
+        || next?.gapIndex !== hover?.gapIndex || next?.target !== hover?.target || next?.after !== hover?.after) {
         hover = next;
         setCardDrop(next);
       }
@@ -6062,21 +6334,22 @@ function Reader(props) {
         preview.style.width = box.w + 'px';
         preview.style.height = box.h + 'px';
       }
-      preview.style.transform = 'translate3d(' + box.x + 'px,' + box.y + 'px,0)';
+      preview.style.transform = 'translate3d(' + box.x + 'px,' + box.y + 'px,0) scale(' + scale + ')';
     });
-    const cleanup = () => {
+    const cleanup = (settledBox = null) => {
       if (cardGestureCancelRef.current !== cleanup) return;
       cardGestureCancelRef.current = null;
       painter.cancel();
+      document.body.classList.remove('elr-card-dragging');
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', finish);
       window.removeEventListener('pointercancel', cancel);
-      window.removeEventListener('blur', cleanup);
+      window.removeEventListener('blur', onBlur);
       window.removeEventListener('keydown', onKey, true);
       capture.removeEventListener('lostpointercapture', cancel);
       try { if (capture.hasPointerCapture?.(pointer)) capture.releasePointerCapture(pointer); } catch (_) {}
       if (started) {
-        rememberCardPositions(key);
+        rememberCardPositions(key, true, settledBox || lastBox);
         gestureEnd();
         setGhost(null);
         setCardDrop(null);
@@ -6088,13 +6361,15 @@ function Reader(props) {
       if (!started) {
         if (Math.hypot(x - startX, y - startY) < 5) return;
         started = true;
+        document.body.classList.add('elr-card-dragging');
         gestureStart();
         setTermBubble(null);
         const location = dragLocation(x, y);
+        lastBox = location.box;
         hover = dockAt(x, y, location);
         rememberCardPositions(key);
         setCardDrop(hover);
-        setGhost({ key, vertical: location.vertical, ...location.box });
+        setGhost({ key, vertical: location.vertical, scale: location.scale, ...location.box });
       }
       painter.push({ x, y });
     };
@@ -6102,28 +6377,28 @@ function Reader(props) {
       if (e.pointerId !== pointer) return;
       const { clientX: x, clientY: y } = e;
       const inside = x >= 0 && y >= 0 && x <= window.innerWidth && y <= window.innerHeight;
+      let settledBox = null;
       if (started && inside) {
         const location = dragLocation(x, y);
         const { box } = location;
+        settledBox = box;
         const target = dockAt(x, y, location);
         const readingPane = readingSpaceRef.current ?? capture.querySelector('.elr-main');
         const expand = !location.inDock && containsPoint(readingPane?.getBoundingClientRect(), x, y);
         if (target && !expand) {
-          const workspace = sideTopElRef.current;
-          workspace?.classList.add('elr-no-card-motion');
           if (!target.origin) dockFunctionCard(key, target.target, target.after, columnCount === 2 ? target.column : null);
-          window.setTimeout(() => workspace?.classList.remove('elr-no-card-motion'), 650);
-        } else {
+        } else if (expand) {
           const placed = placeFunctionCard({ ...size, x: box.x, y: box.y }, (open || expand) && !compactCards[key], bounds);
           floatFunctionCard(key, { ...size, x: placed.x, y: placed.y }, bounds, open, expand);
         }
       }
-      cleanup();
+      cleanup(settledBox);
       if (!started && onTap && handle.isConnected) {
         const target = handle.getBoundingClientRect();
         if (x >= target.left && x <= target.right && y >= target.top && y <= target.bottom) onTap();
       }
     };
+    const onBlur = () => cleanup();
     const cancel = (e) => { if (e.pointerId === pointer) cleanup(); };
     const onKey = (e) => {
       if (!started || e.key !== 'Escape') return;
@@ -6135,7 +6410,7 @@ function Reader(props) {
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', finish);
     window.addEventListener('pointercancel', cancel);
-    window.addEventListener('blur', cleanup);
+    window.addEventListener('blur', onBlur);
     window.addEventListener('keydown', onKey, true);
     // Capture on the stable reader because React may move the handle as cards reorder.
     capture.addEventListener('lostpointercapture', cancel);
@@ -7002,11 +7277,58 @@ function Reader(props) {
   const headGroup = (...children) => h('div', { className: 'elr-head-group' }, ...children);
   const pdfOptionsId = React.useId();
   const pdfOptionsRef = React.useRef(null);
+  const pdfOptionsButton = React.useRef(null);
   const choosePdfOption = (action) => {
     pdfOptionsRef.current?.hidePopover();
     action();
   };
-  const switchPdfMode = (next) => {
+  const compareSurface = React.useRef(null);
+  const compareMotion = React.useRef(null);
+  const compareIntent = React.useRef(null);
+  const cancelCompareMotion = () => {
+    compareMotion.current?.stop();
+    compareMotion.current = null;
+    compareIntent.current = null;
+  };
+  React.useEffect(() => {
+    window.addEventListener('resize', cancelCompareMotion);
+    return () => { window.removeEventListener('resize', cancelCompareMotion); cancelCompareMotion(); };
+  }, [paperId, dock]);
+  React.useLayoutEffect(() => {
+    const intent = compareIntent.current;
+    const pane = compareSurface.current;
+    if (pdfReading.mode !== 'compare' || !intent || !pane) return;
+    compareIntent.current = null;
+    const copy = comparePaneCopy(pane, readingSpaceRef.current);
+    if (!copy) return;
+    const visual = animateComparePane(copy, intent.keyboard, false, intent.frame);
+    const conceal = pane.animate([{ opacity: 0 }, { opacity: 0 }], motionTiming('md', 'enter', intent.keyboard));
+    const motion = { copy, stop: () => { copy.remove(); visual.cancel(); conceal.cancel(); } };
+    compareMotion.current = motion;
+    visual.finished.then(() => {
+      conceal.cancel();
+      if (compareMotion.current === motion) compareMotion.current = null;
+    }, () => {});
+  }, [pdfReading.mode]);
+  const switchPdfMode = (next, event) => {
+    const outgoing = compareMotion.current?.copy;
+    const style = outgoing?.isConnected ? getComputedStyle(outgoing) : null;
+    const frame = style ? { opacity: style.opacity, clipPath: style.clipPath } : null;
+    cancelCompareMotion();
+    const keyboard = !event.detail;
+    if (next === 'compare') {
+      compareIntent.current = { keyboard, frame };
+    } else if (compareSurface.current) {
+      const copy = comparePaneCopy(compareSurface.current, readingSpaceRef.current);
+      if (copy) {
+        const visual = animateComparePane(copy, keyboard, true, frame);
+        const motion = { copy, stop: () => { copy.remove(); visual.cancel(); } };
+        compareMotion.current = motion;
+        visual.finished.then(() => {
+          if (compareMotion.current === motion) compareMotion.current = null;
+        }, () => {});
+      }
+    }
     cancelFigureWork();
     setFigureActivity(null);
     setFigurePickMode(false);
@@ -7033,14 +7355,14 @@ function Reader(props) {
   },
       h('div', { className: 'elr-reader-cluster' },
         h('button', { type: 'button', className: 'elr-btn elr-reader-symbol', title: t('page.prev'),
-          'aria-label': t('page.prev'), onClick: () => goPage(-1) }, '‹'),
+          'aria-label': t('page.prev'), onClick: () => goPage(-1) }, readerIcon('previous', 16)),
         h('span', { className: 'elr-reader-page' }, pageNum + ' / ' + pageCount),
         h('button', { type: 'button', className: 'elr-btn elr-reader-symbol', title: t('page.next'),
-          'aria-label': t('page.next'), onClick: () => goPage(1) }, '›')
+          'aria-label': t('page.next'), onClick: () => goPage(1) }, readerIcon('next', 16))
       ),
       h('div', { className: 'elr-reader-cluster' },
         h('button', { type: 'button', className: 'elr-btn elr-reader-symbol', disabled: !showOriginalPdf,
-          title: t('zoom.out'), 'aria-label': t('zoom.out'), onClick: () => zoom(-1) }, '−'),
+          title: t('zoom.out'), 'aria-label': t('zoom.out'), onClick: () => zoom(-1) }, readerIcon('zoomOut', 16)),
         // (v28 #3, revised) One merged control: type any percentage, or open the
         // caret for the presets. The native spinner stays suppressed because it
         // duplicated the 缩小 / 放大 buttons beside it.
@@ -7060,19 +7382,19 @@ function Reader(props) {
             onKeyDown: (e) => {
               if (e.key === 'Enter') { e.preventDefault(); commitZoomDraft(); setZoomMenuOpen(false); }
               else if (e.key === 'Escape') { e.preventDefault(); setZoomDraft(null); setZoomMenuOpen(false); }
-              else if (e.key === 'ArrowDown') { e.preventDefault(); setZoomMenuOpen(true); }
+              else if (e.key === 'ArrowDown') { e.preventDefault(); setMenuMotionInput(zoomPopupRef.current, true); setZoomMenuOpen(true); }
             },
           }),
           h('span', { className: 'elr-zoom-suffix' }, '%'),
           h('button', {
-            className: 'elr-zoom-caret',
+            ref: zoomCaretRef, className: 'elr-zoom-caret',
             disabled: !showOriginalPdf,
             'aria-label': t('zoom.label'), title: t('zoom.label'),
             'aria-expanded': zoomMenuOpen,
-            onClick: (e) => { e.preventDefault(); setZoomMenuOpen((v) => !v); },
-          }, zoomMenuOpen ? '▴' : '▾'),
-          zoomMenuOpen
-            ? h('div', { ref: zoomPopupRef, className: 'elr-zoom-menu', popover: 'manual' },
+            onClick: (e) => { e.preventDefault(); setMenuMotionInput(zoomPopupRef.current, !e.detail); setZoomMenuOpen((v) => !v); },
+          }, readerIcon(zoomMenuOpen ? 'up' : 'down', '.84em')),
+          h('div', { ref: zoomPopupRef, className: 'elr-zoom-menu elr-capsule-popover', popover: 'manual', inert: !zoomMenuOpen,
+            onToggle: (e) => setCapsuleMenuOrigin(e, zoomCaretRef.current) },
                 h('button', { type: 'button', className: 'elr-zoom-item', onClick: () => {
                   const state = pdfStateRef.current;
                   if (state?.viewer.pdfDocument) fitPdfPage(state);
@@ -7085,23 +7407,26 @@ function Reader(props) {
                   onClick: (e) => { e.preventDefault(); setZoomDraft(null); applyZoomPct(p); setZoomMenuOpen(false); },
                 }, p + '%'))
               )
-            : null
         ),
         h('button', { type: 'button', className: 'elr-btn elr-reader-symbol', disabled: !showOriginalPdf,
-          title: t('zoom.in'), 'aria-label': t('zoom.in'), onClick: () => zoom(1) }, '+')
+          title: t('zoom.in'), 'aria-label': t('zoom.in'), onClick: () => zoom(1) }, readerIcon('zoomIn', 16))
       ),
       h('div', { className: 'elr-reader-cluster' },
         pdfAnalysisReady ? h('button', { type: 'button', className: 'elr-btn elr-reader-compare',
+          'data-tour': 'compare',
           'aria-pressed': comparison,
-          onClick: () => switchPdfMode(comparison ? 'pdf' : 'compare') }, comparison ? '原文阅读' : '对照翻译') : null,
+          onClick: (event) => switchPdfMode(comparison ? 'pdf' : 'compare', event) }, comparison ? '原文阅读' : '对照翻译') : null,
         h('button', { type: 'button', className: 'elr-btn elr-reader-symbol elr-reader-capture',
           disabled: !pdfAnalysisReady || !showOriginalPdf || Boolean(figureActivity?.busy),
           title: t('figure.screenshot'), 'aria-label': t('figure.screenshot'), 'aria-pressed': figurePicking,
           onClick: toggleFigurePicker }, readerIcon('capture')),
-        h('button', { type: 'button', className: 'elr-btn elr-reader-more', popoverTarget: pdfOptionsId,
-          'aria-haspopup': 'dialog', 'aria-label': '更多阅读选项', title: '更多阅读选项' }, '▾'),
-        h('div', { ref: pdfOptionsRef, id: pdfOptionsId, className: 'elr-reader-options', role: 'dialog',
-          'aria-label': '更多阅读选项', popover: 'auto' },
+        h('button', { ref: pdfOptionsButton, type: 'button', className: 'elr-btn elr-reader-more', popoverTarget: pdfOptionsId,
+          onClick: (e) => setMenuMotionInput(pdfOptionsRef.current, !e.detail),
+          'aria-haspopup': 'dialog', 'aria-label': '更多阅读选项', title: '更多阅读选项' }, readerIcon('down', '.87em')),
+        h('div', { ref: pdfOptionsRef, id: pdfOptionsId, className: 'elr-reader-options elr-capsule-popover', role: 'dialog',
+          'aria-label': '更多阅读选项', popover: 'auto',
+          onBeforeToggle: (e) => { e.currentTarget.inert = e.newState === 'closed'; },
+          onToggle: (e) => setCapsuleMenuOrigin(e, pdfOptionsButton.current) },
           h('button', { type: 'button', className: 'elr-btn', disabled: !showOriginalPdf,
             title: t('spread.label'), onClick: () => choosePdfOption(() => setSpreadMode((value) => (Number(value) + 1) % 3)),
           }, t('spread.label') + ' · ' + t(['spread.one', 'spread.two', 'spread.three'][spreadMode])),
@@ -7162,22 +7487,26 @@ function Reader(props) {
       ? h('iframe', { className: 'elr-pdf-iframe', src: nativeUrl, title: pdfName || 'PDF' })
       : null;
     mainContent = h('div', { className: 'elr-pdf-wrap' + (showPdfStart ? ' is-start' : ''),
-      'data-reading-mode': pdfReading.mode },
+      'data-reading-mode': pdfReading.mode,
+      onFocusCapture: cancelCompareMotion,
+      onWheelCapture: () => { cancelCompareMotion(); cancelCoverFlight(); },
+      onPointerDownCapture: () => { cancelCompareMotion(); cancelCoverFlight(); } },
       pdfjsLayer,
       nativeLayer,
       pdfAnalysisReady && paperId ? h(PdfTranslations, {
         key: paperId + ':' + dropSeq, paper: paperId, page: pageNum, pageCount, mode: pdfReading.mode,
         target: pdfReading.target, selectedParagraph: pdfReading.selectedParagraph,
-        loadBlocks: pdfReading.loadBlocks, getChapter: pdfReading.getChapter,
+        surfaceRef: compareSurface, loadBlocks: pdfReading.loadBlocks, getChapter: pdfReading.getChapter,
         getAssets: pdfReading.getAssets, hover: pdfReading.hover, onHover: pdfReading.setHover,
         getModel: () => bodyRef.current(), onRead: pdfReading.followTranslation, onUserInput: pdfReading.useTranslation,
         onOriginal: pdfReading.locateSource, onPage: (page) => pdfReading.jump({ page }),
       }) : null,
       pdfAnalysisReady && pdfReading.mode === 'compare' ? h(PdfSplitHandle, {
-        stage: readingSpaceRef, ratio: pdfReading.ratio, onChange: pdfReading.setRatio,
+        stage: readingSpaceRef, ratio: pdfReading.ratio, onChange: pdfReading.setRatio, onInteraction: cancelCompareMotion,
       }) : null,
       showPdfStart ? h(PaperLibrary, {
-        onOpen: openRecent, onOpenFile: openPdfPicker, onSettings: openModelSettings,
+        onOpen: openRecent, onOpenCover: openFromCover, onCoverReady: coverReady,
+        onOpenFile: openPdfPicker, onSettings: openModelSettings,
         version: props.version, readerError: pdfError, tone: toneCls,
       }) : null,
       hasPdf && pdfError ? h('div', { className: 'elr-retry-bar' },
@@ -7298,10 +7627,21 @@ function Reader(props) {
     ) : mainContent
   );
 
-  const cardHeader = (key, open, toggle) => {
+  const cardHeader = (key, open) => {
     const toggleOpen = () => {
+      const state = readShared();
+      const openField = CARD_OPEN_FIELDS[key];
+      const currentlyOpen = openField ? state[openField] : state.analysisOpen[key];
+      const patch = cardOpenPatch(state, [key], !currentlyOpen);
+      const saved = state.floatingCards[key];
+      if (currentlyOpen && saved) {
+        // Expanded cards may have been clamped upwards by the viewport.
+        // Keep their visible top when the smaller collapsed layout fits.
+        const card = floatingHost.querySelector('[data-elr-floating-card="' + key + '"]');
+        if (card) patch.floatingCards = { ...state.floatingCards, [key]: { ...saved, y: card.getBoundingClientRect().top } };
+      }
       rememberCardFold();
-      toggle((previous) => !previous);
+      writeShared(patch);
     };
     const openContext = (event, keyboard = false) => {
       event.preventDefault();
@@ -7310,10 +7650,32 @@ function Reader(props) {
       setCardContext({ key, open, anchor, x: keyboard ? rect.left : event.clientX,
         y: keyboard ? rect.bottom : event.clientY });
     };
+    const reorderByKeyboard = (delta, columnShift = 0) => {
+      const state = readShared();
+      if (state.floatingCards?.[key]) return;
+      const currentEntry = workspaceCards.find((item) => item.key === key);
+      if (!currentEntry) return;
+      const col = currentEntry.column;
+      if (columnShift !== 0 && columnCount === 2) {
+        const nextCol = col === 0 ? 1 : 0;
+        const targetCards = workspaceCards.filter((item) => item.column === nextCol);
+        rememberCardPositions(null, true);
+        focusCardHandleRef.current = key;
+        dockFunctionCard(key, targetCards.at(-1)?.key || null, true, nextCol);
+        return;
+      }
+      const colCards = workspaceCards.filter((item) => item.column === col).map((item) => item.key);
+      const pos = colCards.indexOf(key);
+      const nextPos = pos + delta;
+      if (pos < 0 || nextPos < 0 || nextPos >= colCards.length) return;
+      rememberCardPositions(null, true);
+      focusCardHandleRef.current = key;
+      dockFunctionCard(key, colCards[nextPos], delta > 0, columnCount === 2 ? col : null);
+    };
     return h('div', { className: 'elr-function-head' },
       h('button', {
         type: 'button', className: 'elr-card-toggle', 'aria-expanded': open,
-        'aria-keyshortcuts': 'Alt+Enter Shift+F10',
+        'aria-keyshortcuts': 'Alt+Enter Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight Shift+F10',
         onPointerDown: beginCardDrag(key, open, toggleOpen),
         onContextMenu: openContext,
         // Pointer capture resolves taps and drags. Native keyboard activation still produces a click.
@@ -7324,6 +7686,15 @@ function Reader(props) {
           if (event.altKey && event.key === 'Enter') {
             event.preventDefault();
             toggleFunctionCardFloat(key, open, event.currentTarget);
+          } else if (event.altKey && dock !== 'bottom' && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+            event.preventDefault();
+            reorderByKeyboard(event.key === 'ArrowUp' ? -1 : 1);
+          } else if (event.altKey && dock === 'bottom' && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+            event.preventDefault();
+            reorderByKeyboard(event.key === 'ArrowLeft' ? -1 : 1);
+          } else if (event.altKey && dock !== 'bottom' && columnCount === 2 && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+            event.preventDefault();
+            reorderByKeyboard(0, event.key === 'ArrowLeft' ? -1 : 1);
           }
         },
       }, h('span', { className: 'elr-card-label' }, cardLabel(key)))
@@ -7334,7 +7705,7 @@ function Reader(props) {
   const selectionSideBySide = dock === 'bottom' && !floatingCards.selection;
   const paneSplit = selectionSideBySide ? selectionWidthSplit : selectionSplit;
   const selCard = h('div', { className: 'elr-sel-card' },
-    cardHeader('selection', selectionCardOpen, setSelectionCardOpen),
+    cardHeader('selection', selectionCardOpen),
     h('div', { className: 'elr-selection-content elr-card-fold-content', inert: !selectionCardOpen },
       h('div', { className: 'elr-sel-actions' },
         h('button', {
@@ -7385,27 +7756,41 @@ function Reader(props) {
   );
 
   const selectedAnalysisTab = ['figure', 'agent'].includes(analysisTab) && mode !== 'pdf' ? 'summary' : analysisTab;
+  const analysisTabItems = [
+    { id: 'summary', title: t('tab.summary'), label: t('tab.summary') },
+    { id: 'references', title: t('references.title'), label: t('references.title') + (references.length ? ' (' + references.length + ')' : '') },
+    ...(mode === 'pdf' ? [
+      { id: 'figure', title: t('figure.title'), label: t('figure.title') },
+      { id: 'agent', title: '阅读助手', label: '阅读助手' },
+    ] : []),
+  ];
+  const onAnalysisTabKeyDown = (event, index) => {
+    let next = -1;
+    if (event.key === 'ArrowRight') next = (index + 1) % analysisTabItems.length;
+    else if (event.key === 'ArrowLeft') next = (index - 1 + analysisTabItems.length) % analysisTabItems.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = analysisTabItems.length - 1;
+    if (next < 0) return;
+    event.preventDefault();
+    setAnalysisTab(analysisTabItems[next].id);
+    event.currentTarget.parentElement?.children[next]?.focus();
+  };
   const analysisTabs = h('div', { className: 'elr-tabs' },
-    h('div', { className: 'elr-segment' },
-      h('button', {
-        className: 'elr-seg' + (selectedAnalysisTab === 'summary' ? ' active' : ''),
-        title: t('tab.summary'),
-        onClick: () => setAnalysisTab('summary'),
-      }, t('tab.summary')),
-      h('button', {
-        className: 'elr-seg' + (selectedAnalysisTab === 'references' ? ' active' : ''),
-        title: t('references.title'),
-        onClick: () => setAnalysisTab('references'),
-      }, t('references.title') + (references.length ? ' (' + references.length + ')' : '')),
-      mode === 'pdf' ? h('button', {
-        className: 'elr-seg' + (selectedAnalysisTab === 'figure' ? ' active' : ''),
-        onClick: () => setAnalysisTab('figure'),
-      }, t('figure.title')) : null,
-      mode === 'pdf' ? h('button', {
-        className: 'elr-seg' + (selectedAnalysisTab === 'agent' ? ' active' : ''),
-        'aria-pressed': selectedAnalysisTab === 'agent',
-        title: '阅读助手', onClick: () => setAnalysisTab('agent'),
-      }, '阅读助手') : null
+    h('div', { className: 'elr-segment', role: 'tablist', 'aria-label': '研究分析' },
+      analysisTabItems.map((item, index) => {
+        const selected = selectedAnalysisTab === item.id;
+        return h('button', {
+          key: item.id,
+          type: 'button',
+          role: 'tab',
+          'aria-selected': selected,
+          tabIndex: selected ? 0 : -1,
+          className: 'elr-seg' + (selected ? ' active' : ''),
+          title: item.title,
+          onClick: () => setAnalysisTab(item.id),
+          onKeyDown: (event) => onAnalysisTabKeyDown(event, index),
+        }, item.label);
+      })
     ),
     h('span', { className: 'elr-spacer' }),
     selectedAnalysisTab === 'summary'
@@ -7457,7 +7842,12 @@ function Reader(props) {
       }, t('summary.retrySynthesis'))
     ),
     h('div', { className: 'elr-out elr-analysis-output' + (summary ? ' elr-markdown' : ' elr-out-empty') },
-      summary ? renderMarkdown(summary) : (analysisUnavailable || t('summary.placeholder'))
+      summary ? renderMarkdown(summary) : (analysisUnavailable || h(EmptyState, {
+        size: 'card',
+        icon: 'document',
+        title: '还没有论文总结',
+        primaryAction: { label: '开始分析', disabled: summaryBusy || pdfTextBusy || !canAnalyze, onClick: () => runWithAnalysisText(doSummary) },
+      }))
     )
   );
 
@@ -7559,7 +7949,12 @@ function Reader(props) {
             )
           ) : null
         );
-      }) : (!figureStatus ? t(contentCategory === 'formula' ? 'content.formulaEmpty' : 'figure.empty') : null))
+      }) : (!figureStatus ? h(EmptyState, {
+        size: 'card',
+        icon: 'image',
+        title: contentCategory === 'formula' ? '还没有公式解释' : '还没有图解记录',
+        primaryAction: contentCategory === 'visual' ? { label: '框选插图', onClick: () => setFigurePickMode(true) } : undefined,
+      }) : null))
   );
 
   const referencesActions = h('div', { className: 'elr-analysis-actions' },
@@ -7589,11 +7984,18 @@ function Reader(props) {
           )
         );
       }))
-    ) : null
+    ) : (!(referencesBusy || pdfTextBusy) ? h('div', { className: 'elr-out elr-refs-out elr-out-empty' },
+      h(EmptyState, {
+        size: 'card',
+        icon: 'quote',
+        title: '还没有参考文献',
+        primaryAction: { label: '整理参考文献', disabled: referencesBusy || pdfTextBusy || !canAnalyze, onClick: doReferences },
+      })
+    ) : null)
   );
 
   const recentSection = h('div', { className: 'elr-recent' },
-    cardHeader('recent', recentOpen, setRecentOpen),
+    cardHeader('recent', recentOpen),
     recent.length
       ? h('div', { className: 'elr-recent-list elr-card-fold-content', inert: !recentOpen }, recent.map((entry) => h('div', {
           key: entry.id,
@@ -7605,7 +8007,14 @@ function Reader(props) {
           h('button', { title: t('recent.open'), onClick: () => openRecent(entry) }, '▸'),
           h('button', { title: t('recent.remove'), onClick: () => removeRecent(entry.id) }, '×')
         )))
-      : h('div', { className: 'elr-recent-empty elr-card-fold-content', inert: !recentOpen }, t('recent.empty'))
+      : h('div', { className: 'elr-recent-empty elr-card-fold-content', inert: !recentOpen },
+        h(EmptyState, {
+          size: 'card',
+          icon: 'history',
+          title: '还没有最近阅读',
+          primaryAction: { label: '打开 PDF', onClick: () => pdfFileRef.current?.click() },
+        })
+      )
   );
 
   // (v24 #2) The list respects the filter, and in 'all' mode it follows the
@@ -7712,7 +8121,7 @@ function Reader(props) {
     )
   ) : null;
   const marksSection = h('div', { className: 'elr-marks' },
-    cardHeader('marks', marksOpen, setMarksOpen),
+    cardHeader('marks', marksOpen),
     h('div', { className: 'elr-card-content elr-card-fold-content', inert: !marksOpen },
       h('div', { className: 'elr-marks-filter', role: 'group', 'aria-label': t('mark.title') },
         ['all', 'hl', 'note'].map((filter) => h('button', {
@@ -7732,7 +8141,14 @@ function Reader(props) {
             h('span', null, m.text)
           )
         );
-      })) : h('div', { className: 'elr-marks-empty' }, (marks.length && markFilter !== 'all') ? t('mark.filterEmpty') : t('mark.empty')))
+      })) : h('div', { className: 'elr-marks-empty' }, (marks.length && markFilter !== 'all')
+        ? h(EmptyState, {
+          size: 'row',
+          live: true,
+          title: '当前筛选下没有条目',
+          primaryAction: { label: '查看全部', onClick: () => changeMarkFilter('all') },
+        })
+        : h(EmptyState, { size: 'card', icon: 'bookmark', title: '还没有高亮或批注' })))
     )
   );
 
@@ -7789,13 +8205,15 @@ function Reader(props) {
         );
   })) : null;
   const termsSection = h('div', { className: 'elr-terms' },
-    cardHeader('terms', termsOpen, setTermsOpen),
+    cardHeader('terms', termsOpen),
     selectedTerm ? h('div', { className: 'elr-detail-split elr-card-fold-content', inert: !termsOpen }, termsList,
       h('section', { key: selectedTerm.id, id: termDetailId, className: 'elr-detail-content elr-term-detail', 'aria-label': '术语详情' },
         h('div', { className: 'elr-detail-heading elr-term-detail-heading' }, h('strong', null, selectedTerm.term), termRemoveButton(selectedTerm)),
         termExplanation(selectedTerm, 'elr-term-body')
       )
-    ) : termsList || h('div', { className: 'elr-recent-empty elr-card-fold-content', inert: !termsOpen }, t('term.empty'))
+    ) : termsList || h('div', { className: 'elr-recent-empty elr-card-fold-content', inert: !termsOpen },
+      h(EmptyState, { size: 'card', icon: 'tag', title: '还没有术语记录' })
+    )
   );
   const termBubbleNode = shownTerm ? createPortal(h('div', {
     ref: termBubbleRef, id: termBubbleId, className: 'elr-term-popover' + toneCls,
@@ -7853,7 +8271,7 @@ function Reader(props) {
     : null;
 
   const analysisCard = (key, panel, actions) => h('div', { className: 'elr-analysis-card-inner' },
-    cardHeader(key, analysisOpen[key], () => setAnalysisOpen((previous) => ({ ...previous, [key]: !previous[key] }))),
+    cardHeader(key, analysisOpen[key]),
     h('div', { className: 'elr-analysis-card-body elr-card-fold-content', inert: !analysisOpen[key] }, actions, panel)
   );
   const agentPanel = mode === 'pdf' && paperId ? h(AgentPanel, {
@@ -7915,10 +8333,19 @@ function Reader(props) {
     })), floatingHost, key);
   }) : [];
 
-  const renderDockCard = (key, column) => {
+  const renderDockCard = (key, column, ripple = null) => {
         const collapsed = !openCards[key];
-        const compact = !collapsed && compactCards[key];
+        const compact = Boolean(compactCards[key]);
         const dragging = ghost?.key === key;
+        const baseStyle = dock === 'bottom'
+          ? ((!collapsed && !compact && cardWidths[key]) ? { width: cardWidths[key] } : {})
+          : ((!collapsed && !compact && cardHeights[key]) ? { height: cardHeights[key], flex: '0 0 auto' } : {});
+        const rippleStyle = ripple ? {
+          '--elr-ripple-x': (dock === 'bottom' ? ripple.shift : 0) + 'px',
+          '--elr-ripple-y': (dock === 'bottom' ? 0 : ripple.shift) + 'px',
+          '--elr-ripple-delay': ripple.delay + 'ms',
+        } : null;
+        const combinedStyle = rippleStyle ? { ...baseStyle, ...rippleStyle } : (Object.keys(baseStyle).length ? baseStyle : undefined);
         return h('div', {
           key,
           'data-elr-docked-card': key,
@@ -7927,9 +8354,7 @@ function Reader(props) {
             + (collapsed ? ' is-collapsed' : '')
             + (compact ? ' is-compact' : '')
             + (dragging ? ' dragging' : ''),
-          style: dock === 'bottom'
-            ? ((!collapsed && !compact && cardWidths[key]) ? { width: cardWidths[key] } : undefined)
-            : ((!collapsed && !compact && cardHeights[key]) ? { height: cardHeights[key], flex: '0 0 auto' } : undefined),
+          style: combinedStyle,
         }, cardNodes[key],
           // Bottom-docked cards with content can be resized horizontally.
           (dock === 'bottom' && !collapsed && !compact) ? h('div', {
@@ -7984,31 +8409,31 @@ function Reader(props) {
     const column = columnCount === 2 && (savedColumn === 0 || savedColumn === 1) ? savedColumn : index % columnCount;
     return { key, column };
   });
-  const dropPlaceholder = cardDrop && h('div', {
-    key: 'drop-slot',
-    className: 'elr-card-drop-placeholder' + (cardDrop.origin ? ' is-origin' : ''),
-    role: 'status',
-    'aria-label': cardDrop.origin ? '原位置占位' : '放置到此处',
-  });
+  const visibleIndexByCol = Array.from({ length: columnCount }, () => 0);
   workspaceCards.forEach(({ column, key }) => {
     const list = cardColumns[column];
-    const dropHere = cardDrop?.column === column
-      && (cardDrop.origin ? ghost?.key === key : cardDrop.target === key);
-    if (dropHere && !cardDrop.after) list.push(dropPlaceholder);
-    list.push(renderDockCard(key, column));
-    if (dropHere && cardDrop.after) list.push(dropPlaceholder);
+    const isDragging = ghost?.key === key;
+    let ripple = null;
+    if (!isDragging) {
+      const idx = visibleIndexByCol[column];
+      visibleIndexByCol[column] = idx + 1;
+      if (cardDrop && !cardDrop.origin && cardDrop.column === column) {
+        const beforeLine = idx < cardDrop.gapIndex;
+        const n = beforeLine ? (cardDrop.gapIndex - 1 - idx) : (idx - cardDrop.gapIndex);
+        const dir = beforeLine ? -1 : 1;
+        ripple = { shift: Number((dir * 8 * Math.pow(0.7, n)).toFixed(2)), delay: 24 * n };
+      }
+    }
+    list.push(renderDockCard(key, column, ripple));
   });
-  if (cardDrop && !cardDrop.origin && !cardDrop.target) {
-    cardColumns[cardDrop.column]?.push(dropPlaceholder);
-  }
   const sideTop = h('div', {
     ref: sideTopElRef,
     className: 'elr-side-top elr-feature-workspace' + (ghost ? ' drag-active' : '') + (cardDrop ? ' elr-card-dock-target' : ''),
   },
     h('div', { className: 'elr-col-head elr-card-head elr-workspace-head' },
       h('span', null, t('cards.title')),
-      h('button', { type: 'button', className: 'elr-card-control', title: switchDockLabel, 'aria-label': switchDockLabel, onClick: () => setDock(otherDock) }, readerIcon(otherDock === 'right' ? 'dockRight' : 'dockBottom')),
-      dock === 'right' ? h('button', { type: 'button', className: 'elr-card-control', title: columnCount === 1 ? '切换为两列' : '切换为一列', 'aria-label': columnCount === 1 ? '切换为两列' : '切换为一列', onClick: () => setFeatureColumns(columnCount === 1 ? 2 : 1) }, readerIcon(columnCount === 1 ? 'columns' : 'dockRight')) : null,
+      h('button', { type: 'button', className: 'elr-card-control', 'data-tour': 'dock', title: switchDockLabel, 'aria-label': switchDockLabel, onClick: () => setDock(otherDock) }, readerIcon(otherDock === 'right' ? 'dockRight' : 'dockBottom')),
+      dock === 'right' ? h('button', { type: 'button', className: 'elr-card-control', 'data-tour': 'columns', title: columnCount === 1 ? '切换为两列' : '切换为一列', 'aria-label': columnCount === 1 ? '切换为两列' : '切换为一列', onClick: () => setFeatureColumns(columnCount === 1 ? 2 : 1) }, h(LayoutIcon, { name: columnCount === 1 ? 'workspaceTwoColumns' : 'workspaceOneColumn' })) : null,
       h('button', { type: 'button', className: 'elr-card-control', title: '卡片字号', 'aria-label': '卡片字号',
         'aria-haspopup': 'dialog', popoverTarget: cardFontMenuId }, readerIcon('font')),
       h('div', { id: cardFontMenuId, className: 'elr-reader-options elr-card-font-menu', role: 'dialog', 'aria-label': '卡片字号', popover: 'auto' },
@@ -8056,7 +8481,13 @@ function Reader(props) {
       style: { '--elr-card-max-height': cardMaxHeight + 'px', '--elr-card-font-adjust': cardFontAdjust },
     },
       cardColumns.map((items, index) => h('div', { className: 'elr-feature-column', key: index, 'data-feature-column': String(index) }, items)),
-      !dockedCards.length ? h('div', { className: 'elr-card-none' }, t(enabledCards.length ? 'card.dockEmpty' : 'card.none')) : null
+      !dockedCards.length ? h('div', { className: 'elr-card-none' }, h(EmptyState, {
+        size: 'page',
+        wireframe: 'workspace',
+        title: enabledCards.length ? '停靠区暂无卡片' : '没有显示的功能卡片',
+        description: '开启需要的阅读工具卡片，或将悬浮卡片拖回此处。',
+        primaryAction: { label: '管理卡片', onClick: (e) => { e.stopPropagation(); setCardMenuOpen(true); } },
+      })) : null
     )
   );
 
@@ -8196,9 +8627,7 @@ function Reader(props) {
     };
     const actionButton = (icon, label, onClick, attributes) => h('button', {
       ...attributes, type: 'button', title: label, 'aria-label': label, onClick,
-    }, h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.65,
-      strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true,
-    }, h('path', { d: SELECTION_TOOL_ICONS[icon] })));
+    }, readerIcon(icon, 18));
     return h('div', {
       className: 'elr-selection-tools' + toneCls, role: 'toolbar', 'aria-label': t('selection.tools'),
       style: { left: position.x, top: position.y, width: position.w },
@@ -8221,10 +8650,17 @@ function Reader(props) {
       }, h('span', { 'aria-hidden': true }))),
       h('span', { className: 'elr-selection-divider', 'aria-hidden': true }),
       actionButton('note', t('mark.badgeNote'), () => addNote(text, rect, selectionTools)),
-      actionButton('translate', t('selection.inline'), () => {
+      actionButton('translate', t('selection.inline'), (event) => {
         const enabled = !popupOn;
+        const trigger = { rect: event.currentTarget.getBoundingClientRect(), keyboard: !event.detail };
         setPopupOn(enabled);
-        if (!enabled) { closeTranslationPopup(); return; }
+        if (!enabled) {
+          const node = selectionPopupElement.current;
+          if (node) selectionPopupMotion.current = animateSelectionSurface(node, trigger.rect, trigger.keyboard, true, selectionPopupMotion.current);
+          closeTranslationPopup();
+          return;
+        }
+        selectionPopupTrigger.current = trigger;
         const { selectionEdit: draft, selectionResult: result } = readShared();
         const nextPosition = openSelectionTranslation(rect, draft, result);
         setSelectionTools({ ...selectionTools, position: nextPosition });
@@ -8241,7 +8677,10 @@ function Reader(props) {
     h('div', {
       className: 'elr-popup elr-resizable' + (popupHorizontal ? ' is-side-by-side' : '')
         + (scheme === 'dark' ? ' elr-popup-dark' : '') + toneCls,
+      ref: selectionPopupElement,
       'data-selection-anchored': popup.followsSelection || undefined,
+      onPointerDownCapture: () => selectionPopupMotion.current?.cancel(),
+      onFocusCapture: () => selectionPopupMotion.current?.cancel(),
       style: { left: popup.x, top: popup.y, width: popup.w, height: popup.h, fontSize: popupFont + 'px' },
       'aria-keyshortcuts': 'Escape',
     },
@@ -8273,7 +8712,7 @@ function Reader(props) {
           'aria-label': t(popupHorizontal ? 'popup.stack' : 'popup.columns'),
           'aria-pressed': popupHorizontal,
           onClick: () => setPopupLayout(popupHorizontal ? 'stacked' : 'side-by-side'),
-        }, readerIcon(popupHorizontal ? 'rows' : 'columns'))
+        }, h(LayoutIcon, { name: popupHorizontal ? 'popupRows' : 'popupColumns' }))
       ),
       // (v15 #1/#2) Two visually distinct cards. The English original is a
       // controlled <textarea>, and 翻译 re-runs the translation with the
@@ -8603,13 +9042,26 @@ function Reader(props) {
     floatingHost
   ) : null;
 
+  const dropLineNode = (cardDrop && !cardDrop.origin && cardDrop.lineRect) ? createPortal(
+    h('div', {
+      className: 'elr-drop-line ' + (cardDrop.lineRect.vertical ? 'is-vertical' : 'is-horizontal'),
+      'aria-hidden': true,
+      style: {
+        transform: 'translate3d(' + cardDrop.lineRect.x + 'px,' + cardDrop.lineRect.y + 'px,0)',
+        width: cardDrop.lineRect.w + 'px',
+        height: cardDrop.lineRect.h + 'px',
+      },
+    }),
+    floatingHost
+  ) : null;
+
   const ghostNode = ghost ? createPortal(
     h('div', {
       ref: cardGhostRef,
-      className: 'elr-drag-ghost' + (ghost.vertical ? ' is-vertical' : '') + toneCls,
+      className: 'elr-drag-ghost is-lifting' + (ghost.vertical ? ' is-vertical' : '') + toneCls,
       'aria-hidden': true,
       style: {
-        transform: 'translate3d(' + ghost.x + 'px,' + ghost.y + 'px,0)',
+        transform: 'translate3d(' + ghost.x + 'px,' + ghost.y + 'px,0) scale(' + (ghost.scale ?? 1) + ')',
         width: ghost.w,
         height: ghost.h,
         '--elr-card-font-adjust': cardFontAdjust,
@@ -8653,6 +9105,7 @@ function Reader(props) {
     noteNode,
     floatingCardNodes,
     termBubbleNode,
+    dropLineNode,
     ghostNode,
     figurePicking ? createPortal(h(FigurePicker, {
       container: containerRef, onConfirm: confirmFigureBox, onCancel: () => setFigurePickMode(false),
@@ -8809,9 +9262,9 @@ const dictionaries = {
     'tone.label': 'Interface tone', 'tone.default': 'Dark theme',
     'tone.light': 'Light themes', 'tone.dark': 'Dark themes', 'tone.duo': 'Two-tone themes',
     'tone.duo-blue': 'White & Blue', 'tone.duo-orange': 'Grey & Orange', 'tone.duo-green': 'Oat & Green', 'tone.duo-purple': 'Mist & Purple',
-    'tone.blue': 'Rainwashed Blue', 'tone.green': 'Pine Mist', 'tone.amber': 'Autumn Wheat', 'tone.pink': 'Rose Haze',
+    'tone.blue': 'Rainwashed Blue', 'tone.green': 'Pine Mist', 'tone.amber': 'Autumn Wheat', 'tone.pink': 'Rose Haze', 'tone.prism-light': 'Sunlit Prism',
     'tone.navy': 'Midnight Sea', 'tone.ink': 'Ink in the Rain', 'tone.forest': 'Nightfall Pines',
-    'tone.plum': 'Violet Dusk', 'tone.ember': 'Fireside Stories',
+    'tone.plum': 'Violet Dusk', 'tone.ember': 'Fireside Stories', 'tone.prism-dark': 'Aurora Night',
     'mark.editNote': 'Edit note', 'mark.removeHl': 'Remove highlight',
     'recent.open': 'Open', 'recent.missing': 'This PDF must be re-opened — pick the file again.',
     'formula.explain': 'Explain formula', 'formula.title': 'Formula explanation',
@@ -8984,9 +9437,9 @@ const dictionaries = {
     'tone.label': '界面配色', 'tone.default': '深色主题',
     'tone.light': '浅色主题', 'tone.dark': '深色主题', 'tone.duo': '双拼主题',
     'tone.duo-blue': '白蓝', 'tone.duo-orange': '灰橘', 'tone.duo-green': '米绿', 'tone.duo-purple': '雾紫',
-    'tone.blue': '雨后天青', 'tone.green': '山间松雾', 'tone.amber': '秋日麦穗', 'tone.pink': '蔷薇薄雾',
+    'tone.blue': '雨后天青', 'tone.green': '山间松雾', 'tone.amber': '秋日麦穗', 'tone.pink': '蔷薇薄雾', 'tone.prism-light': '晴光流彩',
     'tone.navy': '深海子夜', 'tone.ink': '墨池听雨', 'tone.forest': '松林入夜',
-    'tone.plum': '暮紫星河', 'tone.ember': '炉边夜话',
+    'tone.plum': '暮紫星河', 'tone.ember': '炉边夜话', 'tone.prism-dark': '极夜流光',
     'mark.editNote': '编辑批注', 'mark.removeHl': '取消高亮',
     'recent.open': '打开', 'recent.missing': '该 PDF 需要重新选择文件才能打开。',
     'formula.explain': '解释公式', 'formula.title': '公式详解',
@@ -9044,4 +9497,4 @@ function translate(key, values) {
   return String(raw).replace(/\{(\w+)\}/g, (match, name) => values?.[name] ?? match);
 }
 window.addEventListener('pagehide', flushSnapshot);
-export { Reader, installCss, setHostScheme, translate, readReaderSettings, writeReaderSettings };
+export { Reader, installCss, setHostScheme, translate, readReaderSettings, writeReaderSettings, subscribeReaderSettings };

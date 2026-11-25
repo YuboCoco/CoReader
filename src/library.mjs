@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream, mkdirSync } from 'node:fs';
-import { open, rename, rm, stat } from 'node:fs/promises';
+import { open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { Transform } from 'node:stream';
@@ -260,6 +260,42 @@ export function openLibrary(root) {
       } finally {
         await rm(pendingFile, { force: true }).catch(() => {});
       }
+    },
+    async seedSamplePaper(filePath, details = {}) {
+      if (typeof filePath !== 'string' || !filePath) return null;
+      const bytes = await readFile(filePath);
+      if (!bytes.subarray(0, Math.min(bytes.length, 1024)).includes('%PDF-')) {
+        throw new Error('示例论文不是可读取的 PDF。');
+      }
+      const id = createHash('sha256').update(bytes).digest('hex');
+      const destination = join(files, id + '.pdf');
+      const cached = await stat(destination).catch(() => null);
+      if (!cached?.isFile() || cached.size !== bytes.length) {
+        const pendingFile = join(files, randomUUID() + '.part');
+        try {
+          await writeFile(pendingFile, bytes);
+          await rename(pendingFile, destination);
+        } finally {
+          await rm(pendingFile, { force: true }).catch(() => {});
+        }
+      }
+      transaction(() => {
+        const now = Date.now();
+        const insert = db.prepare('INSERT OR IGNORE INTO documents (id, name, size, touched, opened) VALUES (?, ?, ?, ?, ?)')
+          .run(id, basename(filePath), bytes.length, now, null);
+        if (!insert.changes) return;
+        const metadata = {};
+        for (const [key, max] of Object.entries(paperFields)) {
+          const value = text(details?.[key], max);
+          if (value) metadata[key] = value;
+        }
+        const seedTags = tagsOf(details?.tags);
+        if (seedTags.length) metadata.tags = seedTags;
+        metadata.status = ['reading', 'read'].includes(details?.status) ? details.status : 'unread';
+        for (const tag of seedTags) registerTag.run(tag);
+        saveCatalog.run(id, null, JSON.stringify(metadata));
+      });
+      return find(id);
     },
     reopen(id) {
       const paper = requirePaper(id);

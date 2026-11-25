@@ -2,11 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { connectionNames } from '../model-capabilities.mjs';
 import { AccountConnections } from './account-connections.jsx';
 import { ModelSettings } from './settings.jsx';
+import { glassTintPreference } from './liquid-glass.mjs';
 import { readReaderSettings, writeReaderSettings } from './reader-view.js';
 
 const api = window.reader;
 
-export function ModelCenter({ version, availableUpdate, onClose, onSave, onConnectionsChange }) {
+export function ModelCenter({ version, availableUpdate, onClose, onSave, onConnectionsChange, onReplayTour }) {
   const dialog = useRef(null);
   const mounted = useRef(false);
   const connectionUpdates = useRef({});
@@ -103,6 +104,24 @@ export function ModelCenter({ version, availableUpdate, onClose, onSave, onConne
     onClose();
   }
 
+  const tabs = [
+    { id: 'models', label: '模型与账号', panelId: 'model-center-panel-models' },
+    { id: 'display', label: '显示设置', panelId: 'model-center-panel-display' },
+    { id: 'reading', label: '阅读设置', panelId: 'model-center-panel-reading' },
+  ];
+
+  function onTabKeyDown(event, index) {
+    let next = -1;
+    if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = tabs.length - 1;
+    if (next < 0) return;
+    event.preventDefault();
+    setTab(tabs[next].id);
+    event.currentTarget.parentElement?.children[next]?.focus();
+  }
+
   const tone = display.uiTone === 'default' || !display.uiTone ? '' : ' elr-tone-' + display.uiTone;
   return <dialog className={'settings model-center' + tone} ref={dialog} aria-labelledby="model-center-title"
     onCancel={(event) => { event.preventDefault(); close(); }}>
@@ -115,13 +134,16 @@ export function ModelCenter({ version, availableUpdate, onClose, onSave, onConne
           <button type="button" className="quiet" aria-label="关闭设置" onClick={close}>×</button>
         </div>
       </header>
-      <nav className="model-center-tabs" aria-label="设置分类">
-        <button type="button" aria-pressed={tab === 'models'} onClick={() => setTab('models')}>模型与账号</button>
-        <button type="button" aria-pressed={tab === 'display'} onClick={() => setTab('display')}>显示设置</button>
-        <button type="button" aria-pressed={tab === 'reading'} onClick={() => setTab('reading')}>阅读设置</button>
-      </nav>
+      <div className="model-center-tabs" role="tablist" aria-label="设置分类">
+        {tabs.map((item, index) => {
+          const selected = tab === item.id;
+          return <button key={item.id} id={'model-center-tab-' + item.id} type="button" role="tab"
+            aria-selected={selected} aria-controls={item.panelId} tabIndex={selected ? 0 : -1}
+            onClick={() => setTab(item.id)} onKeyDown={(event) => onTabKeyDown(event, index)}>{item.label}</button>;
+        })}
+      </div>
     </div>
-    <section className="model-center-pane" aria-label="模型配置" hidden={tab !== 'models'}>
+    <section id="model-center-panel-models" role="tabpanel" aria-labelledby="model-center-tab-models" className="model-center-pane" hidden={tab !== 'models'}>
       {problem && <p className="model-center-error" role="alert">{problem}</p>}
       <AccountConnections connections={connections} onUpdate={update} onRefresh={(provider, force) => provider === 'chatgpt'
         ? useAccount(() => api.chatgptStatus(), 'refresh') : refresh(provider, force)}
@@ -133,19 +155,20 @@ export function ModelCenter({ version, availableUpdate, onClose, onSave, onConne
       {value ? <ModelSettings value={value} connections={connections} updating={Boolean(updating || accountPending)} onSave={onSave} />
         : !problem && <p className="model-center-loading" role="status">正在读取模型配置…</p>}
     </section>
-    <section className="model-center-pane" aria-label="显示设置" hidden={tab !== 'display'}>
+    <section id="model-center-panel-display" role="tabpanel" aria-labelledby="model-center-tab-display" className="model-center-pane" hidden={tab !== 'display'}>
       <DisplaySettings value={display} onChange={updateDisplay} />
     </section>
-    <section className="model-center-pane" aria-label="阅读设置" hidden={tab !== 'reading'}>
-      <ReadingSettings value={display} onChange={updateDisplay} />
+    <section id="model-center-panel-reading" role="tabpanel" aria-labelledby="model-center-tab-reading" className="model-center-pane" hidden={tab !== 'reading'}>
+      <ReadingSettings value={display} onChange={updateDisplay} onReplayTour={onReplayTour} />
     </section>
   </dialog>;
 }
 
 function DisplaySettings({ value, onChange }) {
+  const glassEnabled = value.glassEnabled !== false;
   const tones = {
-    light: [['blue', '雨后天青'], ['green', '山间松雾'], ['amber', '秋日麦穗'], ['pink', '蔷薇薄雾']],
-    dark: [['default', '深色主题'], ['navy', '深海子夜'], ['ink', '墨池听雨'], ['forest', '松林入夜'], ['plum', '暮紫星河'], ['ember', '炉边夜话']],
+    light: [['blue', '雨后天青'], ['green', '山间松雾'], ['amber', '秋日麦穗'], ['pink', '蔷薇薄雾'], ['prism-light', '晴光流彩']],
+    dark: [['default', '深色主题'], ['navy', '深海子夜'], ['ink', '墨池听雨'], ['forest', '松林入夜'], ['plum', '暮紫星河'], ['ember', '炉边夜话'], ['prism-dark', '极夜流光']],
     duo: [['duo-blue', '白蓝'], ['duo-orange', '灰橘'], ['duo-green', '米绿'], ['duo-purple', '雾紫']],
   };
   return <div className="display-settings">
@@ -166,44 +189,69 @@ function DisplaySettings({ value, onChange }) {
       </label>
     </div>
     <div className="display-setting-group">
-      <h3>功能栏布局</h3>
-      <label>停靠位置
-        <select value={value.dock || 'right'} onChange={(event) => onChange({ dock: event.target.value })}>
-          <option value="right">右侧</option><option value="bottom">下方</option>
-        </select>
+      <h3>液态玻璃</h3>
+      <label>启用液态玻璃
+        <input className="elr-glass-switch" type="checkbox" role="switch" checked={glassEnabled}
+          onChange={(event) => onChange({ glassEnabled: event.target.checked })} />
       </label>
-      {value.dock === 'right' ? <label>右侧功能栏列数
-        <select value={Number(value.featureColumns) === 2 ? '2' : '1'} onChange={(event) => onChange({ featureColumns: Number(event.target.value) })}>
-          <option value="1">一列</option><option value="2">两列</option>
-        </select>
-      </label> : null}
+      {[['glassTintLight', '浅色玻璃着色强度'], ['glassTintDark', '深色玻璃着色强度']].map(([key, label]) => {
+        const tint = glassTintPreference(value[key]);
+        const percent = Math.round(tint * 100) + '%';
+        return <label key={key}>{label}
+          <span className="elr-glass-slider">
+            <input type="range" min="0" max="1.5" step="0.05" value={tint} disabled={!glassEnabled} aria-label={label} aria-valuetext={percent}
+              onChange={(event) => onChange({ [key]: event.target.valueAsNumber })} />
+            <output aria-hidden="true">{percent}</output>
+          </span>
+        </label>;
+      })}
+    </div>
+    <div className="display-setting-group">
+      <h3>功能栏布局</h3>
+      <div className="display-setting-row">
+        <span id="setting-dock-label">停靠位置</span>
+        <div className="elr-segmented-control" role="group" aria-labelledby="setting-dock-label">
+          <button type="button" aria-pressed={(value.dock || 'right') === 'right'} onClick={() => onChange({ dock: 'right' })}>右侧</button>
+          <button type="button" aria-pressed={value.dock === 'bottom'} onClick={() => onChange({ dock: 'bottom' })}>下方</button>
+        </div>
+      </div>
+      {(value.dock || 'right') === 'right' ? <div className="display-setting-row">
+        <span id="setting-columns-label">右侧功能栏列数</span>
+        <div className="elr-segmented-control" role="group" aria-labelledby="setting-columns-label">
+          <button type="button" aria-pressed={Number(value.featureColumns) !== 2} onClick={() => onChange({ featureColumns: 1 })}>一列</button>
+          <button type="button" aria-pressed={Number(value.featureColumns) === 2} onClick={() => onChange({ featureColumns: 2 })}>两列</button>
+        </div>
+      </div> : null}
     </div>
   </div>;
 }
 
-function ReadingSettings({ value, onChange }) {
+function ReadingSettings({ value, onChange, onReplayTour }) {
   return <div className="display-settings">
     <div className="display-setting-group">
       <h3>划词翻译</h3>
       <label>划词后自动翻译
-        <select value={value.autoTranslateSelection ? 'on' : 'off'}
-          onChange={(event) => onChange({ autoTranslateSelection: event.target.value === 'on' })}>
-          <option value="off">关闭</option><option value="on">开启</option>
-        </select>
+        <input className="elr-glass-switch" type="checkbox" role="switch" checked={Boolean(value.autoTranslateSelection)}
+          onChange={(event) => onChange({ autoTranslateSelection: event.target.checked })} />
       </label>
       <label>选中文本时自动打开翻译浮窗
-        <select value={value.popupOn ? 'on' : 'off'} onChange={(event) => onChange({ popupOn: event.target.value === 'on' })}>
-          <option value="off">关闭</option><option value="on">开启</option>
-        </select>
+        <input className="elr-glass-switch" type="checkbox" role="switch" checked={Boolean(value.popupOn)}
+          onChange={(event) => onChange({ popupOn: event.target.checked })} />
       </label>
     </div>
     <div className="display-setting-group">
       <h3>阅读操作</h3>
-      <label>阅读工具栏位置
-        <select value={value.capsulePosition || 'top'} onChange={(event) => onChange({ capsulePosition: event.target.value })}>
-          <option value="top">页面顶部</option><option value="bottom">页面底部</option>
-        </select>
-      </label>
+      <div className="display-setting-row">
+        <span id="setting-capsule-label">阅读工具栏位置</span>
+        <div className="elr-segmented-control" role="group" aria-labelledby="setting-capsule-label">
+          <button type="button" aria-pressed={(value.capsulePosition || 'top') === 'top'} onClick={() => onChange({ capsulePosition: 'top' })}>页面顶部</button>
+          <button type="button" aria-pressed={value.capsulePosition === 'bottom'} onClick={() => onChange({ capsulePosition: 'bottom' })}>页面底部</button>
+        </div>
+      </div>
+      {onReplayTour && <div className="display-setting-row">
+        <span>新手引导</span>
+        <button type="button" onClick={onReplayTour}>重新查看新手引导</button>
+      </div>}
       <p className="settings-note">按住 Ctrl 并拖动鼠标左键移动 PDF 页面。</p>
     </div>
   </div>;

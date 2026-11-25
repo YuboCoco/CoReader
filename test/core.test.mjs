@@ -187,3 +187,37 @@ test('the provider adapter validates the endpoint and streams only visible respo
     await new Promise((done) => server.close(done));
   }
 });
+
+test('seedSamplePaper preloads the bundled Attention Is All You Need PDF idempotently', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'elr-sample-paper-'));
+  let library;
+  try {
+    const samplePdf = join(process.cwd(), 'assets', 'samples', 'Attention Is All You Need.pdf');
+    library = openLibrary(directory);
+    const seeded = await library.seedSamplePaper(samplePdf, {
+      title: 'Attention Is All You Need',
+      authors: 'Ashish Vaswani et al.',
+      year: '2017',
+      venue: 'NeurIPS',
+      arxiv: '1706.03762',
+      tags: ['示例论文', 'transformer'],
+      status: 'unread',
+    });
+    assert.ok(seeded?.id);
+    assert.equal(library.recent().length, 0);
+    const papers = library.paperLibrary().papers;
+    assert.equal(papers.length, 1);
+    assert.equal(papers[0].title, 'Attention Is All You Need');
+    assert.equal(papers[0].year, '2017');
+    assert.deepEqual(papers[0].tags, ['示例论文', 'transformer']);
+    // User edits should survive a repeated seed attempt without duplicating the document.
+    library.updatePaperDetails(seeded.id, { title: 'Custom Title', tags: ['已修改'], status: 'reading' });
+    const repeated = await library.seedSamplePaper(samplePdf, { title: 'Attention Is All You Need' });
+    assert.equal(repeated.id, seeded.id);
+    assert.equal(library.paperLibrary().papers.length, 1);
+    assert.equal(library.paperLibrary().papers[0].title, 'Custom Title');
+  } finally {
+    library?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

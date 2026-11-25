@@ -5,6 +5,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { readPageText } from './pdf.jsx';
+import { EmptyState } from './empty-state.jsx';
 
 const api = window.reader;
 const blank = { summary: null, references: null, figures: [] };
@@ -196,7 +197,8 @@ export function ResearchPanel({ operation, research, ready, picking, onPick, onP
       {summary.canRetry && <p className="form-error">汇总失败，已保留分段笔记，可单独重试汇总。</p>}
       <RenderMarkdown text={summary.text} />
       {expanded && <ReportDialog summary={summary} onClose={() => setExpanded(false)} />}
-    </> : <p className="empty">使用所选模型分析论文的方法、实验、局限与复现细节。</p>)}
+    </> : <EmptyState size="card" icon="document" title="还没有论文总结"
+      primaryAction={{ label: '开始分析', disabled: !ready || task.pending, onClick: () => research.run('summary') }} />)}
     {operation === 'references' && (references ? <>
       {references.skipped > 0 && <p className="form-error">{references.skipped} 个书目区段未完整识别，可重新整理。</p>}
       <div className="research-meta">{references.entries.length} 条参考文献</div>
@@ -212,9 +214,12 @@ export function ResearchPanel({ operation, research, ready, picking, onPick, onP
           {item.title && <details className="reference-source"><summary>查看引文原文</summary><p>{item.raw}</p></details>}
         </article>
       ))}</div>
-    </> : <p className="empty">识别论文书目中的引文，并核对原文链接、DOI 或数据库匹配结果。</p>)}
+    </> : <EmptyState size="card" icon="quote" title="还没有参考文献"
+      primaryAction={{ label: '整理参考文献', disabled: !ready || task.pending, onClick: () => research.run('references') }} />)}
     {operation === 'figure' && <>
-      <p className="empty">{picking ? '在当前 PDF 页拖动框选插图，按 Esc 取消。' : !figures.length ? '框选一幅图表，使用支持图像输入的模型解释。' : ''}</p>
+      {picking ? <EmptyState size="row" title="在当前 PDF 页拖动框选插图，按 Esc 取消。" />
+        : !figures.length ? <EmptyState size="card" icon="image" title="还没有图解记录"
+          primaryAction={{ label: '框选插图', disabled: !ready || task.pending, onClick: onPick }} /> : null}
       {figures.map((item) => <article className="record figure-record" key={item.id}>
         <div className="record-head">
           <button className="location" onClick={() => onPage(item.page)}>第 {item.page} 页</button>

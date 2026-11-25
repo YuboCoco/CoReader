@@ -25,6 +25,7 @@ const isMac = process.platform === 'darwin';
 const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 const preload = fileURLToPath(new URL('./preload.cjs', import.meta.url));
 const appIcon = fileURLToPath(new URL('../assets/coreader-cr.png', import.meta.url));
+const samplePaperPath = fileURLToPath(new URL('../assets/samples/Attention Is All You Need.pdf', import.meta.url));
 const requestIdPattern = /^[a-f0-9-]{36}$/i;
 let mainWindow;
 let library;
@@ -898,14 +899,33 @@ function startupFailure(error) {
   app.exit(1);
 }
 
+async function ensureSamplePaper() {
+  if (library.getSetting('sample-paper-seeded-v1', false)) return;
+  try {
+    const seeded = await library.seedSamplePaper(samplePaperPath, {
+      title: 'Attention Is All You Need',
+      authors: 'Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, Illia Polosukhin',
+      year: '2017',
+      venue: 'NeurIPS',
+      arxiv: '1706.03762',
+      tags: ['示例论文', 'transformer'],
+      status: 'unread',
+    });
+    if (seeded) library.setSetting('sample-paper-seeded-v1', true);
+  } catch (error) {
+    console.error('Could not seed sample paper:', error?.message || error);
+  }
+}
+
 if (ownsApp) {
   app.on('second-instance', () => {
     if (!mainWindow) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   });
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     library = openLibrary(app.getPath('userData'));
+    await ensureSamplePaper();
     chatgpt = createChatGPTAuth({
       fetcher: fetchThroughSystem,
       read() {

@@ -1,4 +1,4 @@
-CoReader 0.1.0 · Windows x64
+CoReader 0.1.2 · Windows x64
 
 界面采用小米 MiSans 字体。
 

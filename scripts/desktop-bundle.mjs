@@ -24,8 +24,9 @@ export function stageDesktopApp(staging, distDir, manifest) {
     cpSync(join(directory, license), join(licenses, dependency + '.txt'));
   }
   cpSync('assets/remark-math.LICENSE', join(licenses, 'remark-math-and-rehype-katex.txt'));
-  mkdirSync(join(staging, 'assets'));
+  mkdirSync(join(staging, 'assets', 'samples'), { recursive: true });
   cpSync('assets/coreader-cr.png', join(staging, 'assets', 'coreader-cr.png'));
+  cpSync('assets/samples/Attention Is All You Need.pdf', join(staging, 'assets', 'samples', 'Attention Is All You Need.pdf'));
 }
 
 export function copyLayoutBundle(output, model, platform, arch) {

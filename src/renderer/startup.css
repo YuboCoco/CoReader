@@ -1,10 +1,10 @@
+@import './motion.css';
+
 /* The transparent gap in the existing wordmark divides Co from Reader. */
 .elr-startup {
   --elr-startup-wordmark-width: clamp(180px, 29vw, 290px);
   --elr-startup-split: 28.49%;
-  --elr-startup-scene: 740ms;
-  --elr-startup-ease-out: cubic-bezier(.23, 1, .32, 1);
-  --elr-startup-ease-in-out: cubic-bezier(.77, 0, .175, 1);
+  --elr-startup-scene: var(--duration-lg);
   position: fixed;
   z-index: 500;
   inset: 0;
@@ -18,7 +18,7 @@
   display: flex;
   align-items: center;
   gap: clamp(10px, 1.25vw, 16px);
-  animation: elr-startup-align var(--elr-startup-scene) both;
+  animation: elr-startup-align var(--elr-startup-scene) var(--ease-in-out) both;
 }
 .elr-startup-icon {
   display: block;
@@ -35,6 +35,7 @@
   inset: 0;
   mask: url('../../assets/coreader-wordmark-duo.png') center / contain no-repeat;
   animation-duration: var(--elr-startup-scene);
+  animation-timing-function: var(--ease-in-out);
   animation-fill-mode: both;
 }
 .elr-startup-co {
@@ -52,7 +53,7 @@
 @keyframes elr-startup-align {
   0%, 20% {
     transform: translateX(calc(var(--elr-startup-wordmark-width) * .35755));
-    animation-timing-function: var(--elr-startup-ease-out);
+    animation-timing-function: var(--ease-in-out);
   }
   58%, 100% { transform: translateX(0); }
 }
@@ -60,7 +61,7 @@
   0%, 54% { transform: translateX(0) rotate(0); }
   66% {
     transform: translateX(-4px) rotate(-2.5deg);
-    animation-timing-function: var(--elr-startup-ease-out);
+    animation-timing-function: var(--ease-out-strong);
   }
   83% { transform: translateX(1px) rotate(.8deg); }
   100% { transform: translateX(0) rotate(0); }
@@ -69,18 +70,18 @@
   0%, 20% {
     transform: translateX(47%) rotate(0);
     opacity: 0;
-    animation-timing-function: var(--elr-startup-ease-in-out);
+    animation-timing-function: var(--ease-out);
   }
   41% {
     transform: translateX(22%) rotate(0);
     opacity: 1;
-    animation-timing-function: var(--elr-startup-ease-out);
+    animation-timing-function: var(--ease-out);
   }
   54% { transform: translateX(-1px) rotate(0); opacity: 1; }
   66% {
     transform: translateX(-5px) rotate(-2.5deg);
     opacity: 1;
-    animation-timing-function: var(--elr-startup-ease-out);
+    animation-timing-function: var(--ease-out-strong);
   }
   83% { transform: translateX(2px) rotate(.8deg); opacity: 1; }
   100% { transform: translateX(0) rotate(0); opacity: 1; }

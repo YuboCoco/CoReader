@@ -117,11 +117,15 @@ export function ModelSettings({ value, connections, updating, onSave }) {
             <input type="number" min="4096" max="4000000" value={questionChoice.contextWindow ?? ''}
               placeholder="留空自动设置" onChange={(event) => setQuestion({ ...questionChoice, contextWindow: event.target.value })} />
           </label>
-          <label>图像输入
-            <select value={questionChoice.images || 'auto'} onChange={(event) => setQuestion({ ...questionChoice, images: event.target.value })}>
-              <option value="auto">自动</option><option value="yes">模型支持图像</option><option value="no">关闭图像输入</option>
-            </select>
-          </label>
+          <div className="setting-field-group">
+            <span id="model-images-label" className="setting-field-label">图像输入</span>
+            <div className="elr-segmented-control" role="group" aria-labelledby="model-images-label">
+              {[['auto', '自动'], ['yes', '开启'], ['no', '关闭']].map(([id, text]) => (
+                <button key={id} type="button" aria-pressed={(questionChoice.images || 'auto') === id}
+                  onClick={() => setQuestion({ ...questionChoice, images: id })}>{text}</button>
+              ))}
+            </div>
+          </div>
         </>}
         <label>OpenAlex API Key（可选）
           <input type="password" autoComplete="off" value={openAlexKey} onChange={(event) => setOpenAlexKey(event.target.value)}

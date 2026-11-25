@@ -5,6 +5,7 @@ import { blockForAnchor, chapterRange, embeddedOutline, flattenOutline, headingO
   sourceScrollOffset } from './pdf-reading.mjs';
 import { blockAtPoint, bookmarkWithNumber, insertMedia, lineInsideMedia, pdfGraphics, pdfMedia, protectMath, renderMedia, translationSource, viewportBounds } from './pdf-media.mjs';
 import { composeMedia, formulaTextInBounds, readLayout, textOutsideMedia } from './pdf-layout.mjs';
+import { EmptySkeleton, EmptyState } from './empty-state.jsx';
 import './pdf-reading.css';
 
 const api = window.reader;
@@ -664,14 +665,16 @@ export function PdfOutline({ id, nodes, current, status, onJump, onRetry }) {
   return <aside id={id} className="elr-pdf-outline" aria-label="文献目录">
     <header><h2>目录</h2></header>
     <nav aria-label="章节导航">
-      {status === 'loading' && <p role="status">正在读取目录…</p>}
-      {status === 'error' && <div className="elr-outline-empty"><p>目录暂时无法读取。</p><button type="button" className="elr-btn" onClick={onRetry}>重试</button></div>}
-      {status === 'ready' && render(nodes)}
+      {status === 'loading' && <EmptySkeleton variant="outline" rows={6} label="正在读取目录…" />}
+      {status === 'error' && <EmptyState size="card" icon="alert" title="无法读取目录"
+        primaryAction={{ label: '重试', retry: true, onClick: onRetry }} />}
+      {status === 'ready' && (nodes.length > 0 ? render(nodes)
+        : <EmptyState size="card" icon="list" title="这篇 PDF 没有目录" />)}
     </nav>
   </aside>;
 }
 
-export function PdfSplitHandle({ stage, ratio, onChange }) {
+export function PdfSplitHandle({ stage, ratio, onChange, onInteraction }) {
   const drag = useRef(null);
   const clampRatio = (value) => Math.max(32, Math.min(72, Math.round(value)));
   const move = (event) => {
@@ -696,6 +699,7 @@ export function PdfSplitHandle({ stage, ratio, onChange }) {
     onPointerDown={(event) => {
       const box = stage.current?.getBoundingClientRect();
       if (event.button !== 0 || !box?.width) return;
+      onInteraction?.();
       drag.current = { id: event.pointerId, left: box.left, width: box.width, pending: ratio, frame: 0 };
       event.currentTarget.setPointerCapture(event.pointerId);
       event.preventDefault();
@@ -703,6 +707,7 @@ export function PdfSplitHandle({ stage, ratio, onChange }) {
     onKeyDown={(event) => {
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
       event.preventDefault();
+      onInteraction?.();
       onChange(clampRatio(ratio + (event.key === 'ArrowLeft' ? -3 : 3)));
     }} />;
 }
@@ -717,7 +722,7 @@ function savedTranslation(page, block) {
   return record?.source === source ? record : page.bySource.get(source);
 }
 
-export function PdfTranslations({ paper, page, pageCount, mode, target, selectedParagraph, loadBlocks, getChapter, getModel,
+export function PdfTranslations({ paper, page, pageCount, mode, target, selectedParagraph, surfaceRef, loadBlocks, getChapter, getModel,
   onRead, onUserInput, onOriginal, onPage, getAssets, hover, onHover }) {
   const scroll = useRef(null);
   const actions = useRef(null);
@@ -948,7 +953,7 @@ export function PdfTranslations({ paper, page, pageCount, mode, target, selected
 
   if (mode === 'pdf') return null;
   const loading = !results[page];
-  return <section className={'elr-pdf-translations' + (mode === 'compare' ? ' is-parallel' : '')} aria-label="PDF 对照译文">
+  return <section ref={surfaceRef} className={'elr-pdf-translations' + (mode === 'compare' ? ' is-parallel' : '')} aria-label="PDF 对照译文">
     <div ref={actions} className="elr-parallel-actions" role="group" aria-label="翻译范围">
       {task ? <button type="button" className="elr-btn" aria-label="暂停翻译" title="暂停翻译" onClick={() => operation.current?.abort()}>
         <span className="elr-parallel-label">暂停翻译</span><span className="elr-parallel-short" aria-hidden="true">暂停</span>
@@ -973,7 +978,7 @@ export function PdfTranslations({ paper, page, pageCount, mode, target, selected
           {result ? <TranslationSheet page={number} result={result} mode={mode} getAssets={getAssets}
             sheetHeights={sheetHeights} selectedIndex={selectedParagraph?.page === number ? selectedParagraph.index : undefined}
             task={task} failure={failure} onOriginal={onOriginal} translate={translate} hover={hover} onHover={onHover} />
-            : Math.abs(page - number) <= 1 && <p className="elr-parallel-empty" role="status">正在提取段落…</p>}
+            : Math.abs(page - number) <= 1 && <EmptySkeleton variant="sheet" rows={3} label="正在提取段落…" />}
         </section>;
       })}
     </div>
@@ -1008,9 +1013,10 @@ function TranslationSheet({ page, result, mode, getAssets, sheetHeights, selecte
   }, [page, view]);
   return <>
     <span ref={label} hidden />
-    {result.error ? <p className="elr-parallel-empty" role="alert">{result.error}</p>
-      : !view?.blocks.length ? <div className="elr-parallel-empty"><p>本页没有可提取的文字。</p>
-        <button type="button" className="elr-btn" onClick={() => onOriginal({ page })}>查看原文页面</button></div>
+    {result.error ? <EmptyState size="card" icon="alert" title="此页暂时无法解析"
+        primaryAction={{ label: '查看原文', onClick: () => onOriginal({ page }) }} />
+      : !view?.blocks.length ? <EmptyState size="card" icon="pageImage" title="本页没有可提取文字"
+        primaryAction={{ label: '查看原文', onClick: () => onOriginal({ page }) }} />
       : view.blocks.map((block) => {
             const anchor = { page, x: block.x, y: block.y, right: block.right, bottom: block.bottom, index: block.index };
             const hovered = hover?.page === page && hover.block.index === block.index;

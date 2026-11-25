@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { readingAgentLimits } from '../reading-agent.mjs';
 import { availableEfforts, effortLabels } from '../model-capabilities.mjs';
+import { EmptySkeleton, EmptyState } from './empty-state.jsx';
 import './agent-panel.css';
 
 const api = window.reader;
@@ -104,10 +105,13 @@ function AgentModelMenu({ providers, model, entry, custom, onChange, onSettings 
                 reasoningEffort: levels[Number(event.target.value)] })} />
           </div>}
         </div>}
-      </> : <p>{providers ? '请先连接模型服务商。' : '正在读取可用模型…'}</p>}
-      <button type="button" className="elr-btn" onClick={() => { menu.current.hidePopover(); onSettings(); }}>
+      </> : providers ? (
+        <EmptyState size="card" icon="sliders" title="还没有连接可用模型"
+          primaryAction={{ label: '去连接', onClick: () => { menu.current.hidePopover(); onSettings(); } }} />
+      ) : <EmptyState size="menu" title="正在读取可用模型…" />}
+      {providers?.length > 0 && <button type="button" className="elr-btn" onClick={() => { menu.current.hidePopover(); onSettings(); }}>
         管理模型与账号
-      </button>
+      </button>}
     </div>
   </>;
 }
@@ -224,10 +228,8 @@ export function AgentPanel({ active, paper, page, ready, incoming, readPages, pr
         const feed = event.currentTarget;
         follow.current = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 72;
       }}>
-      {turns?.length === 0 && !pending && <div className="elr-agent-empty">
-        <p>围绕当前论文提问，或从选区加入原文。回答中的页码可跳回 PDF。</p>
-      </div>}
-      {turns === null && !issue && <p className="elr-agent-meta">正在读取对话…</p>}
+      {turns?.length === 0 && !pending && <EmptyState size="card" icon="chat" title="还没有对话记录" />}
+      {turns === null && !issue && <EmptySkeleton variant="chat" rows={3} label="正在读取对话…" />}
       {turns?.map((turn) => <article className="elr-agent-turn" key={turn.id}>
         <div className="elr-agent-question">{turn.question}</div>
         {turn.quotes.length > 0 && <details className="elr-agent-sources elr-agent-sent-quotes">
@@ -241,10 +243,10 @@ export function AgentPanel({ active, paper, page, ready, incoming, readPages, pr
         <div className="elr-agent-meta" role="status">{phases[pending.phase]}</div>
         {pending.text && <div className="elr-agent-stream">{pending.text}</div>}
       </article>}
-      {issue && <div className="elr-agent-error" role="alert">
-        {issue}
-        {turns === null && <button type="button" className="elr-btn" onClick={() => { setIssue(''); setRetryLoad((attempt) => attempt + 1); }}>重试</button>}
-      </div>}
+      {issue && (turns === null ? (
+        <EmptyState size="card" icon="alert" title="无法读取对话记录"
+          primaryAction={{ label: '重试', retry: true, onClick: () => { setIssue(''); setRetryLoad((attempt) => attempt + 1); } }} />
+      ) : <div className="elr-agent-error" role="alert">{issue}</div>)}
     </div>
     <form className="elr-agent-compose" onSubmit={send}>
       {quotes.length > 0 && <QuoteList quotes={quotes} onJump={onJump}
@@ -259,10 +261,10 @@ export function AgentPanel({ active, paper, page, ready, incoming, readPages, pr
           }
         }} />
       <div className="elr-agent-actions">
-        <select aria-label="检索范围" value={scope} onChange={(event) => setScope(event.target.value)}>
-          <option value="paper">全文检索</option>
-          <option value="page">当前页</option>
-        </select>
+        <div className="elr-agent-scope" role="group" aria-label="检索范围">
+          <button type="button" aria-pressed={scope === 'paper'} onClick={() => setScope('paper')}>全文</button>
+          <button type="button" aria-pressed={scope === 'page'} onClick={() => setScope('page')}>当前页</button>
+        </div>
         <button type="button" className="elr-btn" disabled={!canSend}
           onClick={() => ask('请总结当前页的主要内容，并保留关键术语和数据。', 'page')}>总结本页</button>
         <div className="elr-agent-send">

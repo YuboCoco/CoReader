@@ -64,4 +64,6 @@ Name: "{group}\{cm:UninstallCoReader}"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\CoReader"; Filename: "{app}\CoReader.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
+; Electron sandbox processes need to read installed runtime assets on Windows.
+Filename: "{sys}\icacls.exe"; Parameters: """{app}"" /grant *S-1-15-2-1:(OI)(CI)(RX)"; Flags: runhidden waituntilterminated
 Filename: "{app}\CoReader.exe"; WorkingDir: "{app}"; Description: "{cm:OpenCoReader}"; Flags: nowait postinstall skipifsilent

@@ -9,7 +9,7 @@
 }
 .elr-figure-handle {
   position: absolute; width: 8px; height: 8px; box-sizing: border-box;
-  border: 1px solid #3184e5; border-radius: 2px; background: #fff;
+  border: 1px solid #3184e5; border-radius: var(--radius-xs); background: #fff;
 }
 .elr-figure-handle::after { position: absolute; inset: -5px; content: ''; }
 .elr-figure-handle[data-adjust="nw"] { left: -5px; top: -5px; cursor: nwse-resize; }

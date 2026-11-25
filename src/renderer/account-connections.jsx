@@ -1,5 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { animateSharedDialog } from './surface-motion.js';
 import { connectionNames } from '../model-capabilities.mjs';
+import { AccountCardRing } from './card-ring.jsx';
 import chatgptIcon from '../../assets/providers/chatgpt.png';
 import deepseekIcon from '../../assets/providers/deepseek.ico';
 import kimiIcon from '../../assets/providers/kimi.png';
@@ -310,22 +312,39 @@ function ProviderDetails({ provider, connection, onUpdate, onRefresh }) {
 
 function KimiDetails({ connection, codeConnection, usage, onRefresh, onUpdate }) {
   const [mode, setMode] = useState(() => codeConnection?.connected && !connection?.connected ? 'kimi-code' : 'kimi');
+  const modes = [
+    { id: 'kimi', label: 'Kimi API', panelId: 'kimi-api-panel' },
+    { id: 'kimi-code', label: 'Kimi Code', panelId: 'kimi-code-panel' },
+  ];
+
+  function onTabKeyDown(event, index) {
+    let next = -1;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') next = (index + 1) % modes.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = modes.length - 1;
+    if (next < 0) return;
+    event.preventDefault();
+    setMode(modes[next].id);
+    event.currentTarget.parentElement?.children[next]?.focus();
+  }
 
   return <>
-    <div className="kimi-connection-tabs" role="group" aria-label="Kimi 接入方式">
-      <button type="button" aria-pressed={mode === 'kimi'} aria-controls="kimi-api-panel" onClick={() => setMode('kimi')}>
-        Kimi API
-      </button>
-      <button type="button" aria-pressed={mode === 'kimi-code'} aria-controls="kimi-code-panel" onClick={() => setMode('kimi-code')}>
-        Kimi Code
-      </button>
+    <div className="kimi-connection-tabs" role="tablist" aria-label="Kimi 接入方式">
+      {modes.map((item, index) => {
+        const selected = mode === item.id;
+        return <button key={item.id} id={'kimi-tab-' + item.id} type="button" role="tab"
+          aria-selected={selected} aria-controls={item.panelId} tabIndex={selected ? 0 : -1}
+          onClick={() => setMode(item.id)} onKeyDown={(event) => onTabKeyDown(event, index)}>
+          {item.label}
+        </button>;
+      })}
     </div>
-    <div id="kimi-api-panel" className="kimi-connection-panel" hidden={mode !== 'kimi'}>
+    <div id="kimi-api-panel" role="tabpanel" aria-labelledby="kimi-tab-kimi" className="kimi-connection-panel" hidden={mode !== 'kimi'}>
       <ProviderDetails provider="kimi" connection={connection} onUpdate={onUpdate} onRefresh={onRefresh} />
       <UsageDetails provider="kimi" usage={usage} />
       {connection?.problem && <p className="form-error" role="alert">{connection.problem}</p>}
     </div>
-    <div id="kimi-code-panel" className="kimi-connection-panel" hidden={mode !== 'kimi-code'}>
+    <div id="kimi-code-panel" role="tabpanel" aria-labelledby="kimi-tab-kimi-code" className="kimi-connection-panel" hidden={mode !== 'kimi-code'}>
       <KimiCodeDetails connection={codeConnection} onUpdate={onUpdate} onRefresh={onRefresh} />
       {codeConnection?.problem && <p className="form-error" role="alert">{codeConnection.problem}</p>}
     </div>
@@ -337,19 +356,38 @@ function ConnectionIcon({ provider }) {
   return <img className="connection-icon" src={icons[provider]} alt="" draggable={false} />;
 }
 
-function AccountDetails({ provider, connection, codeConnection, usage, chatgpt, onRefresh, onUpdate, onClose }) {
+function AccountDetails({ provider, connection, codeConnection, usage, chatgpt, onRefresh, onUpdate, onClose, origin }) {
   const modal = useRef(null);
   const name = connectionNames[provider];
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const dialog = modal.current;
     dialog.showModal();
-    return () => { if (dialog.open) dialog.close(); };
-  }, []);
+    const source = origin.current?.button;
+    const from = [source?.querySelector('.connection-icon'), source?.querySelector('.connection-identity strong')];
+    const to = [dialog.querySelector('.connection-icon'), dialog.querySelector('.connection-motion-name')];
+    const trigger = origin.current;
+    const stop = animateSharedDialog(dialog, source, from, to, trigger?.keyboard, false, trigger?.frame);
+    if (trigger) trigger.stop = stop;
+    return () => {
+      stop?.();
+      if (dialog.open) dialog.close();
+    };
+  }, [origin]);
 
   function close() {
     if (provider === 'chatgpt' && chatgpt.pending === 'login') chatgpt.onCancel();
-    modal.current.close();
+    const dialog = modal.current;
+    const trigger = origin.current;
+    const source = trigger?.button;
+    if (source?.isConnected) {
+      const previous = trigger.stop?.capture();
+      trigger.stop?.();
+      trigger.stop = animateSharedDialog(dialog, source,
+        [source.querySelector('.connection-icon'), source.querySelector('.connection-identity strong')],
+        [dialog.querySelector('.connection-icon'), dialog.querySelector('.connection-motion-name')], trigger.keyboard, true, previous);
+    }
+    dialog.close();
     onClose();
   }
 
@@ -357,7 +395,7 @@ function AccountDetails({ provider, connection, codeConnection, usage, chatgpt, 
     onCancel={(event) => { event.preventDefault(); event.stopPropagation(); close(); }}>
     <header className="connection-detail-header">
       <ConnectionIcon provider={provider} />
-      <h3 id="connection-detail-title">{name} 连接设置</h3>
+      <h3 id="connection-detail-title"><span className="connection-motion-name">{name}</span> 连接设置</h3>
       <button type="button" className="quiet connection-detail-close" aria-label="关闭连接设置" onClick={close}>×</button>
     </header>
     <div className="connection-detail-body">
@@ -372,83 +410,66 @@ function AccountDetails({ provider, connection, codeConnection, usage, chatgpt, 
   </dialog>;
 }
 
-function ConnectionCard({ provider, connection, codeConnection, active, open, chatgpt, onOpen, onClose, onUpdate, onRefresh }) {
-  const usage = useUsage(provider, connection, active);
-  const name = connectionNames[provider];
-  const count = (connection?.models?.length || 0) + (codeConnection?.models?.length || 0);
-  const hasProblem = connection?.problem || codeConnection?.problem;
-  const connected = connection?.connected || codeConnection?.connected;
-  const checked = connection && (provider !== 'kimi' || codeConnection);
-  const state = count ? '已连接 · ' + count + ' 个模型' : hasProblem ? '连接异常'
-    : connected ? '暂无可用模型' : checked ? '未连接' : '正在检查';
-  return <>
-    <button className="connection-card" type="button" data-connected={count > 0}
-      aria-label={'管理 ' + name + ' 连接'} aria-describedby={'connection-status-' + provider} aria-haspopup="dialog" onClick={onOpen}>
-      <ConnectionIcon provider={provider} />
-      <span className="connection-identity">
-        <strong>{name}</strong>
-        <span className="connection-status" id={'connection-status-' + provider}>{state}</span>
-      </span>
-      {usage?.amount && <span className="connection-usage-summary" title={usage.label + ' ' + usage.amount}>
-        <span>{usage.label}</span><strong>{usage.amount}</strong>
-      </span>}
-      <span className="connection-card-chevron" aria-hidden="true" />
-    </button>
-    {open && <AccountDetails provider={provider} connection={connection} codeConnection={codeConnection} usage={usage} chatgpt={chatgpt}
-      onRefresh={onRefresh} onUpdate={onUpdate} onClose={onClose} />}
-  </>;
+function ActiveAccountDetails({ provider, connection, codeConnection, chatgpt, onClose, onUpdate, onRefresh }) {
+  const usage = useUsage(provider, connection, true);
+  const origin = useRef(null);
+  return <AccountDetails provider={provider} connection={connection} codeConnection={codeConnection} usage={usage}
+    chatgpt={chatgpt} origin={origin} onRefresh={onRefresh} onUpdate={onUpdate} onClose={onClose} />;
 }
 
 export function AccountConnections({ connections, chatgpt, onUpdate, onRefresh }) {
-  const [slide, setSlide] = useState({ index: 0, previous: -1, direction: 1 });
+  const [activeIndex, setActiveIndex] = useState(0);
   const [details, setDetails] = useState('');
+  const ringRef = useRef(null);
 
-  function move(direction) {
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    setSlide((current) => ({
-      index: (current.index + direction + providers.length) % providers.length,
-      previous: reducedMotion ? -1 : current.index,
-      direction,
-    }));
-  }
+  const ringItems = useMemo(() => providers.map((provider) => {
+    const connection = connections[provider];
+    const codeConnection = provider === 'kimi' ? connections['kimi-code'] : undefined;
+    const count = (connection?.models?.length || 0) + (codeConnection?.models?.length || 0);
+    const hasProblem = connection?.problem || codeConnection?.problem;
+    const connected = Boolean(connection?.connected || codeConnection?.connected);
+    const checked = Boolean(connection && (provider !== 'kimi' || codeConnection));
+    const badge = count ? '已连接' : hasProblem ? '连接异常' : connected ? '暂无模型' : checked ? '未连接' : '检查中';
+    const subtitle = count ? count + ' 个可用模型' : hasProblem ? '点击检查配置' : '点击卡片管理连接';
+    return {
+      provider,
+      name: connectionNames[provider],
+      icon: icons[provider] || '',
+      connected: count > 0 || connected,
+      badge,
+      subtitle,
+    };
+  }), [connections]);
 
-  function navigate(event) {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-    event.preventDefault();
-    move(event.key === 'ArrowLeft' ? -1 : 1);
-  }
+  const activeProvider = providers[activeIndex] || providers[0];
 
   return <section className="model-connections" aria-labelledby="model-connections-title">
     <div className="model-section-title"><h3 id="model-connections-title">账号连接</h3></div>
-    <div className="connection-carousel" role="group" aria-label="切换账号卡片">
-      <button type="button" className="connection-arrow" data-direction="previous" aria-label="上一个账号卡片"
-        aria-controls="connection-cards" onClick={() => move(-1)} onKeyDown={navigate} />
-      <div className="connection-viewport" id="connection-cards" style={{ '--connection-shift': slide.direction * 100 + '%' }}>
-        {providers.map((provider, position) => {
-          const active = position === slide.index;
-          const outgoing = position === slide.previous;
-          const motion = outgoing ? 'outgoing' : active && slide.previous >= 0 ? 'incoming' : undefined;
-          return <div className="connection-slide" id={'connection-' + provider} key={provider}
-            hidden={!active && !outgoing} inert={!active} aria-hidden={!active} data-motion={motion}
-            onAnimationEnd={outgoing ? (event) => {
-              if (event.target !== event.currentTarget) return;
-              setSlide((current) => current.previous === position ? { ...current, previous: -1 } : current);
-            } : undefined}>
-            <ConnectionCard provider={provider} connection={connections[provider]}
-              codeConnection={provider === 'kimi' ? connections['kimi-code'] : undefined} active={active} open={details === provider}
-              chatgpt={chatgpt} onOpen={() => setDetails(provider)} onClose={() => setDetails('')}
-              onUpdate={onUpdate} onRefresh={onRefresh} />
-          </div>;
-        })}
-      </div>
-      <button type="button" className="connection-arrow" data-direction="next" aria-label="下一个账号卡片"
-        aria-controls="connection-cards" onClick={() => move(1)} onKeyDown={navigate} />
-    </div>
+
+    <AccountCardRing
+      ref={ringRef}
+      items={ringItems}
+      onFrontChange={(cardIndex) => setActiveIndex(cardIndex % providers.length)}
+      onCardActivate={(item) => {
+        if (item?.provider) setDetails(item.provider);
+      }}
+    />
+
     <div className="connection-pagination" aria-hidden="true">
-      {providers.map((provider, position) => <span key={provider} data-active={position === slide.index} />)}
+      {providers.map((provider, position) => <span key={provider} data-active={position === activeIndex} />)}
     </div>
     <span className="connection-announcement" role="status">
-      {connectionNames[providers[slide.index]]} · {slide.index + 1} / {providers.length}
+      {connectionNames[activeProvider]} · {activeIndex + 1} / {providers.length}
     </span>
+
+    {details && <ActiveAccountDetails
+      provider={details}
+      connection={connections[details]}
+      codeConnection={details === 'kimi' ? connections['kimi-code'] : undefined}
+      chatgpt={chatgpt}
+      onClose={() => setDetails('')}
+      onUpdate={onUpdate}
+      onRefresh={onRefresh}
+    />}
   </section>;
 }

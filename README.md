@@ -109,13 +109,13 @@ CoReader 把论文库、双语对照、批注和模型助读放在一起。导�
 
 ## 开始使用
 
-1. **安装或解压**。支持 Windows 10/11 x64。安装版运行下载的 EXE，便携版完整解压后双击 `CoReader.exe`。[下载安装版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.1/CoReader-0.1.1-Setup-win-x64.exe) · [下载便携版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.1/CoReader-0.1.1-win-x64.zip)
-2. **打开论文**。在首页左侧点击「打开 PDF」或「从文件夹导入」。打开论文后，通过顶部控制条切换原文与对照，从左下角打开目录、文内搜索或设置。
+1. **安装或解压**。支持 Windows 10/11 x64。安装版运行下载的 EXE，便携版完整解压后双击 `CoReader.exe`。[下载安装版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.2/CoReader-0.1.2-Setup-win-x64.exe) · [下载便携版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.2/CoReader-0.1.2-win-x64.zip)
+2. **打开论文**。首次启动内置示例论文《Attention Is All You Need》与交互式新手引导；也可在首页左侧点击「打开 PDF」或「从文件夹导入」。打开论文后，通过顶部控制条切换原文与对照，从左下角打开目录、文内搜索或设置。
 3. **翻译或提问**。划词后点击翻译即可使用随包附带的离线模型。需要问答或解析时，从「设置 → 模型与账号」连接服务商，再设置问答模型。
 
 版本号可在首页左下角或设置面板查看。应用启动时会在后台检查 GitHub 正式版本，发现新版本时会提示并提供发布页入口。
 
-**macOS 13.3 及以上** 按处理器下载对应 ZIP，完整解压后打开 `CoReader.app`。支持 macOS 系统菜单、原生窗口按钮、拖动顶栏及 `⌘O` 打开 PDF。数据保存在 `~/Library/Application Support/English Lit Reader`。[下载 Apple Silicon 版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.1/CoReader-0.1.1-mac-arm64.zip) · [下载 Intel 版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.1/CoReader-0.1.1-mac-x64.zip)
+**macOS 13.3 及以上** 按处理器下载对应 ZIP，完整解压后打开 `CoReader.app`。支持 macOS 系统菜单、原生窗口按钮、拖动顶栏及 `⌘O` 打开 PDF。数据保存在 `~/Library/Application Support/English Lit Reader`。[下载 Apple Silicon 版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.2/CoReader-0.1.2-mac-arm64.zip) · [下载 Intel 版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.2/CoReader-0.1.2-mac-x64.zip)
 
 GitHub 上的 macOS ZIP 使用临时签名。Mac 实机运行与 Apple 公证仍待完成。
 

@@ -1,7 +1,7 @@
 {
   "name": "english-lit-reader-desktop",
   "productName": "CoReader",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "main": "src/main.mjs",
@@ -33,5 +33,8 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "vite": "^8.0.0"
+  },
+  "dependencies": {
+    "kubai-icons-react": "0.15.0"
   }
 }
