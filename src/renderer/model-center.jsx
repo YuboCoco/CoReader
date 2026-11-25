@@ -191,10 +191,22 @@ export function ModelCenter({ version, availableUpdate, onUpdateFound, onClose, 
   </dialog>;
 }
 
+const ALBUM_INTERVAL_OPTIONS = [
+  [15, '15 秒'],
+  [30, '30 秒'],
+  [60, '1 分钟'],
+  [300, '5 分钟'],
+  [600, '10 分钟'],
+];
+
+function normalizeAlbumInterval(raw) {
+  const sec = Number(raw);
+  return ALBUM_INTERVAL_OPTIONS.some(([v]) => v === sec) ? sec : 30;
+}
+
 function DisplaySettings({ value, onChange }) {
   const glassEnabled = value.glassEnabled !== false;
-  const rawAlbumInterval = Number(value.albumInterval);
-  const albumInterval = Number.isFinite(rawAlbumInterval) ? Math.min(60, Math.max(1, Math.round(rawAlbumInterval))) : 5;
+  const albumInterval = normalizeAlbumInterval(value.albumInterval);
   const tones = {
     light: [['blue', '雨后天青'], ['green', '山间松雾'], ['amber', '秋日麦穗'], ['pink', '蔷薇薄雾'], ['prism-light', '晴光流彩']],
     dark: [['default', '玄灰夜幕'], ['navy', '深海子夜'], ['ink', '墨池听雨'], ['forest', '松林入夜'], ['plum', '暮紫星河'], ['ember', '炉边夜话'], ['prism-dark', '极夜流光']],
@@ -268,11 +280,9 @@ function DisplaySettings({ value, onChange }) {
     <div className="display-setting-group">
       <h3>相册卡片</h3>
       <label>相册轮播时长
-        <span className="elr-glass-slider">
-          <input type="range" min="1" max="60" step="1" value={albumInterval} aria-label="相册轮播时长" aria-valuetext={albumInterval + ' 秒'}
-            onChange={(event) => onChange({ albumInterval: event.target.valueAsNumber })} />
-          <output aria-hidden="true">{albumInterval} 秒</output>
-        </span>
+        <select aria-label="相册轮播时长" value={albumInterval} onChange={(event) => onChange({ albumInterval: Number(event.target.value) })}>
+          {ALBUM_INTERVAL_OPTIONS.map(([sec, label]) => <option key={sec} value={sec}>{label}</option>)}
+        </select>
       </label>
     </div>
   </div>;

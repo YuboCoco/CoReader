@@ -277,6 +277,7 @@
 .elr-view .elr-outline-link[aria-current="location"] { color: var(--dsw-alias-brand-primary); font-weight: 650; }
 .elr-outline-empty, .elr-pdf-outline nav > p { padding: 0 7px; color: var(--dsw-alias-label-secondary); }
 .elr-pdf-wrap[data-reading-mode="compare"] > .elr-pdf-container { inset-inline-end: calc(100% - var(--elr-original-width, 52%)); }
+.elr-pdf-wrap[data-reading-mode="compare"] > .elr-pdf-container > .pdfViewer { padding-block: 50vh; }
 .elr-pdf-wrap[data-reading-mode="compare"] .elr-pdf-container[data-elr-single-source] .pdfViewer .page:not([data-elr-source-page]) {
   visibility: hidden;
 }

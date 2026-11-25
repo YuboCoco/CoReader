@@ -178,5 +178,14 @@ html:root .elr-term-popover[data-elr-liquid]::before {
   gap: 8px;
   align-items: center;
 }
-.elr-glass-slider input { margin: 0; accent-color: var(--dsw-alias-brand-primary); }
+.elr-glass-slider input {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  min-height: 0;
+  accent-color: var(--dsw-alias-brand-primary);
+  cursor: pointer;
+}
 .elr-glass-slider output { text-align: end; font-variant-numeric: tabular-nums; }

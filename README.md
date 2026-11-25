@@ -30,8 +30,9 @@ CoReader 把论文库、双语对照、批注和模型助读放在一起。导�
 
 ### 双语阅读、划词与批注
 
-- **原文与译文对照** 可翻译单段、本页、本章或全文。悬停段落会联动高亮原文和译文。译文侧保留从原文裁切的图、表与独立公式，并支持定位原文和重译此段。
-- **划词操作** 选中文字即可翻译、解释术语、添加高亮和批注，或引用到阅读助手。按住 `Shift` 可以继续划选并一次翻译多段。
+- **原文与译文对照** 可翻译单段、本页、本章或全文；支持在「阅读设置」中开启**打开文章后自动执行对照翻译**。悬停段落会联动高亮原文和译文，译文侧保留从原文裁切的图、表与独立公式，并支持定位原文和重译此段。
+- **划词与液态玻璃浮窗** 选中文字后弹出液态玻璃工具条，一键翻译、批注、高亮、解释术语或引用到阅读助手。翻译与批注浮窗均支持二次点击工具按钮快速收起，按住 `Shift` 可跨段追加选区一次翻译。
+- **滑出目录与页面控制** 左下角可平滑呼出 PDF 文献目录，顶部控制条支持调整页面左右横向偏移、缩放比例与双栏切换。
 - **本地翻译** Windows 和 macOS 安装包与便携包内置 Haidass-Translate-143M 与腾讯 Hy-MT2-1.8B，两款模型均可在 CPU 上离线运行。
 
 [![PDF 划词工具条及原文与译文并排显示的翻译浮层](docs/screenshots/selection-translation.webp)](docs/screenshots/selection-translation.webp)
@@ -65,14 +66,25 @@ CoReader 把论文库、双语对照、批注和模型助读放在一起。导�
 
 </details>
 
+### 伴读卡片：相册与白噪音
+
+阅读之余可在功能栏开启「相册」与「白噪音」伴读卡片，打造更专注舒适的桌面阅读环境：
+
+- **相册卡片** 选择本地照片文件夹，支持弹窗内可视化预览并点选单张、多张或整夹轮播；可设置轮播时间间隔，展示照片时卡片顶栏会自动隐去以获得纯净视野。
+- **白噪音卡片** 内置多场景分类的 84 首环境音轨（自然、雨声、动物、场所、器物、交通等），支持**多音轨同时混音播放**与独立音量调节、循环/随机混音模式，并支持加载本地自定义音频文件夹。
+
+[![夜间深灰 PDF 配图相册卡片与多音轨白噪音混音卡片](docs/screenshots/album-ambient.webp)](docs/screenshots/album-ambient.webp)
+
 ### 可调整的阅读工作区
 
-功能栏可停靠在右侧或底部，右侧支持单列与双列。拖动卡片标题可排序或将卡片放进阅读区，卡片拖出时自动展开，移回时恢复原先的展开状态。可一键折叠或展开栏内卡片，也可保存最多 3 个自定义布局。
+功能栏可停靠在**左侧、右侧或底部**（可在「显示设置」切换常驻左/右侧），右侧支持单列与双列。拖动卡片标题时附带对齐引导线与避让动效，拖入阅读区成为浮动卡片并自动展开，移回停靠栏恢复原先展开状态。可从功能栏顶部的「主题配色」快捷切换界面与页面配色、一键折叠/展开所有卡片，或保存最多 3 个自定义布局。
 
 [![阅读区中围绕 PDF 自由摆放的浮动功能卡片](docs/screenshots/floating-cards.webp)](docs/screenshots/floating-cards.webp)
 
 <details>
-<summary>查看右侧双列、底部停靠和全部折叠</summary>
+<summary>查看常驻左侧与目录滑出、右侧双列、底部停靠和全部折叠</summary>
+
+[![功能栏常驻左侧，同时打开右上角滑出目录与快捷主题配色面板](docs/screenshots/dock-left-outline.webp)](docs/screenshots/dock-left-outline.webp)
 
 [![功能栏停靠于 PDF 右侧并分两列显示](docs/screenshots/dock-two-columns.webp)](docs/screenshots/dock-two-columns.webp)
 
@@ -82,44 +94,56 @@ CoReader 把论文库、双语对照、批注和模型助读放在一起。导�
 
 </details>
 
-### 界面主题与 PDF 纸面
+### 界面主题、液态玻璃与深色 PDF 纸面
 
-界面主题、PDF 纸面配色与纹理、功能卡片字号可以分别调整。下面的实拍展示了同一页在浅色、深色和双拼主题下的效果。
+界面采用可自适应对比度的**液态玻璃（Liquid Glass）**材质（可在「显示设置」调节开关及浅/深色着色强度）。内置多款浅色、深色、双拼与动态流光主题（`晴光流彩`、`极夜流光`），并新增 **5 款深色 PDF 页面配色**（`玄夜深灰`、`深夜靛蓝`、`暖墨褐纸`、`墨绿夜读`、`极夜纯黑`），在夜间护眼反色阅读的同时保留彩图色相与高亮辨识度。
 
 <details>
-<summary>展开主题图集</summary>
+<summary>展开主题图集（含深色 PDF 纸面与流光主题）</summary>
 
-| 浅绿界面 · 网格纸面 | 暖米色界面 · 网格纸面 |
+| 山间松雾 · 纸张纹理 | 秋日麦穗 · 护眼黄 |
 | --- | --- |
-| [![浅绿界面 · 网格纸面](docs/screenshots/theme-light-green.webp)](docs/screenshots/theme-light-green.webp) | [![暖米色界面 · 网格纸面](docs/screenshots/theme-light-amber.webp)](docs/screenshots/theme-light-amber.webp) |
+| [![山间松雾 · 纸张纹理](docs/screenshots/theme-light-green.webp)](docs/screenshots/theme-light-green.webp) | [![秋日麦穗 · 护眼黄](docs/screenshots/theme-light-amber.webp)](docs/screenshots/theme-light-amber.webp) |
 
-| 浅粉界面 · 网格纸面 | 深蓝界面 · 网格纸面 |
+| 蔷薇薄雾 · 细麻纹 | 玄灰夜幕 · 玄夜深灰 |
 | --- | --- |
-| [![浅粉界面 · 网格纸面](docs/screenshots/theme-light-pink.webp)](docs/screenshots/theme-light-pink.webp) | [![深蓝界面 · 网格纸面](docs/screenshots/theme-dark-paper.webp)](docs/screenshots/theme-dark-paper.webp) |
+| [![蔷薇薄雾 · 细麻纹](docs/screenshots/theme-light-pink.webp)](docs/screenshots/theme-light-pink.webp) | [![玄灰夜幕 · 玄夜深灰](docs/screenshots/theme-dark-slate.webp)](docs/screenshots/theme-dark-slate.webp) |
 
-| 深蓝界面 · 浅米色纸面 | 暖棕界面 · 浅绿色纸面 |
+| 深海子夜 · 深夜靛蓝 | 炉边夜话 · 暖墨褐纸 |
 | --- | --- |
-| [![深蓝界面 · 浅米色纸面](docs/screenshots/theme-dark-ivory.webp)](docs/screenshots/theme-dark-ivory.webp) | [![暖棕界面 · 浅绿色纸面](docs/screenshots/theme-dark-sage.webp)](docs/screenshots/theme-dark-sage.webp) |
+| [![深海子夜 · 深夜靛蓝](docs/screenshots/theme-dark-midnight.webp)](docs/screenshots/theme-dark-midnight.webp) | [![炉边夜话 · 暖墨褐纸](docs/screenshots/theme-dark-sepia.webp)](docs/screenshots/theme-dark-sepia.webp) |
 
-| 蓝色双拼 · 浅绿色纸面 | 绿色双拼 · 浅蓝色纸面 |
+| 极夜流光 · 极夜纯黑 | 深海子夜 · 纸张纹理 |
 | --- | --- |
-| [![蓝色双拼 · 浅绿色纸面](docs/screenshots/theme-duo-blue.webp)](docs/screenshots/theme-duo-blue.webp) | [![绿色双拼 · 浅蓝色纸面](docs/screenshots/theme-duo-green.webp)](docs/screenshots/theme-duo-green.webp) |
+| [![极夜流光 · 极夜纯黑](docs/screenshots/theme-prism-dark.webp)](docs/screenshots/theme-prism-dark.webp) | [![深海子夜 · 纸张纹理](docs/screenshots/theme-dark-paper.webp)](docs/screenshots/theme-dark-paper.webp) |
+
+| 深海子夜 · 柔白 | 炉边夜话 · 浅青绿 |
+| --- | --- |
+| [![深海子夜 · 柔白](docs/screenshots/theme-dark-ivory.webp)](docs/screenshots/theme-dark-ivory.webp) | [![炉边夜话 · 浅青绿](docs/screenshots/theme-dark-sage.webp)](docs/screenshots/theme-dark-sage.webp) |
+
+| 白蓝 · 浅青绿 | 米绿 · 雾蓝 |
+| --- | --- |
+| [![白蓝 · 浅青绿](docs/screenshots/theme-duo-blue.webp)](docs/screenshots/theme-duo-blue.webp) | [![米绿 · 雾蓝](docs/screenshots/theme-duo-green.webp)](docs/screenshots/theme-duo-green.webp) |
 
 </details>
 
 ## 开始使用
 
-1. **安装或解压**。支持 Windows 10/11 x64。安装版运行下载的 EXE，便携版完整解压后双击 `CoReader.exe`。[下载安装版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.3/CoReader-0.1.3-Setup-win-x64.exe) · [下载便携版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.3/CoReader-0.1.3-win-x64.zip)
+1. **安装或解压**。支持 Windows 10/11 x64。安装版运行下载的 EXE，便携版完整解压后双击 `CoReader.exe`。[下载安装版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.4/CoReader-0.1.4-Setup-win-x64.exe) · [下载便携版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.4/CoReader-0.1.4-win-x64.zip)
 2. **打开论文**。首次启动内置示例论文《Attention Is All You Need》与交互式新手引导；也可在首页左侧点击「打开 PDF」或「从文件夹导入」。打开论文后，通过顶部控制条切换原文与对照，从左下角打开目录、文内搜索或设置。
 3. **翻译或提问**。划词后点击翻译即可使用随包附带的离线模型。需要问答或解析时，从「设置 → 模型与账号」连接服务商，再设置问答模型。
 
 版本号可在首页左下角或设置面板查看。应用启动时会在后台检查 GitHub 正式版本，发现新版本时会提示并提供发布页入口。
 
-**macOS 13.3 及以上** 按处理器下载对应 ZIP，完整解压后打开 `CoReader.app`。支持 macOS 系统菜单、原生窗口按钮、拖动顶栏及 `⌘O` 打开 PDF。数据保存在 `~/Library/Application Support/English Lit Reader`。[下载 Apple Silicon 版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.3/CoReader-0.1.3-mac-arm64.zip) · [下载 Intel 版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.3/CoReader-0.1.3-mac-x64.zip)
+**macOS 13.3 及以上** 按处理器下载对应 ZIP，完整解压后打开 `CoReader.app`。支持 macOS 系统菜单、原生窗口按钮、拖动顶栏及 `⌘O` 打开 PDF。数据保存在 `~/Library/Application Support/English Lit Reader`。[下载 Apple Silicon 版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.4/CoReader-0.1.4-mac-arm64.zip) · [下载 Intel 版](https://github.com/YuboCoco/CoReader/releases/download/v0.1.4/CoReader-0.1.4-mac-x64.zip)
 
 GitHub 上的 macOS ZIP 使用临时签名。Mac 实机运行与 Apple 公证仍待完成。
 
 ## 模型与账号
+
+设置窗口以 3D 卡片环直观呈现各模型服务商的连接状态与余额/配额快照，支持多账号与本地离线模型按任务分流。
+
+[![模型设置 3D 服务商卡片环与任务模型配置](docs/screenshots/model-ring.webp)](docs/screenshots/model-ring.webp)
 
 | 接入方式 | 操作 |
 | --- | --- |
@@ -151,9 +175,9 @@ npm ci
 npm run dev
 ```
 
-``### Windows x64
+### Windows x64
 
-`powershell
+```powershell
 npm run prepare:translation:win
 npm run prepare:layout:win
 npm test

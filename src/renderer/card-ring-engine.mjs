@@ -995,10 +995,44 @@ export class CardRingEngine {
       this._animateOffsetTo(snapped, duration, EASE_GLIDE, false);
     };
 
+    this._wheelSnapTimer = null;
+    this._wheelVel = 0;
+    this._wheelLastTime = 0;
+    this._onWheel = (event) => {
+      const unit = event.deltaMode === 1 ? 32 : event.deltaMode === 2 ? 200 : 1;
+      const dxRaw = event.deltaX * unit;
+      const dyRaw = event.deltaY * unit;
+      const horizontal = Math.abs(dxRaw) > Math.abs(dyRaw) || (event.shiftKey && Math.abs(dyRaw) > 0);
+      if (!horizontal) return;
+      const dx = Math.abs(dxRaw) >= Math.abs(dyRaw) ? dxRaw : dyRaw;
+      if (!dx) return;
+      event.preventDefault();
+      this.offsetAnim = null;
+      const now = performance.now();
+      const dt = Math.max(8, now - (this._wheelLastTime || now - 16));
+      const dLogical = dx / Math.max(0.25, this.stageScale);
+      this._wheelVel = this._wheelVel * 0.55 + (dLogical / dt) * 0.45;
+      this._wheelLastTime = now;
+      this.offset += dLogical;
+      this._notifyFront();
+      if (this._wheelSnapTimer) clearTimeout(this._wheelSnapTimer);
+      this._wheelSnapTimer = setTimeout(() => {
+        this._wheelSnapTimer = null;
+        if (this.destroyed || this.drag) return;
+        const projected = this.offset + clamp(this._wheelVel * 90, -CARD_STEP * 0.45, CARD_STEP * 0.45);
+        this._wheelVel = 0;
+        const snapped = Math.round(projected / CARD_STEP) * CARD_STEP;
+        const dist = Math.abs(snapped - this.offset);
+        const duration = clamp(dist * 1.4, 280, 560);
+        this._animateOffsetTo(snapped, duration, EASE_GLIDE, false);
+      }, 110);
+    };
+
     canvas.addEventListener('pointerdown', this._onPointerDown);
     canvas.addEventListener('pointermove', this._onPointerMove);
     canvas.addEventListener('pointerup', this._onPointerUp);
     canvas.addEventListener('pointercancel', this._onPointerUp);
+    canvas.addEventListener('wheel', this._onWheel, { passive: false });
   }
 
   _notifyFront() {
@@ -1160,11 +1194,13 @@ export class CardRingEngine {
   destroy() {
     this.destroyed = true;
     if (this.rafId) cancelAnimationFrame(this.rafId);
+    if (this._wheelSnapTimer) clearTimeout(this._wheelSnapTimer);
     const canvas = this.canvas;
     canvas.removeEventListener('pointerdown', this._onPointerDown);
     canvas.removeEventListener('pointermove', this._onPointerMove);
     canvas.removeEventListener('pointerup', this._onPointerUp);
     canvas.removeEventListener('pointercancel', this._onPointerUp);
+    canvas.removeEventListener('wheel', this._onWheel);
     if (this.gl) {
       const gl = this.gl;
       gl.deleteTexture(this.fboTex);

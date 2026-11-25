@@ -38,6 +38,7 @@ import ZoomOut from 'kubai-icons-react/duotone/icons/zoom-out';
 import * as desktop from './desktop-runtime.js';
 import { alignPageTextLayer } from './pdf-text-align.mjs';
 import { pickNextAmbientIndex } from '../ambient-shared.mjs';
+import { ambientTrackIcon } from './ambient-icons.js';
 import { AgentPanel } from './agent-panel.jsx';
 import { PaperLibrary } from './paper-library.jsx';
 import { FigurePicker } from './figure-picker.jsx';
@@ -75,7 +76,7 @@ const loadPaperPlanning = () => import('../paper-planning.js');
 const SIDE_READER_MIN_W = 360;
 const PANE_DIVIDER_SIZE = 8;
 const ANALYSIS_CARD_KEYS = ['summary', 'references', 'figure', 'agent'];
-const CARD_KEYS = ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS, 'album', 'ambient'];
+const CARD_KEYS = ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS, 'album', 'ambient', 'clock'];
 const CUSTOM_CARD_LAYOUT_LIMIT = 3;
 const CARD_HEADER_HEIGHT = 54;
 const CARD_MIN_H = 272;
@@ -341,6 +342,22 @@ const saveMarks = (id, list) => { if (id) writeStore(marksKey(id), list); };
 // conversation-view Reader and the overlay Reader, so closing/reopening
 // the window (or switching tabs) keeps the paper and all results.
 // ------------------------------------------------------------------
+const ALBUM_DEFAULT_INTERVAL_SEC = 30;
+const ALBUM_INTERVAL_OPTIONS = [
+  { value: 15, label: '15 秒' },
+  { value: 30, label: '30 秒' },
+  { value: 60, label: '1 分钟' },
+  { value: 300, label: '5 分钟' },
+  { value: 600, label: '10 分钟' },
+];
+const ALBUM_HEAD_HIDE_MS = 2600;
+const ALBUM_FADE_MS = 480;
+
+function normalizeAlbumInterval(raw) {
+  const sec = Number(raw);
+  return ALBUM_INTERVAL_OPTIONS.some((item) => item.value === sec) ? sec : ALBUM_DEFAULT_INTERVAL_SEC;
+}
+
 const DEFAULT_SHARED = {
   mode: 'pdf', text: '', summary: '', summaryCoverage: null, summaryMeta: null, summaryDetail: null,
   selection: '', selectionResult: '', pdfName: '', pageNum: 1,
@@ -386,23 +403,28 @@ const DEFAULT_SHARED = {
   figureSort: 'time-desc',
   // (v8 #6) Height of the upper half of the side pane (selection card plus the
   // movable sections), and (v8 #7) their order.
-  sideTopHeight: 220, sectionOrder: ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS, 'album', 'ambient'],
+  sideTopHeight: 220, sectionOrder: ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS, 'album', 'ambient', 'clock'],
   // (v27) Which of the three function cards are ENABLED. Closing a card removes
   // it from this list; the card manager (the ⚙ in the card column's header) adds
   // it back. A separate list from `sectionOrder` on purpose: order must survive a
   // card being closed and reopened, otherwise reopening would silently move it to
   // the end of the column.
-  cards: ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS, 'album', 'ambient'],
+  cards: ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS, 'album', 'ambient', 'clock'],
   albumOpen: true,
   albumFolder: '',
   albumImages: [],
-  albumInterval: 5,
+  albumInterval: 30,
   ambientOpen: true,
   ambientFolder: '',
   ambientTrack: 'nature/campfire.mp3',
   ambientMix: { 'nature/campfire.mp3': 0.65 },
   ambientMode: 'single',
   ambientVolume: 0.8,
+  ambientPresets: [],
+  clockOpen: true,
+  clockStyle: 'digital',
+  clock24h: true,
+  clockShowSeconds: true,
   floatingCards: {},
   // (v25 #3) Horizontal size of that block when the side panel is docked at the
   // bottom (the two halves sit side by side there).
@@ -424,7 +446,7 @@ const DEFAULT_SHARED = {
   cardHeights: {},
   customCardLayouts: Array(CUSTOM_CARD_LAYOUT_LIMIT).fill(null),
 };
-const CARD_OPEN_FIELDS = { selection: 'selectionCardOpen', recent: 'recentOpen', terms: 'termsOpen', marks: 'marksOpen', album: 'albumOpen', ambient: 'ambientOpen' };
+const CARD_OPEN_FIELDS = { selection: 'selectionCardOpen', recent: 'recentOpen', terms: 'termsOpen', marks: 'marksOpen', album: 'albumOpen', ambient: 'ambientOpen', clock: 'clockOpen' };
 function cardOpenPatch(state, keys, open) {
   const patch = {};
   for (const key of keys) {
@@ -437,7 +459,7 @@ function cardOpenPatch(state, keys, open) {
 const CARD_LAYOUT_FIELDS = [
   'dock', 'sideDock', 'sectionOrder', 'cards', 'floatingCards', 'cardWidths', 'cardHeights', 'featureColumns', 'featureCardColumns',
   'sideWidth', 'dualSideWidth', 'sideHeight', 'sideTopWidth', 'sideTopHeight', 'selectionSplit', 'selectionWidthSplit',
-  'selectionCardOpen', 'recentOpen', 'termsOpen', 'marksOpen', 'albumOpen', 'ambientOpen', 'analysisOpen',
+  'selectionCardOpen', 'recentOpen', 'termsOpen', 'marksOpen', 'albumOpen', 'ambientOpen', 'clockOpen', 'analysisOpen',
 ];
 
 const snapshotCardLayout = (state) => Object.fromEntries(CARD_LAYOUT_FIELDS.map((key) => [key, state[key] ?? DEFAULT_SHARED[key]]));
@@ -511,21 +533,26 @@ delete shared.tab;
   const saved = Array.isArray(shared.cards) ? shared.cards : null;
   const hasAlbumState = 'albumOpen' in savedView || 'albumFolder' in savedView;
   const hasAmbientState = 'ambientOpen' in savedView || 'ambientFolder' in savedView;
+  const hasClockState = 'clockOpen' in savedView || 'clockStyle' in savedView;
   if (!saved) shared.cards = known.slice();
   else {
     const kept = [...new Set([...known.filter((k) => saved.indexOf(k) !== -1), ...ANALYSIS_CARD_KEYS])];
     if (!hasAlbumState && !kept.includes('album')) kept.push('album');
     if (!hasAmbientState && !kept.includes('ambient')) kept.push('ambient');
+    if (!hasClockState && !kept.includes('clock')) kept.push('clock');
     shared.cards = kept;
   }
+  shared.clockOpen = shared.clockOpen !== false;
+  shared.clockStyle = shared.clockStyle === 'analog' ? 'analog' : 'digital';
+  shared.clock24h = shared.clock24h !== false;
+  shared.clockShowSeconds = shared.clockShowSeconds !== false;
   shared.albumOpen = shared.albumOpen !== false;
   shared.albumFolder = typeof shared.albumFolder === 'string' ? shared.albumFolder : '';
   shared.albumImages = Array.isArray(shared.albumImages)
     ? [...new Set(shared.albumImages.filter((item) => typeof item === 'string' && item.trim()))]
     : [];
   {
-    const rawInterval = Number(shared.albumInterval);
-    shared.albumInterval = Number.isFinite(rawInterval) ? Math.min(60, Math.max(1, Math.round(rawInterval))) : 5;
+    shared.albumInterval = normalizeAlbumInterval(shared.albumInterval);
   }
   shared.ambientOpen = shared.ambientOpen !== false;
   shared.ambientFolder = typeof shared.ambientFolder === 'string' ? shared.ambientFolder : '';
@@ -557,6 +584,20 @@ delete shared.tab;
     const rawVol = Number(shared.ambientVolume);
     shared.ambientVolume = Number.isFinite(rawVol) ? Math.min(1, Math.max(0, rawVol)) : 0.8;
   }
+  shared.ambientPresets = Array.isArray(shared.ambientPresets)
+    ? shared.ambientPresets.map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const name = String(item.name || '').trim();
+      const rawMix = item.mix && typeof item.mix === 'object' ? item.mix : {};
+      const cleanMix = {};
+      for (const [k, v] of Object.entries(rawMix)) {
+        const vol = Number(v);
+        if (k && Number.isFinite(vol)) cleanMix[k] = Math.min(1, Math.max(0.05, vol));
+      }
+      if (!name || !Object.keys(cleanMix).length) return null;
+      return { id: String(item.id || name + '-' + Math.random().toString(36).slice(2, 7)), name, mix: cleanMix };
+    }).filter(Boolean)
+    : [];
   if (!Array.isArray(shared.sectionOrder)) shared.sectionOrder = known.slice();
   else shared.sectionOrder = [...new Set([...shared.sectionOrder.filter((key) => known.includes(key)), ...known])];
 }
@@ -857,23 +898,20 @@ const CSS = [
   '.elr-card-dock-target > .elr-side-body { background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, transparent); }',
   // (v31 #2) The floating clone that follows the pointer while reordering.
   // It is portalled to <body>, positioned fixed, and never receives events.
-  '.elr-drag-ghost { position: fixed; inset: 0 auto auto 0; z-index: 200; pointer-events: none; box-sizing: border-box; display: grid; place-items: center; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--radius-lg, 16px); color: var(--dsw-alias-label-primary); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 94%, transparent); box-shadow: 0 10px 26px rgb(10 18 30 / .20), var(--elr-frosted-rim); overflow: hidden; will-change: transform; contain: layout style paint; }',
+  '.elr-drag-ghost { position: fixed; inset: 0 auto auto 0; z-index: 200; pointer-events: none; box-sizing: border-box; display: grid; place-items: center; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--radius-lg, 16px); color: var(--dsw-alias-label-primary); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 94%, transparent); box-shadow: 0 10px 26px rgb(10 18 30 / .20), var(--elr-frosted-rim); overflow: hidden; will-change: transform; contain: layout style paint; transition: width 160ms var(--ease-out), height 160ms var(--ease-out); }',
   '.elr-drag-ghost.is-lifting { animation: elr-drag-lift-pop 140ms cubic-bezier(.22, 1, .36, 1) both; }',
   '@keyframes elr-drag-lift-pop { from { opacity: .84; scale: .96; } to { opacity: 1; scale: 1; } }',
   '.elr-drag-ghost-label { max-width: 100%; max-height: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(13px + var(--elr-card-font-adjust, 0px)); font-weight: 650; }',
   '.elr-drag-ghost.is-vertical .elr-drag-ghost-label { writing-mode: vertical-rl; }',
   'body.elr-card-dragging, body.elr-card-dragging * { cursor: grabbing !important; }',
   'body.elr-card-dragging .elr-main, body.elr-card-dragging .elr-sec[data-elr-floating-card] { pointer-events: none !important; }',
-  // Faint 15% text-color drop hint line that grows from its middle and glides between gaps.
-  '.elr-drop-line { position: fixed; inset: 0 auto auto 0; z-index: 195; pointer-events: none; border-radius: 999px; background: color-mix(in srgb, var(--dsw-alias-label-primary) 15%, transparent); transform-origin: center center; transition: transform 150ms cubic-bezier(.22, 1, .36, 1), width 150ms cubic-bezier(.22, 1, .36, 1), height 150ms cubic-bezier(.22, 1, .36, 1); }',
-  '.elr-drop-line.is-horizontal { animation: elr-drop-line-grow-x 160ms cubic-bezier(.22, 1, .36, 1) both; }',
-  '.elr-drop-line.is-vertical { animation: elr-drop-line-grow-y 160ms cubic-bezier(.22, 1, .36, 1) both; }',
-  '@keyframes elr-drop-line-grow-x { from { scale: 0 1; opacity: 0; } to { scale: 1 1; opacity: 1; } }',
-  '@keyframes elr-drop-line-grow-y { from { scale: 1 0; opacity: 0; } to { scale: 1 1; opacity: 1; } }',
+  // Faint 15% text-color drop hint line positioned directly inside the target gap.
+  '.elr-drop-line { position: fixed; z-index: 195; pointer-events: none; border-radius: 999px; background: color-mix(in srgb, var(--dsw-alias-label-primary) 18%, transparent); animation: elr-drop-line-fade 120ms var(--ease-out) both; }',
+  '@keyframes elr-drop-line-fade { from { opacity: 0; } to { opacity: 1; } }',
   // Ripple avoidance on sibling cards while dragging (transform-only, quick spring).
   '.elr-side-top.drag-active .elr-sec[data-elr-docked-card]:not(.dragging) { will-change: transform; transition: transform 250ms var(--elr-reorder-spring, cubic-bezier(.22, 1.12, .36, 1)) var(--elr-ripple-delay, 0ms), border-color var(--duration-feedback) var(--ease-out), box-shadow var(--duration-feedback) var(--ease-out); transform: translate3d(var(--elr-ripple-x, 0px), var(--elr-ripple-y, 0px), 0); }',
   '@supports (animation-timing-function: linear(0, 1)) { :root { --elr-reorder-spring: linear(0, .42, .88, 1.03, 1.04, 1.01, 1); } }',
-  '@media (prefers-reduced-motion: reduce) { .elr-drag-ghost.is-lifting, .elr-drop-line.is-horizontal, .elr-drop-line.is-vertical { animation: none; } .elr-drop-line { transition: none; } .elr-side-top.drag-active .elr-sec[data-elr-docked-card]:not(.dragging) { transition: none; transform: none; } }',
+  '@media (prefers-reduced-motion: reduce) { .elr-drag-ghost.is-lifting, .elr-drop-line { animation: none; } .elr-side-top.drag-active .elr-sec[data-elr-docked-card]:not(.dragging) { transition: none; transform: none; } }',
   // (v17 #2) `min-height: 0` instead of a hard 120px: a fixed minimum made the
   // analysis/translation column overflow the side panel (which clips) instead
   // of letting `.elr-out` scroll on its own. `flex-basis: 0` is what makes the
@@ -1353,7 +1391,7 @@ const CSS = [
   // (v27) …except the card column's header, which owns the ⚙ card manager: a
   // hidden header would make the manager unreachable exactly where the cards are
   // laid out side by side.
-  '.elr-body.dock-bottom .elr-side-top > .elr-col-head.elr-card-head { display: flex; flex: 0 0 auto; box-sizing: border-box; padding: 4px 10px; border-bottom: none; }',
+  '.elr-body.dock-bottom .elr-side-top > .elr-col-head.elr-card-head { display: flex; flex: 0 0 auto; box-sizing: border-box; padding: 4px 10px 6px; border-bottom: none; }',
   '.elr-body.dock-bottom [data-elr-docked-card] > :first-child { flex-direction: row; min-width: 0; }',
   '.elr-body.dock-bottom [data-elr-docked-card] .elr-function-head { flex: 0 0 ' + (CARD_HEADER_HEIGHT - 2) + 'px; height: auto; min-height: 0; }',
   '.elr-body.dock-bottom [data-elr-docked-card] .elr-card-label { writing-mode: vertical-rl; }',
@@ -1565,8 +1603,10 @@ const CSS = [
   '.elr-selection-divider { flex: 0 0 1px; height: 18px; margin-inline: 2px; background: var(--dsw-alias-border-l2); }',
   '.elr-mark-badge::before { background: var(--elr-mark-swatch, currentColor); }',
   '@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .settings:is(.model-center,.connection-detail)[open], .elr-settings-panel, .elr-card-menu, .elr-note-bubble { background: var(--dsw-alias-bg-layer-1); backdrop-filter: none; } }',
-  '.elr-feature-workspace { flex: 1 1 auto; min-height: 0; height: 100%; overflow: hidden; background: radial-gradient(ellipse at 82% 6%, var(--elr-duo-side-ambient, var(--elr-glass-ambient)), transparent 72%), radial-gradient(ellipse at 14% 85%, var(--elr-workspace-reflection, var(--elr-glass-bounce)), transparent 69%), var(--elr-duo-side, var(--dsw-alias-bg-base)); }',
-  '.elr-card-head.elr-workspace-head { flex: 0 0 auto; min-height: ' + BOTTOM_DOCK_HEAD_H + 'px; background: transparent; container-type: inline-size; }',
+  '.elr-feature-workspace { position: relative; flex: 1 1 auto; min-height: 0; height: 100%; overflow: hidden; background: radial-gradient(ellipse at 82% 6%, var(--elr-duo-side-ambient, var(--elr-glass-ambient)), transparent 72%), radial-gradient(ellipse at 14% 85%, var(--elr-workspace-reflection, var(--elr-glass-bounce)), transparent 69%), var(--elr-duo-side, var(--dsw-alias-bg-base)); }',
+  '.elr-card-head.elr-workspace-head { position: absolute; inset: 0 0 auto 0; z-index: 6; box-sizing: border-box; min-height: ' + BOTTOM_DOCK_HEAD_H + 'px; margin-bottom: 0; padding: 9px 12px 10px; background: transparent; container-type: inline-size; isolation: isolate; }',
+  '.elr-card-head.elr-workspace-head::before { content: ""; position: absolute; inset: 0 0 -18px 0; z-index: -1; pointer-events: none; background: linear-gradient(180deg, color-mix(in srgb, var(--elr-duo-side, var(--dsw-alias-bg-base)) 72%, transparent) 0%, color-mix(in srgb, var(--elr-duo-side, var(--dsw-alias-bg-base)) 44%, transparent) 58%, transparent 100%); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 56%, rgb(0 0 0 / .62) 78%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0%, #000 56%, rgb(0 0 0 / .62) 78%, transparent 100%); }',
+  '@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .elr-card-head.elr-workspace-head::before { background: linear-gradient(180deg, var(--elr-duo-side, var(--dsw-alias-bg-base)) 68%, transparent 100%); backdrop-filter: none; -webkit-backdrop-filter: none; } }',
   '.elr-card-font-menu > label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; font-size: 12px; }',
   '.elr-card-font-menu output { color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }',
   '.elr-card-font-menu input { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--dsw-alias-brand-primary); }',
@@ -1583,7 +1623,7 @@ const CSS = [
   '.elr-theme-swatch { width: 11px; height: 11px; flex: 0 0 11px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--dsw-alias-label-primary) 24%, transparent); background: var(--elr-swatch, var(--dsw-alias-bg-layer-1)); }',
   '.elr-album-card { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }',
   '.elr-album-card .elr-function-head { position: relative; z-index: 4; transition: transform 220ms var(--ease-out), opacity 180ms var(--ease-out); }',
-  '.elr-album-card.has-photos .elr-function-head { position: absolute; inset: 0 0 auto 0; background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent) 0%, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 52%, transparent) 72%, transparent 100%); backdrop-filter: blur(8px); }',
+  '.elr-album-card.has-photos .elr-function-head { position: absolute; inset: 0 0 auto 0; background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 92%, transparent) 0%, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 62%, transparent) 72%, transparent 100%); }',
   '.elr-album-card.has-photos.is-head-hidden .elr-function-head { transform: translateY(-100%); opacity: 0; pointer-events: none; transition-timing-function: var(--ease-in); }',
   '.elr-body.dock-bottom [data-elr-docked-card="album"] > .elr-album-card { flex-direction: row; }',
   '.elr-body.dock-bottom [data-elr-docked-card="album"] > .elr-album-card.has-photos .elr-function-head { inset: 0 auto 0 0; width: ' + (CARD_HEADER_HEIGHT - 2) + 'px; height: auto; min-height: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent) 0%, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 52%, transparent) 72%, transparent 100%); }',
@@ -1643,20 +1683,35 @@ const CSS = [
   '.elr-ambient-vol { flex: 1 1 82px; min-width: 68px; display: inline-flex; align-items: center; gap: 4px; color: var(--dsw-alias-label-secondary); font-size: 11px; }',
   '.elr-ambient-vol input { flex: 1 1 auto; min-width: 40px; margin: 0; accent-color: var(--dsw-alias-brand-primary); cursor: pointer; }',
   '.elr-ambient-vol output { min-width: 3.4ch; text-align: end; font-variant-numeric: tabular-nums; }',
+  '.elr-ambient-presets { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 6px; padding-right: 2px; }',
+  '.elr-ambient-preset { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); transition: border-color .15s var(--ease-out), background-color .15s var(--ease-out); }',
+  '.elr-ambient-preset:hover { border-color: var(--dsw-alias-border-l2); }',
+  '.elr-ambient-preset.is-active { border-color: var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 11%, var(--dsw-alias-bg-layer-1)); }',
+  '.elr-ambient-preset-apply { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }',
+  '.elr-ambient-preset-name { width: 100%; font-size: calc(12px + var(--elr-card-font-adjust, 0px)); font-weight: 600; color: var(--dsw-alias-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+  '.elr-ambient-preset.is-active .elr-ambient-preset-name { color: var(--dsw-alias-brand-primary); }',
+  '.elr-ambient-preset-meta { width: 100%; font-size: 11px; color: var(--dsw-alias-label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+  '.elr-ambient-preset-edit { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 5px; }',
+  '.elr-ambient-preset-edit input { flex: 1 1 auto; min-width: 0; padding: 3px 7px; border: 1px solid var(--dsw-alias-brand-primary); border-radius: 6px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; outline: none; }',
+  '.elr-ambient-preset-actions { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; }',
+  '.elr-ambient-preset-btn { width: 24px; height: 24px; padding: 0; border: 1px solid var(--dsw-alias-border-l1); border-radius: 6px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); display: grid; place-items: center; cursor: pointer; }',
+  '.elr-ambient-preset-btn:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l2); }',
+  '.elr-ambient-preset-btn.is-danger:hover { color: var(--dsw-alias-state-error-primary); border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 50%, transparent); }',
   '@media (prefers-reduced-motion: reduce) { .elr-ambient-tile.is-playing .elr-ambient-dot { animation: none; } }',
   '.elr-album-empty { margin: 0 var(--elr-card-inset) var(--elr-card-inset) var(--elr-card-leading); padding: var(--elr-card-content-gap); border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--elr-card-content-radius); background: var(--elr-card-content-bg); flex: 1 1 auto; min-height: 0; display: grid; place-items: center; }',
-  '.elr-album-stage { position: relative; flex: 1 1 auto; min-height: 0; margin: 0 var(--elr-card-inset) var(--elr-card-inset) var(--elr-card-leading); border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--elr-card-content-radius); background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 72%, transparent); overflow: hidden; cursor: pointer; }',
+  '.elr-album-stage { position: relative; flex: 1 1 auto; min-height: 0; margin: 0 var(--elr-card-inset) var(--elr-card-inset) var(--elr-card-leading); border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--elr-card-content-radius); background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 72%, transparent); overflow: hidden; cursor: pointer; contain: layout paint; }',
   '.elr-album-card.has-photos .elr-album-stage { margin: 0; border: 0; border-radius: 0; }',
-  '.elr-album-photo { width: 100%; height: 100%; display: block; object-fit: cover; user-select: none; animation: elr-album-fade 360ms var(--ease-out) both; }',
-  '@keyframes elr-album-fade { from { opacity: .35; scale: 1.015; } to { opacity: 1; scale: 1; } }',
-  '.elr-album-hud { position: absolute; inset: auto 8px 8px 8px; z-index: 4; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; border: 1px solid rgb(255 255 255 / .18); background: rgb(16 20 28 / .58); backdrop-filter: blur(8px); color: #fff; font-size: 11.5px; transition: transform 220ms var(--ease-out), opacity 180ms var(--ease-out); }',
+  '.elr-album-photo { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; user-select: none; will-change: opacity; transition: opacity 480ms var(--ease-in-out); }',
+  '.elr-album-photo.is-entering { opacity: 0; }',
+  '.elr-album-photo.is-visible { opacity: 1; }',
+  '.elr-album-hud { position: absolute; inset: auto 8px 8px 8px; z-index: 4; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; border: 1px solid rgb(255 255 255 / .18); background: rgb(16 20 28 / .72); color: #fff; font-size: 11.5px; transition: transform 220ms var(--ease-out), opacity 180ms var(--ease-out); }',
   '.elr-album-card.is-head-hidden .elr-album-hud { transform: translateY(120%); opacity: 0; pointer-events: none; transition-timing-function: var(--ease-in); }',
   '.elr-album-hud-count { margin-inline-end: auto; font-variant-numeric: tabular-nums; padding-inline: 4px; opacity: .92; }',
   '.elr-album-hud-btn { height: 24px; min-width: 24px; padding: 0 7px; border: 0; border-radius: 999px; background: rgb(255 255 255 / .14); color: #fff; font: inherit; font-size: 11.5px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer; }',
   '.elr-album-hud-btn:hover { background: rgb(255 255 255 / .26); }',
-  '@media (prefers-reduced-motion: reduce) { .elr-album-photo { animation: none; } .elr-album-card .elr-function-head, .elr-album-hud { transition: none; } }',
+  '@media (prefers-reduced-motion: reduce) { .elr-album-photo { transition: none; } .elr-album-card .elr-function-head, .elr-album-hud { transition: none; } }',
   ':is([data-elr-docked-card],[data-elr-floating-card]) { font-size: calc(13px + var(--elr-card-font-adjust, 0px)); }',
-  '.elr-feature-grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: ' + CARD_GRID_GAP + 'px; padding: 0 ' + CARD_GRID_PADDING + 'px 10px; overflow: hidden auto; align-items: stretch; }',
+  '.elr-feature-grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: ' + CARD_GRID_GAP + 'px; padding: 52px ' + CARD_GRID_PADDING + 'px 10px; scroll-padding-top: 52px; overflow: hidden auto; align-items: stretch; }',
   '.elr-body:not(.dock-bottom) .elr-feature-grid { scrollbar-gutter: stable; }',
   '.elr-feature-workspace.drag-active .elr-feature-grid, .elr-feature-grid.is-resizing-card { overflow-anchor: none; }',
   '.elr-feature-grid.is-resizing-card [data-elr-docked-card] { transition: none; }',
@@ -1686,7 +1741,7 @@ const CSS = [
   '.elr-summary-recovery { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }',
   '.elr-body.dock-bottom .elr-side { display: block; }',
   '.elr-body.dock-bottom .elr-side-top { width: 100%; height: 100%; }',
-  '.elr-body.dock-bottom .elr-feature-grid { display: flex; flex-direction: row; align-items: stretch; padding-block-end: ' + BOTTOM_DOCK_GRID_PADDING + 'px; overflow-x: scroll; overflow-y: hidden; }',
+  '.elr-body.dock-bottom .elr-feature-grid { display: flex; flex-direction: row; align-items: stretch; padding-block: 44px ' + BOTTOM_DOCK_GRID_PADDING + 'px; scroll-padding-top: 44px; overflow-x: scroll; overflow-y: hidden; }',
   '.elr-body.dock-bottom .elr-feature-column { box-sizing: border-box; flex: 0 0 auto; min-width: 100%; width: max-content; flex-direction: row; align-items: stretch; padding-inline-end: 10px; }',
   '.elr-body.dock-bottom [data-elr-docked-card] { --elr-card-leading: 0px; box-sizing: border-box; flex: 0 0 auto; width: var(--elr-dock-card-width, 308px); min-width: var(--elr-dock-card-min-width, 226px); }',
   '.elr-body.dock-bottom [data-elr-docked-card="selection"] { --elr-dock-card-width: 510px; --elr-dock-card-min-width: 356px; }',
@@ -1696,6 +1751,35 @@ const CSS = [
   '.elr-body.dock-bottom :is([data-elr-docked-card="terms"],[data-elr-docked-card="marks"]) { --elr-dock-card-width: 440px; --elr-dock-card-min-width: 330px; }',
   '.elr-body.dock-bottom [data-elr-docked-card="album"] { --elr-dock-card-width: 340px; --elr-dock-card-min-width: 240px; }',
   '.elr-body.dock-bottom [data-elr-docked-card="ambient"] { --elr-dock-card-width: 368px; --elr-dock-card-min-width: 270px; }',
+  '.elr-body.dock-bottom [data-elr-docked-card="clock"] { --elr-dock-card-width: 280px; --elr-dock-card-min-width: 248px; }',
+  '.elr-feature-column > [data-elr-docked-card="clock"]:not(.is-collapsed) { min-height: 228px; }',
+  '.elr-clock-card { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }',
+  '.elr-clock-card .elr-function-head { transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out); }',
+  '.elr-clock-stage { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; margin: 0 var(--elr-card-inset) var(--elr-card-inset) var(--elr-card-leading); padding: 14px 12px 12px; border-radius: var(--elr-card-content-radius); border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 70%, rgb(255 255 255 / .28)); background: radial-gradient(circle at 22% 16%, rgb(255 255 255 / .24), transparent 56%), radial-gradient(circle at 84% 86%, color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent), transparent 60%), linear-gradient(155deg, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 52%, transparent), color-mix(in srgb, var(--dsw-alias-bg-layer-2) 34%, transparent)); box-shadow: inset 0 1px 0 rgb(255 255 255 / .32), inset 0 -1px 0 rgb(10 18 30 / .08), 0 4px 14px rgb(10 18 30 / .06); overflow: hidden; cursor: pointer; transition: background 220ms var(--ease-out), border-color 220ms var(--ease-out), box-shadow 220ms var(--ease-out); }',
+  '.elr-clock-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 5px; transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out); }',
+  '.elr-sec[data-elr-floating-card="clock"] { transition: background 220ms var(--ease-out), border-color 220ms var(--ease-out), box-shadow 220ms var(--ease-out), backdrop-filter 220ms var(--ease-out); }',
+  '.elr-sec[data-elr-floating-card="clock"]::after, .elr-sec[data-elr-floating-card="clock"] > .elr-rz { transition: opacity 220ms var(--ease-out); }',
+  '.elr-sec[data-elr-floating-card="clock"]:has(> .elr-clock-card.is-chrome-hidden) { background: transparent !important; border-color: transparent !important; box-shadow: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; pointer-events: none; }',
+  '.elr-sec[data-elr-floating-card="clock"]:has(> .elr-clock-card.is-chrome-hidden)::after, .elr-sec[data-elr-floating-card="clock"]:has(> .elr-clock-card.is-chrome-hidden) > .elr-rz { opacity: 0; pointer-events: none; }',
+  '.elr-clock-card.is-chrome-hidden .elr-function-head { opacity: 0; transform: translateY(-6px); pointer-events: none; }',
+  '.elr-clock-card.is-chrome-hidden .elr-clock-stage { background: transparent; border-color: transparent; box-shadow: none; pointer-events: none; cursor: default; }',
+  '.elr-clock-card.is-chrome-hidden .elr-clock-digital, .elr-clock-card.is-chrome-hidden .elr-clock-analog { pointer-events: auto; cursor: grab; padding: 6px 12px; border-radius: 14px; }',
+  '.elr-clock-card.is-direct-dragging .elr-clock-digital, .elr-clock-card.is-direct-dragging .elr-clock-analog { cursor: grabbing; opacity: .9; }',
+  '.elr-clock-card.is-chrome-hidden .elr-clock-toolbar { opacity: 0; transform: translateY(4px); pointer-events: none; }',
+  '.elr-clock-digital { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }',
+  '.elr-clock-time-row { display: inline-flex; align-items: baseline; justify-content: center; gap: 5px; font-variant-numeric: tabular-nums; line-height: 1; }',
+  '.elr-clock-hhmm { font-size: clamp(30px, 4.4vw, 40px); font-weight: 700; letter-spacing: -.03em; color: var(--dsw-alias-label-primary); text-shadow: 0 1px 10px color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent); }',
+  '.elr-clock-sec { padding: 3px 6px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, rgb(255 255 255 / .20)); border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 26%, rgb(255 255 255 / .28)); box-shadow: inset 0 1px 0 rgb(255 255 255 / .36); }',
+  '.elr-clock-ampm { font-size: 11px; font-weight: 650; letter-spacing: .04em; color: var(--dsw-alias-label-secondary); align-self: flex-start; margin-top: 4px; }',
+  '.elr-clock-date { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; color: var(--dsw-alias-label-secondary); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 46%, transparent); border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 60%, rgb(255 255 255 / .24)); box-shadow: inset 0 1px 0 rgb(255 255 255 / .24); }',
+  '.elr-clock-progress { width: min(176px, 78%); height: 3px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--dsw-alias-border-l1) 65%, transparent); }',
+  '.elr-clock-progress > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 65%, transparent), var(--dsw-alias-brand-primary)); transition: width 320ms var(--ease-out); }',
+  '.elr-clock-analog { display: flex; flex-direction: column; align-items: center; gap: 6px; }',
+  '.elr-clock-dial { width: 116px; height: 116px; border-radius: 50%; background: radial-gradient(circle at 30% 25%, rgb(255 255 255 / .30), transparent 64%), color-mix(in srgb, var(--dsw-alias-bg-layer-1) 44%, transparent); border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 55%, rgb(255 255 255 / .36)); box-shadow: inset 0 1px 0 rgb(255 255 255 / .42), inset 0 -2px 8px rgb(10 18 30 / .08), 0 6px 16px rgb(10 18 30 / .10); }',
+  '.elr-clock-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 5px; }',
+  '.elr-clock-pill { padding: 3px 9px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 75%, rgb(255 255 255 / .22)); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 52%, transparent); color: var(--dsw-alias-label-secondary); font: inherit; font-size: 11px; cursor: pointer; transition: background-color 140ms var(--ease-out), border-color 140ms var(--ease-out), color 140ms var(--ease-out); }',
+  '.elr-clock-pill:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l2); }',
+  '.elr-clock-pill[aria-pressed="true"] { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, rgb(255 255 255 / .14)); color: var(--dsw-alias-brand-primary); font-weight: 600; }',
   '.elr-body.dock-bottom [data-elr-docked-card] > :first-child > :not(.elr-function-head) { min-width: 0; margin-block-start: var(--elr-card-inset); }',
   '.elr-body.dock-bottom [data-elr-docked-card="album"] > .elr-album-card.has-photos > :not(.elr-function-head) { margin-block-start: 0; }',
   '.elr-body.dock-bottom [data-elr-docked-card] .elr-selection-content { padding-block-start: 0; }',
@@ -2102,6 +2186,8 @@ const readerIconPaths = {
   outline: 'M5 3.5h10a1.5 1.5 0 0 1 1.5 1.5v10a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 15V5A1.5 1.5 0 0 1 5 3.5zM7.3 3.5v13M9.9 7h3.9m-3.9 3h3.9m-3.9 3h2.6',
   stowRight: 'M5 5l5 5-5 5m8-11v12',
   stowBottom: 'M5 5l5 5 5-5m-11 8h12',
+  edit: 'M13.8 3.6a1.7 1.7 0 0 1 2.4 2.4l-8.6 8.6-3.3.8.8-3.3 8.7-8.5zM12.2 5.2l2.4 2.4',
+  trash: 'M4.5 6h11M8 6V4.2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V6m2 0-.7 9.3a1.5 1.5 0 0 1-1.5 1.4H8.2a1.5 1.5 0 0 1-1.5-1.4L6 6m2.7 3v4.5m2.6-4.5v4.5',
 };
 
 function readerIcon(name, size = 20, flip = false) {
@@ -2110,7 +2196,7 @@ function readerIcon(name, size = 20, flip = false) {
     '--kd-b': 'color-mix(in srgb, currentColor 40%, transparent)',
     transform: (name === 'dockRight' ? !flip : flip) ? 'scaleX(-1)' : undefined,
   } });
-  return h('svg', { viewBox: '0 0 20 20', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5,
+  return h('svg', { width: size, height: size, viewBox: '0 0 20 20', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5,
     strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true,
     style: flip ? { transform: 'scaleX(-1)' } : undefined,
   }, h('path', { d: readerIconPaths[name] }));
@@ -2213,7 +2299,9 @@ function popupViewport() {
 }
 
 function displayCardHeightLimit() {
-  return 2 * (window.screen.height || window.innerHeight);
+  const viewport = window.visualViewport;
+  const height = (viewport && viewport.height) || window.innerHeight || 800;
+  return Math.max(CARD_MIN_H, Math.floor(height));
 }
 
 const clampPopup = (value, min, max) => Math.min(Math.max(value, min), Math.max(min, max));
@@ -2737,11 +2825,9 @@ const UI_TONE_SWATCHES = {
   'duo-purple': 'linear-gradient(135deg, #f4f3f8 50%, #382a52 50%)',
 };
 
-const ALBUM_DEFAULT_INTERVAL_SEC = 5;
-const ALBUM_HEAD_HIDE_MS = 2600;
-
-function albumFileUrl(folderPath, fileName) {
-  return 'litreader://app/album-file?folder=' + encodeURIComponent(folderPath) + '&name=' + encodeURIComponent(fileName);
+function albumFileUrl(folderPath, fileName, maxWidth = 0) {
+  const base = 'litreader://app/album-file?folder=' + encodeURIComponent(folderPath) + '&name=' + encodeURIComponent(fileName);
+  return maxWidth > 0 ? base + '&w=' + maxWidth : base;
 }
 
 const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, intervalSec, open, floatingHost, toneCls, header, onSaveAlbum }) {
@@ -2830,12 +2916,27 @@ const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, interv
 
   React.useEffect(() => {
     if (!hasPhotos || activeImages.length <= 1) return undefined;
-    const rawSec = Number(intervalSec);
-    const delayMs = (Number.isFinite(rawSec) ? Math.min(60, Math.max(1, Math.round(rawSec))) : ALBUM_DEFAULT_INTERVAL_SEC) * 1000;
-    const id = setInterval(() => {
-      setIndex((prev) => (prev + 1) % activeImages.length);
-    }, delayMs);
-    return () => clearInterval(id);
+    const delayMs = normalizeAlbumInterval(intervalSec) * 1000;
+    let id = null;
+    const start = () => {
+      if (id || document.hidden) return;
+      id = setInterval(() => {
+        setIndex((prev) => (prev + 1) % activeImages.length);
+      }, delayMs);
+    };
+    const stop = () => {
+      if (id) {
+        clearInterval(id);
+        id = null;
+      }
+    };
+    const onVisibility = () => (document.hidden ? stop() : start());
+    start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [activeImages.length, hasPhotos, intervalSec]);
 
   React.useEffect(() => {
@@ -2926,7 +3027,48 @@ const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, interv
   };
 
   const activeName = hasPhotos ? activeImages[index % activeImages.length] : '';
-  const photoUrl = activeName ? albumFileUrl(resolvedFolder, activeName) : '';
+  const photoUrl = activeName ? albumFileUrl(resolvedFolder, activeName, 1200) : '';
+  const nextName = hasPhotos && activeImages.length > 1 ? activeImages[(index + 1) % activeImages.length] : '';
+  const nextPhotoUrl = nextName ? albumFileUrl(resolvedFolder, nextName, 1200) : '';
+  const [photoLayer, setPhotoLayer] = React.useState({ current: '', prev: '', ready: false });
+  const fadeCleanupRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (fadeCleanupRef.current) {
+      clearTimeout(fadeCleanupRef.current);
+      fadeCleanupRef.current = null;
+    }
+    if (!photoUrl) {
+      setPhotoLayer({ current: '', prev: '', ready: false });
+      return undefined;
+    }
+    setPhotoLayer((prevState) => {
+      if (prevState.current === photoUrl) return prevState;
+      return { current: photoUrl, prev: prevState.current || '', ready: !prevState.current };
+    });
+    return undefined;
+  }, [photoUrl]);
+
+  React.useEffect(() => {
+    if (!nextPhotoUrl) return undefined;
+    const preload = new Image();
+    preload.decoding = 'async';
+    preload.src = nextPhotoUrl;
+    return () => { preload.src = ''; };
+  }, [nextPhotoUrl]);
+
+  const handleCurrentPhotoLoad = React.useCallback(() => {
+    setPhotoLayer((prevState) => (prevState.current === photoUrl ? { ...prevState, ready: true } : prevState));
+    if (fadeCleanupRef.current) clearTimeout(fadeCleanupRef.current);
+    fadeCleanupRef.current = setTimeout(() => {
+      fadeCleanupRef.current = null;
+      setPhotoLayer((prevState) => (prevState.current === photoUrl ? { ...prevState, prev: '' } : prevState));
+    }, ALBUM_FADE_MS + 40);
+  }, [photoUrl]);
+
+  React.useEffect(() => () => {
+    if (fadeCleanupRef.current) clearTimeout(fadeCleanupRef.current);
+  }, []);
 
   let emptyTitle = '选择照片文件夹';
   let emptyActionLabel = '选择文件夹';
@@ -2981,7 +3123,7 @@ const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, interv
             onClick: () => togglePickedPhoto(name),
           },
             h('img', {
-              src: albumFileUrl(picker.folder, name),
+              src: albumFileUrl(picker.folder, name, 360),
               alt: name,
               className: 'elr-album-thumb-img',
               loading: 'lazy',
@@ -3018,12 +3160,24 @@ const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, interv
   },
     header,
     hasPhotos ? h('div', { className: 'elr-album-stage elr-card-fold-content', inert: !open },
+      photoLayer.prev && photoLayer.prev !== photoUrl ? h('img', {
+        key: 'prev-' + photoLayer.prev,
+        src: photoLayer.prev,
+        alt: '',
+        'aria-hidden': true,
+        className: 'elr-album-photo is-visible',
+        decoding: 'async',
+        draggable: false,
+      }) : null,
       h('img', {
         key: photoUrl,
         src: photoUrl,
         alt: activeName,
-        className: 'elr-album-photo',
+        className: 'elr-album-photo ' + (photoLayer.ready ? 'is-visible' : 'is-entering'),
+        decoding: 'async',
         draggable: false,
+        onLoad: handleCurrentPhotoLoad,
+        onError: handleCurrentPhotoLoad,
       }),
       h('div', { className: 'elr-album-hud', onClick: (e) => e.stopPropagation() },
         h('span', { className: 'elr-album-hud-count' }, ((index % activeImages.length) + 1) + ' / ' + activeImages.length),
@@ -3078,11 +3232,13 @@ const AmbientAudioChannel = React.memo(function AmbientAudioChannel({ url, volum
   return h('audio', { ref, src: url, loop, preload: 'auto', onEnded });
 });
 
-const AmbientCard = React.memo(function AmbientCard({ folder, track, mix, playMode, volume, open, header, onUpdate }) {
+const AmbientCard = React.memo(function AmbientCard({ folder, track, mix, playMode, volume, presets, open, header, onUpdate }) {
   const [state, setState] = React.useState({ folder: '', tracks: [], status: 'loading' });
   const [playing, setPlaying] = React.useState(false);
   const [category, setCategory] = React.useState('all');
   const [query, setQuery] = React.useState('');
+  const [editingPresetId, setEditingPresetId] = React.useState('');
+  const [editingPresetName, setEditingPresetName] = React.useState('');
 
   React.useEffect(() => {
     let cancelled = false;
@@ -3114,6 +3270,7 @@ const AmbientCard = React.memo(function AmbientCard({ folder, track, mix, playMo
   const tracks = state.tracks;
   const tracksByName = React.useMemo(() => new Map(tracks.map((item) => [item.name, item])), [tracks]);
   const mixMap = mix && typeof mix === 'object' ? mix : {};
+  const presetList = Array.isArray(presets) ? presets : [];
   const activeMixEntries = React.useMemo(() => {
     const valid = Object.entries(mixMap).filter(([name]) => tracksByName.has(name));
     if (valid.length > 0) return valid;
@@ -3122,22 +3279,44 @@ const AmbientCard = React.memo(function AmbientCard({ folder, track, mix, playMo
 
   const masterVolume = Number.isFinite(Number(volume)) ? Math.min(1, Math.max(0, Number(volume))) : 0.8;
   const isRandomSingle = playMode === 'random' && activeMixEntries.length <= 1;
-  const activeTrackName = activeMixEntries[0]?.[0] || (tracksByName.has(track) ? track : tracks[0]?.name || '');
 
-  const chooseFolder = async (event) => {
-    event?.stopPropagation?.();
-    const chosen = await window.reader?.chooseAmbientFolder?.(folder || '');
-    if (!chosen?.path) return;
-    const nextTracks = Array.isArray(chosen.tracks) ? chosen.tracks : [];
-    const first = nextTracks[0]?.name || '';
-    setState({ folder: chosen.path, tracks: nextTracks, status: chosen.missing ? 'missing' : 'ready' });
-    setCategory('all');
-    setQuery('');
-    onUpdate({
-      ambientFolder: chosen.path,
-      ambientTrack: first,
-      ambientMix: first ? { [first]: 0.65 } : {},
-    });
+  const saveCurrentPreset = () => {
+    if (!activeMixEntries.length) return;
+    const names = activeMixEntries.map(([name]) => tracksByName.get(name)?.title || name);
+    const defaultName = names.length <= 2 ? names.join(' + ') : names.slice(0, 2).join(' + ') + ' 等 ' + names.length + ' 音';
+    const nextMix = Object.fromEntries(activeMixEntries.map(([name, vol]) => [name, vol]));
+    const id = 'preset-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    onUpdate({ ambientPresets: [{ id, name: defaultName, mix: nextMix }, ...presetList] });
+    setCategory('presets');
+    setEditingPresetId(id);
+    setEditingPresetName(defaultName);
+  };
+
+  const applyPreset = (preset) => {
+    if (!preset?.mix) return;
+    const keys = Object.keys(preset.mix);
+    if (!keys.length) return;
+    onUpdate({ ambientMix: { ...preset.mix }, ambientTrack: keys[0] });
+    setPlaying(true);
+  };
+
+  const commitPresetRename = (id) => {
+    const trimmed = editingPresetName.trim();
+    if (trimmed) {
+      onUpdate({
+        ambientPresets: presetList.map((item) => (item.id === id ? { ...item, name: trimmed } : item)),
+      });
+    }
+    setEditingPresetId('');
+    setEditingPresetName('');
+  };
+
+  const deletePreset = (id) => {
+    onUpdate({ ambientPresets: presetList.filter((item) => item.id !== id) });
+    if (editingPresetId === id) {
+      setEditingPresetId('');
+      setEditingPresetName('');
+    }
   };
 
   const resetBuiltin = (event) => {
@@ -3236,19 +3415,18 @@ const AmbientCard = React.memo(function AmbientCard({ folder, track, mix, playMo
     ? (folder.split(/[/\\]/).filter(Boolean).at(-1) || folder)
     : 'SoftEcho 白噪音 (' + tracks.length + ')';
 
-  const trackIcon = (item) => {
-    if (item.category === 'rain' || /rain/i.test(item.name)) return readerIcon('rain', 14);
-    if (/wave|ocean|river|water|waterfall/i.test(item.name)) return readerIcon('waves', 14);
-    return readerIcon('audio', 14);
-  };
-
   let emptyTitle = '暂无支持播放的音频';
-  let emptyAction = { label: '打开文件夹', onClick: chooseFolder };
   if (state.status === 'loading') emptyTitle = '正在读取音频列表…';
   else if (state.status === 'unauthorized' || state.status === 'missing') {
     emptyTitle = state.status === 'missing' ? '原文件夹已移动或不可访问' : '需要重新授权音频文件夹';
-    emptyAction = { label: '重新选择文件夹', onClick: chooseFolder };
   }
+
+  const isSameMix = (a, b) => {
+    const ka = Object.keys(a || {});
+    const kb = Object.keys(b || {});
+    if (ka.length !== kb.length || !ka.length) return false;
+    return ka.every((k) => Math.abs((a[k] ?? 0) - (b[k] ?? 0)) < 0.01);
+  };
 
   return h('div', { className: 'elr-ambient-card' },
     header,
@@ -3270,9 +3448,13 @@ const AmbientCard = React.memo(function AmbientCard({ folder, track, mix, playMo
           onClick: () => { setPlaying(false); onUpdate({ ambientMix: {} }); },
         }, '清空') : null,
         folder ? h('button', { type: 'button', className: 'elr-btn', onClick: resetBuiltin }, '内置') : null,
-        h('button', { type: 'button', className: 'elr-btn', onClick: chooseFolder }, '打开文件夹')
+        h('button', {
+          type: 'button', className: 'elr-btn',
+          disabled: !activeMixEntries.length,
+          onClick: saveCurrentPreset,
+        }, '收藏组合')
       ),
-      tracks.length > 6 ? h('div', { className: 'elr-ambient-search' },
+      category !== 'presets' && tracks.length > 6 ? h('div', { className: 'elr-ambient-search' },
         readerIcon('search', 13),
         h('input', {
           type: 'search',
@@ -3282,7 +3464,7 @@ const AmbientCard = React.memo(function AmbientCard({ folder, track, mix, playMo
           onChange: (e) => setQuery(e.target.value),
         })
       ) : null,
-      categories.length > 1 || activeMixEntries.length > 0 ? h('div', { className: 'elr-ambient-cats', role: 'tablist', 'aria-label': '白噪音分类' },
+      categories.length > 1 || activeMixEntries.length > 0 || presetList.length > 0 ? h('div', { className: 'elr-ambient-cats', role: 'tablist', 'aria-label': '白噪音分类' },
         h('button', {
           type: 'button', className: 'elr-ambient-cat', 'aria-pressed': category === 'all',
           onClick: () => setCategory('all'),
@@ -3291,12 +3473,71 @@ const AmbientCard = React.memo(function AmbientCard({ folder, track, mix, playMo
           type: 'button', className: 'elr-ambient-cat', 'aria-pressed': category === 'active',
           onClick: () => setCategory('active'),
         }, '已开启 (' + activeMixEntries.length + ')'),
+        h('button', {
+          type: 'button', className: 'elr-ambient-cat', 'aria-pressed': category === 'presets',
+          onClick: () => setCategory('presets'),
+        }, '收藏 (' + presetList.length + ')'),
         categories.map(([catId, catLabel]) => h('button', {
           key: catId, type: 'button', className: 'elr-ambient-cat', 'aria-pressed': category === catId,
           onClick: () => setCategory(catId),
         }, catLabel))
       ) : null,
-      tracks.length ? (visibleTracks.length ? h('div', { className: 'elr-ambient-grid' },
+      category === 'presets' ? (presetList.length ? h('div', { className: 'elr-ambient-presets' },
+        presetList.map((preset) => {
+          const isEditing = editingPresetId === preset.id;
+          const isCurrent = isSameMix(preset.mix, mixMap);
+          const summary = Object.entries(preset.mix)
+            .map(([name, vol]) => (tracksByName.get(name)?.title || name.split('/').pop()) + ' ' + Math.round(vol * 100) + '%')
+            .join(' · ');
+          return h('div', { key: preset.id, className: 'elr-ambient-preset' + (isCurrent ? ' is-active' : '') },
+            isEditing ? h('div', { className: 'elr-ambient-preset-edit' },
+              h('input', {
+                type: 'text',
+                value: editingPresetName,
+                autoFocus: true,
+                maxLength: 40,
+                'aria-label': '组合名称',
+                onChange: (e) => setEditingPresetName(e.target.value),
+                onKeyDown: (e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); commitPresetRename(preset.id); }
+                  else if (e.key === 'Escape') { e.preventDefault(); setEditingPresetId(''); setEditingPresetName(''); }
+                },
+                onBlur: () => commitPresetRename(preset.id),
+              })
+            ) : h('button', {
+              type: 'button',
+              className: 'elr-ambient-preset-apply',
+              onClick: () => applyPreset(preset),
+            },
+              h('span', { className: 'elr-ambient-preset-name', title: preset.name }, preset.name),
+              h('span', { className: 'elr-ambient-preset-meta', title: summary }, summary)
+            ),
+            h('div', { className: 'elr-ambient-preset-actions' },
+              h('button', {
+                type: 'button',
+                className: 'elr-ambient-preset-btn',
+                title: '重命名组合',
+                'aria-label': '重命名组合',
+                onClick: () => {
+                  if (isEditing) commitPresetRename(preset.id);
+                  else { setEditingPresetId(preset.id); setEditingPresetName(preset.name); }
+                },
+              }, readerIcon('edit', 12)),
+              h('button', {
+                type: 'button',
+                className: 'elr-ambient-preset-btn is-danger',
+                title: '删除组合',
+                'aria-label': '删除组合',
+                onClick: () => deletePreset(preset.id),
+              }, readerIcon('trash', 12))
+            )
+          );
+        })
+      ) : h(EmptyState, {
+        size: 'card',
+        icon: 'star',
+        title: '还没有收藏的白噪音组合',
+      })) : (tracks.length ? (visibleTracks.length ? h('div', { className: 'elr-ambient-grid' },
         visibleTracks.map((item) => {
           const active = item.name in mixMap;
           const trackVol = active ? mixMap[item.name] : 0.65;
@@ -3311,7 +3552,7 @@ const AmbientCard = React.memo(function AmbientCard({ folder, track, mix, playMo
               'aria-pressed': active,
               onClick: () => toggleTrack(item.name),
             },
-              trackIcon(item),
+              ambientTrackIcon(item, 14),
               h('span', { className: 'elr-ambient-track-title', title: item.title }, item.title),
               h('span', { className: 'elr-ambient-dot', 'aria-hidden': true })
             ),
@@ -3337,8 +3578,8 @@ const AmbientCard = React.memo(function AmbientCard({ folder, track, mix, playMo
         size: 'card',
         icon: 'sliders',
         title: emptyTitle,
-        primaryAction: state.status === 'loading' ? undefined : (folder ? { label: '恢复内置', onClick: resetBuiltin } : emptyAction),
-      }),
+        primaryAction: state.status === 'loading' ? undefined : (folder ? { label: '恢复内置', onClick: resetBuiltin } : undefined),
+      })),
       h('div', { className: 'elr-ambient-controls' },
         h('button', {
           type: 'button',
@@ -3374,6 +3615,241 @@ const AmbientCard = React.memo(function AmbientCard({ folder, track, mix, playMo
           }),
           h('output', { 'aria-hidden': true }, Math.round(masterVolume * 100) + '%')
         )
+      )
+    )
+  );
+});
+
+const CLOCK_WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+const ClockCard = React.memo(function ClockCard({ styleMode, use24h, showSeconds, open, isFloating, header, onUpdate, onMoveFloating }) {
+  const [now, setNow] = React.useState(() => new Date());
+  const [chromeVisible, setChromeVisible] = React.useState(false);
+  const [directDragging, setDirectDragging] = React.useState(false);
+  const hideChromeTimerRef = React.useRef(null);
+  const pressingRef = React.useRef(false);
+  const suppressClickRef = React.useRef(false);
+
+  const clearHideChromeTimer = React.useCallback(() => {
+    if (hideChromeTimerRef.current) {
+      clearTimeout(hideChromeTimerRef.current);
+      hideChromeTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleHideChrome = React.useCallback(() => {
+    clearHideChromeTimer();
+    if (!isFloating || !open || pressingRef.current) return;
+    hideChromeTimerRef.current = setTimeout(() => {
+      hideChromeTimerRef.current = null;
+      setChromeVisible(false);
+    }, ALBUM_HEAD_HIDE_MS);
+  }, [clearHideChromeTimer, isFloating, open]);
+
+  const revealChrome = React.useCallback((event) => {
+    if (!isFloating) return;
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      event?.stopPropagation?.();
+      return;
+    }
+    setChromeVisible(true);
+    scheduleHideChrome();
+  }, [isFloating, scheduleHideChrome]);
+
+  React.useEffect(() => {
+    clearHideChromeTimer();
+    if (!isFloating) {
+      setChromeVisible(true);
+      return undefined;
+    }
+    setChromeVisible(false);
+    return undefined;
+  }, [clearHideChromeTimer, isFloating]);
+
+  React.useEffect(() => clearHideChromeTimer, [clearHideChromeTimer]);
+
+  const handlePointerDownCapture = () => {
+    if (!isFloating) return;
+    pressingRef.current = true;
+    clearHideChromeTimer();
+    const release = () => {
+      pressingRef.current = false;
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointercancel', release);
+      scheduleHideChrome();
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+  };
+
+  const handleClockBodyPointerDown = (event) => {
+    if (!isFloating || chromeVisible || event.button !== 0 || !onMoveFloating) return;
+    const cardEl = event.currentTarget.closest('[data-elr-floating-card="clock"]');
+    if (!cardEl) return;
+    event.preventDefault();
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startRect = cardEl.getBoundingClientRect();
+    let active = false;
+    let moved = false;
+    let lastX = startRect.left;
+    let lastY = startRect.top;
+    const activate = () => {
+      if (active) return;
+      active = true;
+      setDirectDragging(true);
+      document.body.classList.add('elr-card-dragging');
+    };
+    const holdTimer = setTimeout(activate, 180);
+    const onMove = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const dx = moveEvent.clientX - startX;
+      const dy = moveEvent.clientY - startY;
+      if (!active) {
+        if (Math.hypot(dx, dy) < 5) return;
+        clearTimeout(holdTimer);
+        activate();
+      }
+      moved = true;
+      lastX = Math.max(8, Math.min(window.innerWidth - startRect.width - 8, startRect.left + dx));
+      lastY = Math.max(8, Math.min(window.innerHeight - startRect.height - 8, startRect.top + dy));
+      cardEl.style.left = lastX + 'px';
+      cardEl.style.top = lastY + 'px';
+    };
+    const cleanupDrag = (commit) => {
+      clearTimeout(holdTimer);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      document.body.classList.remove('elr-card-dragging');
+      setDirectDragging(false);
+      if (active) {
+        suppressClickRef.current = true;
+        setTimeout(() => { suppressClickRef.current = false; }, 0);
+      }
+      if (commit && moved) onMoveFloating(lastX, lastY);
+    };
+    const onUp = (upEvent) => { if (upEvent.pointerId === pointerId) cleanupDrag(true); };
+    const onCancel = (cancelEvent) => { if (cancelEvent.pointerId === pointerId) cleanupDrag(false); };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+  };
+
+  React.useEffect(() => {
+    if (!open) return undefined;
+    setNow(new Date());
+    let timer = null;
+    const stepMs = showSeconds || styleMode === 'analog' ? 1000 : 15000;
+    const start = () => {
+      if (timer || document.hidden) return;
+      setNow(new Date());
+      timer = setInterval(() => setNow(new Date()), stepMs);
+    };
+    const stop = () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+    const onVisibility = () => (document.hidden ? stop() : start());
+    start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [open, showSeconds, styleMode]);
+
+  const rawHours = now.getHours();
+  const minutes = now.getMinutes();
+  const seconds = now.getSeconds();
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const displayHour = use24h ? rawHours : (rawHours % 12 || 12);
+  const ampm = rawHours >= 12 ? 'PM' : 'AM';
+  const dateText = now.getFullYear() + '年' + (now.getMonth() + 1) + '月' + now.getDate() + '日 · ' + CLOCK_WEEKDAYS[now.getDay()];
+
+  const secAngle = seconds * 6;
+  const minAngle = minutes * 6 + seconds * 0.1;
+  const hourAngle = (rawHours % 12) * 30 + minutes * 0.5;
+
+  return h('div', {
+    className: 'elr-clock-card' + (isFloating ? ' is-floating' + (!chromeVisible ? ' is-chrome-hidden' : '') + (directDragging ? ' is-direct-dragging' : '') : ''),
+    onPointerDownCapture: handlePointerDownCapture,
+    onClickCapture: revealChrome,
+    onFocusCapture: revealChrome,
+  },
+    header,
+    h('div', { className: 'elr-clock-stage elr-card-fold-content', inert: !open },
+      styleMode === 'analog' ? h('div', { className: 'elr-clock-analog', onPointerDown: handleClockBodyPointerDown },
+        h('svg', { className: 'elr-clock-dial', viewBox: '0 0 120 120', role: 'img', 'aria-label': '模拟时钟 ' + pad2(displayHour) + ':' + pad2(minutes) },
+          Array.from({ length: 12 }, (_, idx) => {
+            const angle = (idx * 30 * Math.PI) / 180;
+            const major = idx % 3 === 0;
+            const r1 = major ? 46 : 48;
+            const r2 = 53;
+            return h('line', {
+              key: idx,
+              x1: 60 + Math.sin(angle) * r1,
+              y1: 60 - Math.cos(angle) * r1,
+              x2: 60 + Math.sin(angle) * r2,
+              y2: 60 - Math.cos(angle) * r2,
+              stroke: 'currentColor',
+              strokeOpacity: major ? 0.58 : 0.28,
+              strokeWidth: major ? 2 : 1.2,
+              strokeLinecap: 'round',
+            });
+          }),
+          h('line', {
+            x1: 60, y1: 60, x2: 60, y2: 33,
+            stroke: 'currentColor', strokeWidth: 3, strokeLinecap: 'round',
+            transform: 'rotate(' + hourAngle + ' 60 60)',
+          }),
+          h('line', {
+            x1: 60, y1: 60, x2: 60, y2: 20,
+            stroke: 'currentColor', strokeWidth: 2.1, strokeLinecap: 'round',
+            transform: 'rotate(' + minAngle + ' 60 60)',
+          }),
+          showSeconds ? h('line', {
+            x1: 60, y1: 68, x2: 60, y2: 16,
+            stroke: 'var(--dsw-alias-brand-primary)', strokeWidth: 1.4, strokeLinecap: 'round',
+            transform: 'rotate(' + secAngle + ' 60 60)',
+          }) : null,
+          h('circle', { cx: 60, cy: 60, r: 3.4, fill: 'var(--dsw-alias-brand-primary)' })
+        ),
+        h('div', { className: 'elr-clock-date' }, dateText)
+      ) : h('div', { className: 'elr-clock-digital', onPointerDown: handleClockBodyPointerDown },
+        h('div', { className: 'elr-clock-time-row' },
+          !use24h ? h('span', { className: 'elr-clock-ampm' }, ampm) : null,
+          h('span', { className: 'elr-clock-hhmm' }, pad2(displayHour) + ':' + pad2(minutes)),
+          showSeconds ? h('span', { className: 'elr-clock-sec' }, pad2(seconds)) : null
+        ),
+        h('div', { className: 'elr-clock-date' }, dateText),
+        showSeconds ? h('div', { className: 'elr-clock-progress', 'aria-hidden': true },
+          h('span', { style: { width: ((seconds / 59) * 100).toFixed(1) + '%' } })
+        ) : null
+      ),
+      h('div', { className: 'elr-clock-toolbar' },
+        h('button', {
+          type: 'button',
+          className: 'elr-clock-pill',
+          'aria-pressed': styleMode === 'digital',
+          onClick: () => onUpdate({ clockStyle: styleMode === 'analog' ? 'digital' : 'analog' }),
+        }, styleMode === 'analog' ? '指针表盘' : '数字时钟'),
+        styleMode === 'digital' ? h('button', {
+          type: 'button',
+          className: 'elr-clock-pill',
+          'aria-pressed': use24h,
+          onClick: () => onUpdate({ clock24h: !use24h }),
+        }, use24h ? '24 小时' : '12 小时') : null,
+        h('button', {
+          type: 'button',
+          className: 'elr-clock-pill',
+          'aria-pressed': showSeconds,
+          onClick: () => onUpdate({ clockShowSeconds: !showSeconds }),
+        }, showSeconds ? '显示秒' : '隐藏秒')
       )
     )
   );
@@ -3466,14 +3942,18 @@ function Reader(props) {
   const [albumFolder] = useShared('albumFolder');
   const [albumImages] = useShared('albumImages');
   const [albumInterval, setAlbumInterval] = useShared('albumInterval');
-  const rawAlbumInterval = Number(albumInterval);
-  const albumIntervalSec = Number.isFinite(rawAlbumInterval) ? Math.min(60, Math.max(1, Math.round(rawAlbumInterval))) : ALBUM_DEFAULT_INTERVAL_SEC;
+  const albumIntervalSec = normalizeAlbumInterval(albumInterval);
   const [ambientOpen] = useShared('ambientOpen');
   const [ambientFolder] = useShared('ambientFolder');
   const [ambientTrack] = useShared('ambientTrack');
   const [ambientMix] = useShared('ambientMix');
   const [ambientMode] = useShared('ambientMode');
   const [ambientVolume] = useShared('ambientVolume');
+  const [ambientPresets] = useShared('ambientPresets');
+  const [clockOpen] = useShared('clockOpen');
+  const [clockStyle] = useShared('clockStyle');
+  const [clock24h] = useShared('clock24h');
+  const [clockShowSeconds] = useShared('clockShowSeconds');
   const [cardWidths, setCardWidths] = useShared('cardWidths');
   // (v38) Per-card heights for the stacked right dock only. `{}` means "no
   // override", which falls back to the even share introduced in v37.
@@ -7253,29 +7733,34 @@ function Reader(props) {
     const buildDragCache = () => {
       const panel = workspaceStowed ? null : sideTopElRef.current;
       const panelRect = panel ? panel.getBoundingClientRect() : null;
+      const draggedNode = panel ? panel.querySelector('[data-elr-docked-card="' + key + '"]') : null;
+      const settled = !draggedNode || draggedNode.classList.contains('dragging');
       const columns = panel ? [...panel.querySelectorAll('.elr-feature-column')].map((colNode) => {
         const colRect = colNode.getBoundingClientRect();
-        const scrollLeft = colNode.scrollLeft;
-        const scrollTop = colNode.scrollTop;
         const candidates = [...colNode.querySelectorAll('[data-elr-docked-card]')]
           .filter((node) => node.dataset.elrDockedCard !== key)
           .map((node) => {
-            const start = bottomDock
-              ? colRect.left + node.offsetLeft - scrollLeft
-              : colRect.top + node.offsetTop - scrollTop;
+            const start = bottomDock ? colRect.left + node.offsetLeft : colRect.top + node.offsetTop;
             const span = bottomDock ? node.offsetWidth : node.offsetHeight;
             return { key: node.dataset.elrDockedCard, start, end: start + span, mid: start + span / 2 };
           });
         return { column: Number(colNode.dataset.featureColumn), rect: colRect, candidates };
       }) : [];
-      dragCache = { panel, panelRect, columns };
-      return dragCache;
+      const result = { panel, panelRect, columns, settled };
+      if (settled) dragCache = result;
+      return result;
     };
     const dragLocation = (x, y) => {
-      const { panel, panelRect } = dragCache || buildDragCache();
+      const { panel, panelRect, columns } = dragCache || buildDragCache();
       const inDock = containsPoint(panelRect, x, y);
       const vertical = bottomDock && inDock;
-      const capsule = vertical ? verticalCapsule : horizontalCapsule;
+      let capsule = horizontalCapsule;
+      if (vertical) {
+        capsule = verticalCapsule;
+      } else if (inDock && columns.length > 0) {
+        const colInfo = columns.find((item) => x <= item.rect.right) || columns.at(-1);
+        if (colInfo?.rect?.width) capsule = { w: Math.max(170, colInfo.rect.width), h: CARD_HEADER_HEIGHT };
+      }
       // Lift the dragged item off the list so it never hides the landing gap:
       // above a horizontal row, pulled aside and shrunk to 90% in a vertical list,
       // or shrunk gently when carrying a floating card over the reading page.
@@ -7287,7 +7772,8 @@ function Reader(props) {
     };
     const dockAt = (x, y, { panel, inDock }) => {
       if (!panel || !inDock) return null;
-      const { columns } = dragCache || buildDragCache();
+      const { columns, settled } = dragCache || buildDragCache();
+      if (!settled) return null;
       const colInfo = columns.find((item) => x <= item.rect.right) || columns.at(-1);
       if (!colInfo) return null;
       const { column, rect: columnBounds, candidates } = colInfo;
@@ -7330,6 +7816,8 @@ function Reader(props) {
     let started = false;
     let hover = null;
     let previewVertical;
+    let previewW;
+    let previewH;
     let lastBox = null;
     let lastScale = 1;
     let shrinkClone = null;
@@ -7356,6 +7844,10 @@ function Reader(props) {
       if (vertical !== previewVertical) {
         previewVertical = vertical;
         preview.classList.toggle('is-vertical', vertical);
+      }
+      if (box.w !== previewW || box.h !== previewH) {
+        previewW = box.w;
+        previewH = box.h;
         preview.style.width = box.w + 'px';
         preview.style.height = box.h + 'px';
       }
@@ -7437,10 +7929,9 @@ function Reader(props) {
           ], { duration: 170, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'forwards' });
           shrinkAnim.onfinish = stopShrink;
         }
-        dragCache = buildDragCache();
-        hover = dockAt(x, y, location);
+        dragCache = null;
+        hover = null;
         rememberCardPositions(key);
-        setCardDrop(hover);
         setGhost({ key, vertical: location.vertical, scale: location.scale, ...location.box });
       }
       painter.push({ x, y });
@@ -7691,7 +8182,8 @@ function Reader(props) {
                 : key === 'figure' ? t('figure.title')
                   : key === 'album' ? '相册'
                     : key === 'ambient' ? '白噪音'
-                      : '阅读助手'
+                      : key === 'clock' ? '时钟'
+                        : '阅读助手'
   );
   const enabledCards = CARD_KEYS.filter((key) => Array.isArray(cards) && cards.indexOf(key) !== -1);
   const setCardEnabled = (key, on) => {
@@ -8337,14 +8829,12 @@ function Reader(props) {
       { value: 'off', label: t('popup.offShort') },
       { value: 'on', label: t('popup.onShort') },
     ], popupOn ? 'on' : 'off', (next) => setPopupOn(next === 'on'))),
-    settingsRow('albumInterval', '相册轮播', h('span', { className: 'elr-settings-range' },
-      h('input', {
-        type: 'range', min: 1, max: 60, step: 1, value: albumIntervalSec,
-        'aria-label': '相册轮播时长', 'aria-valuetext': albumIntervalSec + ' 秒',
-        onChange: (e) => setAlbumInterval(Number(e.target.value)),
-      }),
-      h('output', null, albumIntervalSec + 's')
-    ))
+    settingsRow('albumInterval', '相册轮播', h('select', {
+      className: 'elr-settings-select',
+      'aria-label': '相册轮播时长',
+      value: albumIntervalSec,
+      onChange: (e) => setAlbumInterval(Number(e.target.value)),
+    }, ALBUM_INTERVAL_OPTIONS.map((item) => h('option', { key: item.value, value: item.value }, item.label))))
   );
   // (v46) The single "appearance" entry point: one button plus, while open,
   // the panel directly beneath it. The panel lives INSIDE the button's span
@@ -9423,9 +9913,26 @@ function Reader(props) {
     mix: ambientMix,
     playMode: ambientMode,
     volume: ambientVolume,
+    presets: ambientPresets,
     open: ambientOpen,
     header: cardHeader('ambient', ambientOpen),
     onUpdate: saveAmbientConfig,
+  });
+  const moveFloatingClock = React.useCallback((nextX, nextY) => {
+    const state = readShared();
+    const prev = state.floatingCards?.clock;
+    if (!prev) return;
+    writeShared({ floatingCards: { ...state.floatingCards, clock: { ...prev, x: nextX, y: nextY } } });
+  }, []);
+  const clockCard = h(ClockCard, {
+    styleMode: clockStyle,
+    use24h: clock24h,
+    showSeconds: clockShowSeconds,
+    open: clockOpen,
+    isFloating: Boolean(floatingCards.clock),
+    header: cardHeader('clock', clockOpen),
+    onUpdate: saveAmbientConfig,
+    onMoveFloating: moveFloatingClock,
   });
   const cardNodes = {
     selection: selCard, recent: recentSection, terms: termsSection, marks: marksSection,
@@ -9435,6 +9942,7 @@ function Reader(props) {
     agent: analysisCard('agent', agentPanel),
     album: albumCard,
     ambient: ambientCard,
+    clock: clockCard,
   };
   const openCards = {
     selection: selectionCardOpen, recent: recentOpen, marks: marksOpen, terms: termsOpen,
@@ -9442,6 +9950,7 @@ function Reader(props) {
     figure: analysisOpen.figure, agent: analysisOpen.agent,
     album: albumOpen,
     ambient: ambientOpen,
+    clock: clockOpen,
   };
   const compactCards = {
     selection: !hasSelectionDraft && !selection && !selectionResult && !selectionBusy,
@@ -9454,16 +9963,19 @@ function Reader(props) {
     agent: mode !== 'pdf' || !paperId,
     album: false,
     ambient: false,
+    clock: false,
   };
   const dockedCards = functionCardOrder(sectionOrder).filter((key) => enabledCards.includes(key) && !floatingCards[key]);
   const floatingCardNodes = hasPaper && ownsCardWindows ? enabledCards.filter((key) => floatingCards[key]).map((key) => {
     const open = openCards[key];
     const savedBox = floatingCards[key];
+    const minWidth = key === 'clock' ? 248 : 220;
     let minHeight = 130;
     if (key === 'selection') minHeight = CARD_MIN_H;
     else if (key === 'marks') minHeight = MARKS_CARD_MIN_H;
     else if (key === 'agent') minHeight = AGENT_CARD_MIN_H;
-    const box = placeFunctionCard({ ...savedBox, h: Math.max(minHeight, savedBox.h) }, open, floatingBounds);
+    else if (key === 'clock') minHeight = clockStyle === 'analog' ? 276 : 228;
+    const box = placeFunctionCard({ ...savedBox, w: Math.max(minWidth, savedBox.w), h: Math.max(minHeight, savedBox.h) }, open, floatingBounds);
     const saveSize = (patch, edge) => setFloatingCards((previous) => {
       const saved = previous[key];
       if (!saved) return previous;
@@ -9480,7 +9992,7 @@ function Reader(props) {
       style: { left: box.x, top: box.y, width: box.w, height: box.h, '--elr-card-font-adjust': cardFontAdjust },
       onPointerDownCapture: () => setFrontCard(key),
       onFocus: () => setFrontCard(key),
-    }, cardNodes[key], resizeHandles(saveSize, 220, minHeight, popupViewport, {
+    }, cardNodes[key], resizeHandles(saveSize, minWidth, minHeight, popupViewport, {
       edges: open ? RESIZE_EDGES : ['e', 'w'], cancelRef: cardGestureCancelRef, title: t('card.floatResize'),
     })), floatingHost, key);
   }) : [];
@@ -9491,7 +10003,7 @@ function Reader(props) {
         const dragging = ghost?.key === key;
         const baseStyle = dock === 'bottom'
           ? ((!collapsed && !compact && cardWidths[key]) ? { width: cardWidths[key] } : {})
-          : ((!collapsed && !compact && cardHeights[key]) ? { height: cardHeights[key], flex: '0 0 auto' } : {});
+          : ((!collapsed && !compact && cardHeights[key]) ? { height: Math.min(cardHeights[key], cardMaxHeight), flex: '0 0 auto' } : {});
         const rippleStyle = ripple ? {
           '--elr-ripple-x': (dock === 'bottom' ? ripple.shift : 0) + 'px',
           '--elr-ripple-y': (dock === 'bottom' ? 0 : ripple.shift) + 'px',
@@ -10255,7 +10767,8 @@ function Reader(props) {
       className: 'elr-drop-line ' + (cardDrop.lineRect.vertical ? 'is-vertical' : 'is-horizontal'),
       'aria-hidden': true,
       style: {
-        transform: 'translate3d(' + cardDrop.lineRect.x + 'px,' + cardDrop.lineRect.y + 'px,0)',
+        left: cardDrop.lineRect.x + 'px',
+        top: cardDrop.lineRect.y + 'px',
         width: cardDrop.lineRect.w + 'px',
         height: cardDrop.lineRect.h + 'px',
       },

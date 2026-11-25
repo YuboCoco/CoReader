@@ -1,0 +1,127 @@
+name: Release CoReader 0.1.4
+
+on:
+  push:
+    tags: [v0.1.4]
+
+permissions:
+  contents: read
+
+env:
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+  ONNXRUNTIME_NODE_INSTALL: skip
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci --registry=https://registry.npmjs.org --replace-registry-host=always --no-audit --no-fund
+      - run: node --test --test-concurrency=1
+      - run: npm run prepare:translation:win
+      - run: npm run prepare:layout:win
+      - name: Build Windows installer and portable ZIP
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (Test-Path -LiteralPath $compiler) { $env:COREADER_ISCC = $compiler }
+          npm run installer:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = Get-Item -LiteralPath 'release/CoReader-win32-x64/CoReader.exe'
+          if ($exe.VersionInfo.ProductVersion -ne '0.1.4') { throw 'Unexpected Windows version' }
+          tar.exe -tf release/CoReader-0.1.4-win-x64.zip > $null
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-x64
+          path: |
+            release/CoReader-0.1.4-Setup-win-x64.exe
+            release/CoReader-0.1.4-win-x64.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci --registry=https://registry.npmjs.org --replace-registry-host=always --no-audit --no-fund
+      - run: npm run prepare:translation:mac -- ${{ matrix.arch }}
+      - run: npm run prepare:layout:mac
+      - run: npm run package:mac -- ${{ matrix.arch }}
+      - run: unzip -tq release/CoReader-0.1.4-mac-${{ matrix.arch }}.zip
+      - uses: actions/upload-artifact@v6
+        with:
+          name: mac-${{ matrix.arch }}
+          path: release/CoReader-0.1.4-mac-${{ matrix.arch }}.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Publish the verified downloads
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag=v0.1.4
+          cd packages
+          files=(
+            CoReader-0.1.4-Setup-win-x64.exe
+            CoReader-0.1.4-win-x64.zip
+            CoReader-0.1.4-mac-arm64.zip
+            CoReader-0.1.4-mac-x64.zip
+          )
+          for file in "${files[@]}"; do test -s "$file"; done
+          cat > "$RUNNER_TEMP/coreader-014-notes.md" <<'EOF'
+          ## CoReader 0.1.4
+
+          - 新增液态玻璃时钟小卡片，支持悬浮时自动隐藏边框与背景、缩小触控范围并支持长按直接拖动，点击时钟恢复完整卡片，并限定最小完整显示尺寸。
+          - 优化功能栏顶栏透明磨砂质感与丝滑过渡，修复卡片拖拽时的插入线条与避让动画错位，支持悬浮卡片拖回功能栏时顶栏自动适配栏宽、拖出后恢复原宽，并限定单个卡片最高为当前页面高度。
+          - 白噪音卡片新增「收藏当前组合」功能（记录已开启音轨及各自音量，支持一键启用、重命名与删除），移除「打开文件夹」按钮，并为 84 种内置声音配置独立图标。
+          - 相册卡片支持 30 秒默认轮播时长及预设下拉选择、渐变切换与大图下采样；对照翻译模式下左侧原文页面自动居中显示于中间区域；设置页账号链接卡片轮支持触摸板左右滑动。
+
+          ## 下载
+
+          - Windows x64：安装版 EXE（`CoReader-0.1.4-Setup-win-x64.exe`）或便携 ZIP（`CoReader-0.1.4-win-x64.zip`）。
+          - macOS 13.3 及以上：Apple Silicon 下载 `CoReader-0.1.4-mac-arm64.zip`，Intel 下载 `CoReader-0.1.4-mac-x64.zip`。两个 ZIP 均使用临时签名，未进行 Apple 公证。
+          EOF
+          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            test "$draft" = true
+          else
+            gh release create "$tag" --draft --verify-tag --title 'CoReader 0.1.4' --notes-file "$RUNNER_TEMP/coreader-014-notes.md"
+          fi
+          gh release upload "$tag" "${files[@]}" --clobber
+          gh release edit "$tag" --draft=false --latest

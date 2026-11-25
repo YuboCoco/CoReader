@@ -486,9 +486,31 @@ async function existingDirectory(folderPath) {
   }
 }
 
+const albumImageCache = new Map();
+const ALBUM_CACHE_MAX = 64;
+
+function getCachedAlbumThumb(key) {
+  if (!albumImageCache.has(key)) return null;
+  const hit = albumImageCache.get(key);
+  albumImageCache.delete(key);
+  albumImageCache.set(key, hit);
+  return hit;
+}
+
+function setCachedAlbumThumb(key, entry) {
+  if (albumImageCache.has(key)) albumImageCache.delete(key);
+  albumImageCache.set(key, entry);
+  while (albumImageCache.size > ALBUM_CACHE_MAX) {
+    const oldest = albumImageCache.keys().next().value;
+    albumImageCache.delete(oldest);
+  }
+}
+
 async function albumResponse(request, url) {
   const folder = url.searchParams.get('folder') || '';
   const name = url.searchParams.get('name') || '';
+  const rawMaxWidth = Number(url.searchParams.get('w'));
+  const maxWidth = Number.isFinite(rawMaxWidth) && rawMaxWidth > 0 ? Math.min(2000, Math.max(80, Math.round(rawMaxWidth))) : 0;
   if (!isAuthorizedAlbumFolder(folder)) return new Response(null, { status: 403 });
   const target = resolveAlbumImageFile(folder, name);
   const mime = albumMimeType(name);
@@ -496,6 +518,35 @@ async function albumResponse(request, url) {
   try {
     const info = await stat(target);
     if (!info.isFile()) return new Response(null, { status: 404 });
+    if (maxWidth > 0 && request.method === 'GET' && mime !== 'image/gif') {
+      const cacheKey = `${target}|${info.mtimeMs}|${maxWidth}`;
+      let cached = getCachedAlbumThumb(cacheKey);
+      if (!cached) {
+        const img = nativeImage.createFromPath(target);
+        if (!img.isEmpty()) {
+          const { width, height } = img.getSize();
+          if (width > maxWidth || height > maxWidth) {
+            const resized = width >= height
+              ? img.resize({ width: maxWidth, quality: 'good' })
+              : img.resize({ height: maxWidth, quality: 'good' });
+            const isPng = mime === 'image/png';
+            const buffer = isPng ? resized.toPNG() : resized.toJPEG(84);
+            cached = { buffer, contentType: isPng ? 'image/png' : 'image/jpeg' };
+            setCachedAlbumThumb(cacheKey, cached);
+          }
+        }
+      }
+      if (cached) {
+        return new Response(cached.buffer, {
+          status: 200,
+          headers: {
+            'Content-Type': cached.contentType,
+            'Content-Length': String(cached.buffer.length),
+            'Cache-Control': 'public, max-age=300',
+          },
+        });
+      }
+    }
     const headers = {
       'Content-Type': mime,
       'Content-Length': String(info.size),

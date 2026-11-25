@@ -225,8 +225,10 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
       }
     }
     const desiredTop = align && bounds ? (focusTop + focusBottom - height) / 2 : frame.scrollTop;
-    const top = sourceScrollOffset(desiredTop,
-      pageTop, pageTop + view.div.clientHeight, height, focusTop, focusBottom, inset);
+    const top = view.div.clientHeight < height
+      ? Math.max(0, pageTop - (height - view.div.clientHeight) / 2)
+      : sourceScrollOffset(desiredTop,
+          pageTop, pageTop + view.div.clientHeight, height, focusTop, focusBottom, inset);
     if (Math.abs(frame.scrollTop - top) > .5) frame.scrollTop = top;
     if (bounds && Number.isFinite(location.x) && view.div.clientWidth > frame.clientWidth) {
       const left = sourceScrollOffset(frame.scrollLeft, pageLeft, pageLeft + view.div.clientWidth, frame.clientWidth,
