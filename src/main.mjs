@@ -5,6 +5,8 @@ import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { defaultModel, openLibrary } from './library.mjs';
+import { albumMimeType, listAlbumImages, resolveAlbumImageFile } from './album.mjs';
+import { ambientMimeType, listAmbientAudio, resolveAmbientAudioFile } from './ambient.mjs';
 import { apiModelEndpoints, complete, makeMessages, modelSelection, normalizeApiEndpoint } from './model.mjs';
 import { availableEfforts, connectionNames, defaultLocalTranslationModel, localTranslationModels } from './model-capabilities.mjs';
 import { fetchApiModelDirectory, normalizeModelDirectory } from './model-directory.mjs';
@@ -26,6 +28,8 @@ const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 const preload = fileURLToPath(new URL('./preload.cjs', import.meta.url));
 const appIcon = fileURLToPath(new URL('../assets/coreader-cr.png', import.meta.url));
 const samplePaperPath = fileURLToPath(new URL('../assets/samples/Attention Is All You Need.pdf', import.meta.url));
+const builtinSoundsDir = fileURLToPath(new URL('../assets/sounds/', import.meta.url));
+const defaultAlbumDir = 'C:\\Users\\58462\\Desktop\\photo';
 const requestIdPattern = /^[a-f0-9-]{36}$/i;
 let mainWindow;
 let library;
@@ -373,14 +377,14 @@ function rangeFor(value, size) {
   return Number.isSafeInteger(start) && Number.isSafeInteger(end) && start <= end ? { start, end } : null;
 }
 
-async function pdfResponse(request, id) {
-  const paper = library.find(id);
-  if (!paper) return new Response(null, { status: 404 });
-  const path = library.pathFor(id);
+async function streamRangeFile(request, path, contentType, extraHeaders = {}) {
   const info = await stat(path).catch(() => null);
   if (!info?.isFile()) return new Response(null, { status: 404 });
   const headers = {
-    'Content-Type': 'application/pdf', 'Accept-Ranges': 'bytes', 'Content-Length': String(info.size),
+    'Content-Type': contentType,
+    'Accept-Ranges': 'bytes',
+    'Content-Length': String(info.size),
+    ...extraHeaders,
   };
   const rangeHeader = request.headers.get('range');
   const range = rangeHeader ? rangeFor(rangeHeader, info.size) : null;
@@ -395,11 +399,122 @@ async function pdfResponse(request, id) {
   return new Response(body, { status: range ? 206 : 200, headers });
 }
 
+async function pdfResponse(request, id) {
+  const paper = library.find(id);
+  if (!paper) return new Response(null, { status: 404 });
+  return streamRangeFile(request, library.pathFor(id), 'application/pdf');
+}
+
+function authorizedAmbientSet() {
+  const saved = library?.getSetting?.('ambient-folders-v1', []);
+  const set = new Set();
+  if (Array.isArray(saved)) {
+    for (const item of saved) {
+      if (typeof item === 'string' && item.trim()) set.add(resolve(item));
+    }
+  }
+  return set;
+}
+
+function authorizeAmbientFolder(folderPath) {
+  if (typeof folderPath !== 'string' || !folderPath.trim()) return '';
+  const resolved = resolve(folderPath);
+  const set = authorizedAmbientSet();
+  set.add(resolved);
+  library?.setSetting?.('ambient-folders-v1', [...set]);
+  return resolved;
+}
+
+function isAuthorizedAmbientFolder(folderPath) {
+  if (typeof folderPath !== 'string' || !folderPath.trim()) return false;
+  return authorizedAmbientSet().has(resolve(folderPath));
+}
+
+async function ambientResponse(request, url) {
+  const source = url.searchParams.get('source') || 'builtin';
+  const folder = url.searchParams.get('folder') || '';
+  const name = url.searchParams.get('name') || '';
+  let targetDir = '';
+  if (source === 'builtin') {
+    targetDir = builtinSoundsDir;
+  } else if (isAuthorizedAmbientFolder(folder)) {
+    targetDir = folder;
+  } else {
+    return new Response(null, { status: 403 });
+  }
+  const target = resolveAmbientAudioFile(targetDir, name);
+  const mime = ambientMimeType(name);
+  if (!target || !mime) return new Response(null, { status: 404 });
+  return streamRangeFile(request, target, mime, { 'Cache-Control': 'public, max-age=300' });
+}
+
+function authorizedAlbumSet() {
+  const saved = library?.getSetting?.('album-folders-v1', []);
+  const set = new Set();
+  if (Array.isArray(saved)) {
+    for (const item of saved) {
+      if (typeof item === 'string' && item.trim()) set.add(resolve(item));
+    }
+  }
+  return set;
+}
+
+function authorizeAlbumFolder(folderPath) {
+  if (typeof folderPath !== 'string' || !folderPath.trim()) return '';
+  const resolved = resolve(folderPath);
+  const set = authorizedAlbumSet();
+  set.add(resolved);
+  library?.setSetting?.('album-folders-v1', [...set]);
+  return resolved;
+}
+
+function isAuthorizedAlbumFolder(folderPath) {
+  if (typeof folderPath !== 'string' || !folderPath.trim()) return false;
+  const resolved = resolve(folderPath);
+  if (resolved === resolve(defaultAlbumDir)) return true;
+  return authorizedAlbumSet().has(resolved);
+}
+
+async function existingDirectory(folderPath) {
+  if (typeof folderPath !== 'string' || !folderPath.trim()) return undefined;
+  const resolved = resolve(folderPath);
+  try {
+    const info = await stat(resolved);
+    return info.isDirectory() ? resolved : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function albumResponse(request, url) {
+  const folder = url.searchParams.get('folder') || '';
+  const name = url.searchParams.get('name') || '';
+  if (!isAuthorizedAlbumFolder(folder)) return new Response(null, { status: 403 });
+  const target = resolveAlbumImageFile(folder, name);
+  const mime = albumMimeType(name);
+  if (!target || !mime) return new Response(null, { status: 404 });
+  try {
+    const info = await stat(target);
+    if (!info.isFile()) return new Response(null, { status: 404 });
+    const headers = {
+      'Content-Type': mime,
+      'Content-Length': String(info.size),
+      'Cache-Control': 'public, max-age=300',
+    };
+    if (request.method === 'HEAD') return new Response(null, { status: 200, headers });
+    return new Response(Readable.toWeb(createReadStream(target)), { status: 200, headers });
+  } catch {
+    return new Response(null, { status: 404 });
+  }
+}
+
 function serveApp() {
   protocol.handle('litreader', async (request) => {
     const url = new URL(request.url);
     if (url.host !== 'app' || !['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 404 });
     if (url.pathname.startsWith('/documents/')) return pdfResponse(request, url.pathname.slice('/documents/'.length));
+    if (url.pathname === '/album-file') return albumResponse(request, url);
+    if (url.pathname === '/ambient-file') return ambientResponse(request, url);
     try {
       const path = resolve(dist, '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));
       const child = relative(dist, path);
@@ -845,12 +960,55 @@ function attachActions() {
   });
   registerHandler('job:cancel', (_event, request) => jobs.get(request)?.abort());
   registerHandler('app:version', () => app.getVersion());
-  registerHandler('app:check-update', () => {
-    updateCheck ??= findAppUpdate(app.getVersion(), fetch,
-      AbortSignal.any([appLifetime.signal, AbortSignal.timeout(8000)])).catch(() => null);
+  registerHandler('app:check-update', async (_event, force = false) => {
+    if (force) updateCheck = null;
+    if (!updateCheck) {
+      updateCheck = findAppUpdate(app.getVersion(), fetchThroughSystem,
+        AbortSignal.any([appLifetime.signal, AbortSignal.timeout(10000)])).catch((error) => {
+        updateCheck = null;
+        if (force) throw new Error('检查更新失败，请确认网络或系统代理连接正常。');
+        return null;
+      });
+    }
     return updateCheck;
   });
   registerHandler('window:ready', () => reportStartup('READY'));
+  registerHandler('album:choose-folder', async (_event, currentFolder = '') => {
+    const defaultPath = await existingDirectory(currentFolder || defaultAlbumDir);
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择照片文件夹',
+      ...(defaultPath ? { defaultPath } : {}),
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    const folder = authorizeAlbumFolder(result.filePaths[0]);
+    return listAlbumImages(folder);
+  });
+  registerHandler('album:list-folder', async (_event, folder = '') => {
+    if (!folder) {
+      const listed = await listAlbumImages(defaultAlbumDir);
+      if (listed.missing || !listed.images.length) return { path: '', images: [], missing: false };
+      return { ...listed, isDefault: true };
+    }
+    if (!isAuthorizedAlbumFolder(folder)) return { path: '', images: [], unauthorized: true };
+    return listAlbumImages(folder);
+  });
+  registerHandler('ambient:choose-folder', async (_event, currentFolder = '') => {
+    const defaultPath = await existingDirectory(currentFolder || builtinSoundsDir);
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择白噪音音频文件夹',
+      ...(defaultPath ? { defaultPath } : {}),
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    const folder = authorizeAmbientFolder(result.filePaths[0]);
+    return listAmbientAudio(folder, false);
+  });
+  registerHandler('ambient:list-tracks', async (_event, folder = '') => {
+    if (!folder) return listAmbientAudio(builtinSoundsDir, true);
+    if (!isAuthorizedAmbientFolder(folder)) return { path: '', tracks: [], unauthorized: true };
+    return listAmbientAudio(folder, false);
+  });
   registerHandler('window:fullscreen', () => {
     const next = !mainWindow.isFullScreen();
     mainWindow.setFullScreen(next);

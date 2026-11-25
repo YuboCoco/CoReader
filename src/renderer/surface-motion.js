@@ -323,32 +323,40 @@ export function cornerReveal(box, anchor, shift = 8) {
   const above = anchor.top + anchor.height / 2 > box.top + box.height / 2;
   const right = anchor.left + anchor.width / 2 > box.left + box.width / 2;
   return { transform: `translate(${right ? shift : -shift}px, ${above ? shift : -shift}px)`,
-    clipPath: `inset(${above ? '65%' : '0%'} ${right ? '0%' : '55%'} ${above ? '0%' : '65%'} ${right ? '55%' : '0%'} round 14px)` };
+    clipPath: `inset(${above ? '65%' : '0%'} ${right ? '0%' : '55%'} ${above ? '0%' : '65%'} ${right ? '55%' : '0%'} round 16px)` };
 }
 
 export function animateSelectionSurface(node, anchor, keyboard, exiting, previous) {
   const box = node.getBoundingClientRect();
   const timing = motionTiming('md', exiting ? 'exit' : 'enter', keyboard);
-  const style = previous?.copy?.isConnected ? getComputedStyle(previous.copy) : null;
+  const previousElement = previous?.copy?.isConnected ? previous.copy : previous?.node?.isConnected ? previous.node : null;
+  const style = previousElement ? getComputedStyle(previousElement) : null;
   const current = style ? { opacity: style.opacity, transform: style.transform, clipPath: style.clipPath } : null;
   previous?.cancel();
 
-  const shown = { opacity: 1, transform: 'none', clipPath: 'inset(0% 0% 0% 0% round 14px)' };
+  const shown = { opacity: 1, transform: 'none', clipPath: 'inset(0% 0% 0% 0% round 16px)' };
   const collapsed = { opacity: 0, ...(timing.fadeOnly ? {} : cornerReveal(box, anchor)) };
   if (timing.fadeOnly) {
     const target = exiting ? visualCopy(node, box, node.parentElement) : node;
+    if (!exiting) document.dispatchEvent(new CustomEvent('reader-glass-sync', { detail: target }));
     const frames = [{ opacity: current?.opacity ?? (exiting ? 1 : 0) }, { opacity: exiting ? 0 : 1 }];
     const animation = exiting ? playVisualCopy(target, frames, timing) : target.animate(frames, timing);
-    return { copy: exiting ? target : null, cancel: () => animation.cancel() };
+    return { copy: exiting ? target : null, node: exiting ? null : target, cancel: () => animation.cancel() };
+  }
+
+  if (!exiting) {
+    // Sync liquid-glass tokens before frame 0 and animate the live node directly
+    // so backdrop-filter glass renders throughout the expansion instead of popping in at the end.
+    document.dispatchEvent(new CustomEvent('reader-glass-sync', { detail: node }));
+    const frames = [current || collapsed, { opacity: 1, offset: .45 }, shown];
+    const animations = [node.animate(frames, timing)];
+    const body = node.querySelector('.elr-popup-body');
+    if (body) animations.push(revealContent(body, timing));
+    return { node, cancel: () => { for (const animation of animations) animation.cancel(); } };
   }
 
   const copy = visualCopy(node, box, node.parentElement);
-  const frames = exiting ? [current || shown, collapsed] : [current || collapsed, { opacity: 1, offset: .85 }, shown];
+  const frames = [current || shown, collapsed];
   const animations = [playVisualCopy(copy, frames, timing)];
-  if (!exiting) {
-    const body = copy.querySelector('.elr-popup-body');
-    if (body) animations.push(revealContent(body, timing));
-    animations.push(node.animate([{ opacity: 0 }, { opacity: 0 }], timing));
-  }
   return { copy, cancel: () => { copy.remove(); for (const animation of animations) animation.cancel(); } };
 }

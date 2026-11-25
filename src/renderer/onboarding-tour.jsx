@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import appIcon from '../../assets/coreader-cr.png';
 import { readReaderSettings, subscribeReaderSettings, writeReaderSettings } from './reader-view.js';
 import './onboarding-tour.css';
 
@@ -19,54 +20,97 @@ export function markOnboardingDone() {
   } catch {}
 }
 
+const WORKSPACE_HEAD_BUTTONS = [
+  { selector: '[data-tour="dock"]', name: '停靠位置', desc: '在「侧边」与「底部」间切换功能栏（可在设置中切换左右）' },
+  { selector: '[data-tour="columns"]', name: '单 / 双列', desc: '侧边停靠时切换单列或双列并排显示' },
+  { selector: '[data-tour="font"]', name: '卡片字号', desc: '调节功能卡片内的文字大小或恢复默认' },
+  { selector: '[data-tour="bulk"]', name: '折叠 / 展开', desc: '一键全部缩小或展开栏内所有卡片' },
+  { selector: '[data-tour="layout"]', name: '卡片布局', desc: '应用默认布局，或保存/切换自定义布局' },
+  { selector: '[data-tour="manage"]', name: '管理卡片', desc: '开关、显示或隐藏各类功能卡片' },
+  { selector: '[data-tour="stow"]', name: '收起功能栏', desc: '将功能栏贴边收起，随时点击边缘展开' },
+];
+
 const STEPS = [
+  {
+    id: 'library-sidebar',
+    surface: 'library',
+    title: '左侧：分类导航与导入区',
+    body: '左侧边栏用于按「全部论文 / 最近阅读 / 未分类」或自定义分类管理文献，也可将论文拖入左侧分类整理；底部可随时打开单个 PDF、导入文件夹或进入设置。',
+    selector: '.pl-sidebar',
+    actionHint: '了解左侧区域后点击「下一步」，也可先点一下分类或按钮试试',
+  },
+  {
+    id: 'library-main',
+    surface: 'library',
+    title: '右侧：论文展示与操作区',
+    body: '右侧主区域用于浏览全部文献、查看阅读进度与标签、管理详情，点击任意一篇论文即可进入阅读界面。',
+    selector: '.pl-main',
+    actionHint: '了解右侧区域后点击「下一步」，也可以点击列表或勾选框试试',
+  },
+  {
+    id: 'library-search',
+    surface: 'library',
+    title: '搜索与筛选论文',
+    body: '在搜索框输入标题、作者、DOI / arXiv 号或标签，即可实时检索论文；右侧还搭配了标签、阅读状态筛选与排序下拉菜单。',
+    selector: '.pl-search',
+    actionHint: '点击搜索框输入关键词体验，或直接点击「下一步」',
+  },
   {
     id: 'views',
     surface: 'library',
     title: '切换文献库视图',
-    body: '点击顶栏的「列表 / 表格 / 视图」分段按钮，可按习惯切换论文展示方式。已内置示例论文《Attention Is All You Need》，稍后可直接打开体验。',
+    body: '点击顶栏的「列表 / 表格 / 视图」分段按钮，可按习惯在精简列表、详细表格或首页封面平铺三种模式之间切换。',
     selector: '.pl-views',
     actionHint: '点击「列表 / 表格 / 视图」任意一项即可完成',
   },
   {
-    id: 'workspace',
+    id: 'reader-space',
     surface: 'reader',
-    title: '认识阅读功能栏',
-    body: '这里是阅读功能栏，汇集了划词翻译、阅读助手、论文分析、术语、批注与参考文献等工具；顶栏按钮还可切换停靠位置、列数、字号、管理卡片或收起功能栏。',
+    title: '认识阅读区域',
+    body: '这里是 PDF 原文与双语对照的主阅读区：选中文本可立即划词翻译、解释术语、高亮批注或引用提问；悬停插图与公式可直接解析；角落的四个按钮可打开目录、文内搜索、设置与返回论文库。',
+    selector: '.elr-reading-space',
+    actionHint: '了解阅读主区后点击「下一步」',
+  },
+  {
+    id: 'reader-capsule',
+    surface: 'reader',
+    title: '认识顶栏阅读工具',
+    body: '顶部悬浮工具栏集成了常用阅读操作（从左到右）：翻页与页码、缩放比例与预设菜单、「对照翻译」（开启双语并排与段落联动）、框选截图解析，以及更多单双三栏排版与全屏选项。',
+    selector: '.elr-reader-capsule',
+    actionHint: '试着点击「对照翻译」或顶栏任意功能按钮体验',
+  },
+  {
+    id: 'reader-workspace',
+    surface: 'reader',
+    title: '认识功能栏区域',
+    body: '这一侧是阅读功能栏工作区，集中承载所有辅助阅读工具。拖动阅读区与功能栏之间的分隔条可调节宽度或高度。',
     selector: '.elr-feature-workspace',
-    actionHint: '了解功能栏区域后点击「下一步」，也可先点顶栏按钮探索',
+    actionHint: '了解功能栏区域后点击「下一步」',
   },
   {
-    id: 'columns',
+    id: 'workspace-head',
     surface: 'reader',
-    title: '功能栏单 / 双栏切换',
-    body: '在右侧停靠时，点击功能栏顶部的列数按钮，可在单列与双列布局之间快速切换，同屏查看多个工具。',
-    selector: '[data-tour="columns"]',
-    actionHint: '点击单 / 双列切换按钮试试',
+    title: '功能栏顶部按钮（从左到右）',
+    body: '鼠标悬停下方任意一项可单独定位到对应按钮：',
+    selector: '.elr-workspace-head',
+    items: WORKSPACE_HEAD_BUTTONS,
+    actionHint: '悬停查看位置，或直接点击顶栏任意按钮体验',
   },
   {
-    id: 'dock',
+    id: 'workspace-cards',
     surface: 'reader',
-    title: '切换功能栏停靠位置',
-    body: '点击功能栏顶部的停靠位置按钮，可以将整个功能栏在「页面右侧」与「页面底部」之间自由切换。',
-    selector: '[data-tour="dock"]',
-    actionHint: '点击停靠位置按钮体验右侧 / 底部切换',
+    title: '认识功能卡片',
+    body: '功能栏由多张独立工具卡片组成，包括划词翻译、阅读助手、论文分析、参考文献、内容解析、术语与高亮批注。点击卡片标题即可折叠或展开，拖动卡片下边缘或左右边线可调节单卡尺寸。',
+    selector: '.elr-feature-grid',
+    actionHint: '试着点击任意卡片标题栏折叠/展开，或直接点击「下一步」',
   },
   {
     id: 'drag',
     surface: 'reader',
-    title: '拖拽功能卡片排序与悬浮',
-    body: '功能栏内的每个模块都是独立卡片。按住卡片标题栏上下（或左右）拖动即可重排顺序；拖到阅读区松手可变为独立悬浮窗口。',
+    title: '拖拽卡片排序与悬浮窗口',
+    body: '按住任意卡片标题栏拖动即可调整排列顺序；拖到阅读区松手，卡片会变为自由移动、四边与四角均可拉动缩放的独立悬浮窗口（也支持聚焦后按 Alt + 方向键排序）。',
     selector: '.elr-feature-column .elr-card-toggle',
-    actionHint: '试着拖动一张卡片调整顺序（也支持聚焦后按 Alt + 方向键）',
-  },
-  {
-    id: 'compare',
-    surface: 'reader',
-    title: '开启双语对照翻译',
-    body: '点击阅读工具栏的「对照翻译」按钮即可进入双语对照模式，段落与译文自动对齐并支持悬停联动高亮。',
-    selector: '[data-tour="compare"]',
-    actionHint: '点击「对照翻译」按钮体验对照阅读',
+    actionHint: '试着拖动一张卡片调整顺序或拖出为悬浮窗口',
   },
 ];
 
@@ -77,6 +121,7 @@ function isElementVisible(el) {
 }
 
 function queryVisible(selector) {
+  if (!selector) return null;
   const nodes = document.querySelectorAll(selector);
   for (const node of nodes) {
     if (isElementVisible(node)) return node;
@@ -101,11 +146,18 @@ function detectEnvironment() {
   return { inLibrary, inReader: !inLibrary && hasReader };
 }
 
-function computeTooltipPosition(targetRect, cardW, cardH) {
+function computeTooltipPosition(targetRect, cardW, cardH, centerInViewport = false) {
   const pad = 16;
   const gap = 14;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+
+  if (centerInViewport) {
+    return {
+      left: Math.max(pad, (vw - cardW) / 2),
+      top: Math.max(pad, Math.min(vh - cardH - pad, (vh - cardH) / 2)),
+    };
+  }
 
   if (!targetRect) {
     return {
@@ -116,13 +168,9 @@ function computeTooltipPosition(targetRect, cardW, cardH) {
 
   // Try placing below, above, left, right in order of best fit without covering targetRect.
   const candidates = [
-    // Below
     { left: targetRect.left + targetRect.width / 2 - cardW / 2, top: targetRect.bottom + gap },
-    // Above
     { left: targetRect.left + targetRect.width / 2 - cardW / 2, top: targetRect.top - cardH - gap },
-    // Left
     { left: targetRect.left - cardW - gap, top: targetRect.top + targetRect.height / 2 - cardH / 2 },
-    // Right
     { left: targetRect.right + gap, top: targetRect.top + targetRect.height / 2 - cardH / 2 },
   ];
 
@@ -136,9 +184,12 @@ function computeTooltipPosition(targetRect, cardW, cardH) {
     }
   }
 
+  // Fallback for full-pane targets (.pl-main / .elr-reading-space): float cleanly inside the center open area.
+  const centerInsideLeft = targetRect.left + (targetRect.width - cardW) / 2;
+  const openInsideTop = targetRect.top + Math.max(120, (targetRect.height - cardH) * 0.44);
   return {
-    left: Math.max(pad, Math.min(vw - cardW - pad, targetRect.left)),
-    top: Math.max(pad, Math.min(vh - cardH - pad, targetRect.bottom + gap)),
+    left: Math.max(pad, Math.min(vw - cardW - pad, centerInsideLeft)),
+    top: Math.max(pad, Math.min(vh - cardH - pad, openInsideTop)),
   };
 }
 
@@ -146,8 +197,8 @@ export function OnboardingTour({ active, onFinish }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [completed, setCompleted] = useState(() => new Set());
   const [targetRect, setTargetRect] = useState(null);
-  const [env, setEnv] = useState(() => detectEnvironment());
-  const [waitingMode, setWaitingMode] = useState(''); // '' | 'need-paper' | 'need-library' | 'need-right-dock' | 'need-expand-workspace'
+  const [hoveredSubSelector, setHoveredSubSelector] = useState('');
+  const [waitingMode, setWaitingMode] = useState(''); // '' | 'need-paper' | 'need-library' | 'need-expand-workspace'
   const cardRef = useRef(null);
   const [cardPos, setCardPos] = useState({ left: 24, top: 24 });
 
@@ -158,13 +209,16 @@ export function OnboardingTour({ active, onFinish }) {
   useEffect(() => {
     if (!active) return;
     const currentEnv = detectEnvironment();
-    setEnv(currentEnv);
     setCompleted(new Set());
-    // If replayed while already reading a PDF, jump straight to reader step 2 (index 1) or start from 0.
-    setStepIndex(currentEnv.inReader ? 1 : 0);
+    setHoveredSubSelector('');
+    const firstReaderIdx = STEPS.findIndex((item) => item.surface === 'reader');
+    setStepIndex(currentEnv.inReader && firstReaderIdx >= 0 ? firstReaderIdx : 0);
   }, [active]);
 
-  // Mark step completed helper.
+  useEffect(() => {
+    setHoveredSubSelector('');
+  }, [stepIndex]);
+
   function markStepDone(id) {
     setCompleted((prev) => {
       if (prev.has(id)) return prev;
@@ -182,8 +236,6 @@ export function OnboardingTour({ active, onFinish }) {
     const locate = () => {
       raf = 0;
       const currentEnv = detectEnvironment();
-      setEnv(currentEnv);
-
       let el = null;
       let mode = '';
 
@@ -194,20 +246,9 @@ export function OnboardingTour({ active, onFinish }) {
         mode = 'need-paper';
         el = findPaperToOpen();
       } else {
-        el = queryVisible(step.selector);
-        if (!el && step.id === 'columns') {
-          const settings = readReaderSettings();
-          if (settings.dock === 'bottom') {
-            mode = 'need-right-dock';
-            el = queryVisible('[data-tour="dock"]');
-          } else {
-            const stowedTab = queryVisible('.elr-workspace-tab');
-            if (stowedTab) {
-              mode = 'need-expand-workspace';
-              el = stowedTab;
-            }
-          }
-        } else if (!el && (step.id === 'workspace' || step.id === 'drag' || step.id === 'dock')) {
+        const subEl = hoveredSubSelector ? queryVisible(hoveredSubSelector) : null;
+        el = subEl || queryVisible(step.selector);
+        if (!el && ['reader-workspace', 'workspace-head', 'workspace-cards', 'drag'].includes(step.id)) {
           const stowedTab = queryVisible('.elr-workspace-tab');
           if (stowedTab) {
             mode = 'need-expand-workspace';
@@ -254,28 +295,18 @@ export function OnboardingTour({ active, onFinish }) {
       window.removeEventListener('resize', schedule);
       window.removeEventListener('scroll', schedule, true);
     };
-  }, [active, step]);
+  }, [active, step, hoveredSubSelector]);
 
-  // Listen for actual user interactions corresponding to each step!
+  // Listen for actual user interactions corresponding to each step.
   useEffect(() => {
     if (!active) return;
 
     const initialSettings = readReaderSettings();
-    let prevDock = initialSettings.dock;
-    let prevCols = initialSettings.featureColumns;
     let prevOrder = JSON.stringify(initialSettings.sectionOrder || []);
     let prevFloating = JSON.stringify(Object.keys(initialSettings.floatingCards || {}));
 
     const unsubscribe = subscribeReaderSettings(() => {
       const cur = readReaderSettings();
-      if (cur.dock !== prevDock) {
-        prevDock = cur.dock;
-        if (step.id === 'dock') markStepDone('dock');
-      }
-      if (cur.featureColumns !== prevCols) {
-        prevCols = cur.featureColumns;
-        if (step.id === 'columns') markStepDone('columns');
-      }
       const nextOrder = JSON.stringify(cur.sectionOrder || []);
       const nextFloating = JSON.stringify(Object.keys(cur.floatingCards || {}));
       if (nextOrder !== prevOrder || nextFloating !== prevFloating) {
@@ -288,16 +319,24 @@ export function OnboardingTour({ active, onFinish }) {
     const onClickCapture = (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      if (step.id === 'views' && target.closest('.pl-views button')) {
+      if (step.id === 'library-sidebar' && target.closest('.pl-sidebar')) {
+        markStepDone('library-sidebar');
+      } else if (step.id === 'library-main' && target.closest('.pl-main')) {
+        markStepDone('library-main');
+      } else if (step.id === 'library-search' && target.closest('.pl-search')) {
+        markStepDone('library-search');
+      } else if (step.id === 'views' && target.closest('.pl-views button')) {
         markStepDone('views');
-      } else if (step.id === 'workspace' && target.closest('.elr-feature-workspace')) {
-        markStepDone('workspace');
-      } else if (step.id === 'columns' && target.closest('[data-tour="columns"]')) {
-        markStepDone('columns');
-      } else if (step.id === 'dock' && target.closest('[data-tour="dock"]')) {
-        markStepDone('dock');
-      } else if (step.id === 'compare' && target.closest('[data-tour="compare"]')) {
-        markStepDone('compare');
+      } else if (step.id === 'reader-space' && target.closest('.elr-reading-space')) {
+        markStepDone('reader-space');
+      } else if (step.id === 'reader-capsule' && target.closest('.elr-reader-capsule button, .elr-reader-capsule input')) {
+        markStepDone('reader-capsule');
+      } else if (step.id === 'reader-workspace' && target.closest('.elr-feature-workspace')) {
+        markStepDone('reader-workspace');
+      } else if (step.id === 'workspace-head' && target.closest('.elr-workspace-head button')) {
+        markStepDone('workspace-head');
+      } else if (step.id === 'workspace-cards' && target.closest('.elr-feature-grid .elr-sec')) {
+        markStepDone('workspace-cards');
       }
     };
 
@@ -318,16 +357,21 @@ export function OnboardingTour({ active, onFinish }) {
     };
   }, [active, step, onFinish]);
 
-  // Position tooltip card relative to spotlight target.
+  // Position tooltip card relative to spotlight target (keep card steady when sub-hovering buttons inside workspace-head).
   useLayoutEffect(() => {
     if (!active) return;
+    if (hoveredSubSelector && step.id === 'workspace-head') return;
     const card = cardRef.current;
-    const cardW = card?.offsetWidth || 320;
-    const cardH = card?.offsetHeight || 180;
-    setCardPos(computeTooltipPosition(targetRect, cardW, cardH));
-  }, [active, targetRect, stepIndex, waitingMode, isDone]);
+    const centerDemo = step.id === 'drag' && !waitingMode;
+    const cardW = card?.offsetWidth || (centerDemo ? 500 : 352);
+    const cardH = card?.offsetHeight || (centerDemo ? 340 : 220);
+    setCardPos(computeTooltipPosition(targetRect, cardW, cardH, centerDemo));
+  }, [active, targetRect, stepIndex, waitingMode, isDone, hoveredSubSelector, step.id]);
 
   if (!active) return null;
+
+  const waitingBlocked = waitingMode === 'need-paper' || waitingMode === 'need-library' || waitingMode === 'need-expand-workspace';
+  const showDragDemo = step.id === 'drag' && !waitingMode;
 
   function finishTour() {
     markOnboardingDone();
@@ -335,6 +379,7 @@ export function OnboardingTour({ active, onFinish }) {
   }
 
   function goNext() {
+    if (waitingBlocked) return;
     if (stepIndex < STEPS.length - 1) setStepIndex(stepIndex + 1);
     else finishTour();
   }
@@ -346,38 +391,46 @@ export function OnboardingTour({ active, onFinish }) {
   const pad = 6;
   const displayTitle = waitingMode === 'need-paper'
     ? '打开一篇论文以继续引导'
-    : waitingMode === 'need-right-dock'
-      ? '先将功能栏切回右侧'
+    : waitingMode === 'need-library'
+      ? '先返回论文库'
       : waitingMode === 'need-expand-workspace'
         ? '先展开功能栏'
         : step.title;
 
   const displayBody = waitingMode === 'need-paper'
-    ? '点击已内置的示例论文《Attention Is All You Need》（或任意本地 PDF）进入阅读界面，随后将依次引导体验功能栏、单双栏、停靠位置、卡片拖拽与对照翻译。'
-    : waitingMode === 'need-right-dock'
-      ? '单 / 双列切换仅在功能栏停靠在右侧时可用。点击下方按钮或高亮图标切回右侧即可体验。'
+    ? '点击已内置的示例论文《Attention Is All You Need》（或任意本地 PDF）进入阅读界面，随后将依次引导阅读区、顶栏工具、功能栏与卡片操作。'
+    : waitingMode === 'need-library'
+      ? '当前步骤位于论文库界面，点击左下角高亮的「返回论文库」图标即可继续。'
       : waitingMode === 'need-expand-workspace'
         ? '当前功能栏处于收起状态，点击高亮的「功能栏」标签展开后即可继续。'
         : step.body;
 
   const lastStep = stepIndex === STEPS.length - 1;
+  let spotStyle = null;
+  if (targetRect) {
+    const spotLeft = Math.max(4, targetRect.left - pad);
+    const spotTop = Math.max(4, targetRect.top - pad);
+    const spotRight = Math.min(window.innerWidth - 4, targetRect.right + pad);
+    const spotBottom = Math.min(window.innerHeight - 4, targetRect.bottom + pad);
+    spotStyle = {
+      transform: `translate3d(${spotLeft}px, ${spotTop}px, 0)`,
+      width: Math.max(16, spotRight - spotLeft),
+      height: Math.max(16, spotBottom - spotTop),
+    };
+  }
 
   return createPortal(
     <div className="elr-tour-layer" role="region" aria-label="新手功能引导">
-      {targetRect && (
+      {spotStyle && (
         <div
           className="elr-tour-spotlight"
           aria-hidden="true"
-          style={{
-            transform: `translate3d(${Math.max(0, targetRect.left - pad)}px, ${Math.max(0, targetRect.top - pad)}px, 0)`,
-            width: targetRect.width + pad * 2,
-            height: targetRect.height + pad * 2,
-          }}
+          style={spotStyle}
         />
       )}
       <aside
         ref={cardRef}
-        className="elr-tour-card"
+        className={'elr-tour-card' + (showDragDemo ? ' is-demo-stage' : '')}
         role="dialog"
         aria-modal="false"
         aria-labelledby="elr-tour-title"
@@ -389,17 +442,67 @@ export function OnboardingTour({ active, onFinish }) {
         </div>
         <h3 id="elr-tour-title" className="elr-tour-title">{displayTitle}</h3>
         <p className="elr-tour-body">{displayBody}</p>
-        {waitingMode === 'need-right-dock' ? (
-          <div className="elr-tour-quick">
-            <button type="button" className="elr-tour-btn primary" onClick={() => writeReaderSettings({ dock: 'right' })}>
-              切换到右侧停靠
-            </button>
-          </div>
-        ) : !waitingMode && (
-          <div className={'elr-tour-status' + (isDone ? ' is-done' : '')} role="status" aria-live="polite">
-            {isDone ? '✓ 已体验此功能' : step.actionHint}
+        {showDragDemo && (
+          <div className="elr-drag-demo-grid" aria-hidden="true">
+            <div className="elr-drag-demo-scene">
+              <div className="elr-drag-demo-stage is-float-stage">
+                <div className="elr-demo-pdf">
+                  <span className="elr-demo-page-tag">阅读页面</span>
+                  <div className="elr-demo-lines"><i /><i /><i /><i /></div>
+                  <div className="elr-demo-float-result">
+                    <div className="elr-demo-mini-head">阅读助手 · 悬浮窗</div>
+                    <div className="elr-demo-mini-lines"><i /><i /></div>
+                  </div>
+                </div>
+                <div className="elr-demo-dock">
+                  <div className="elr-demo-mini-card is-a">划词翻译</div>
+                  <div className="elr-demo-mini-card is-b is-dragged-to-pdf">阅读助手</div>
+                  <div className="elr-demo-mini-card is-c">论文分析</div>
+                </div>
+                <span className="elr-demo-pointer is-float-pointer" />
+              </div>
+              <span className="elr-drag-demo-caption">1. 拖到阅读页面 → 独立悬浮窗</span>
+            </div>
+            <div className="elr-drag-demo-scene">
+              <div className="elr-drag-demo-stage is-reorder-stage">
+                <div className="elr-demo-reorder-col">
+                  <div className="elr-demo-slot is-card-a">卡片 A · 拖动</div>
+                  <div className="elr-demo-slot is-card-b">卡片 B</div>
+                  <div className="elr-demo-drop-line" />
+                  <div className="elr-demo-slot is-card-c">卡片 C</div>
+                </div>
+                <span className="elr-demo-pointer is-reorder-pointer" />
+              </div>
+              <span className="elr-drag-demo-caption">2. 卡片之间拖拽 → 互相换位</span>
+            </div>
           </div>
         )}
+        {!waitingMode && step.items && (
+          <ol className="elr-tour-items" onMouseLeave={() => setHoveredSubSelector('')}>
+            {step.items.map((item, idx) => (
+              <li
+                key={item.selector}
+                className={hoveredSubSelector === item.selector ? 'is-focused' : undefined}
+                onMouseEnter={() => setHoveredSubSelector(item.selector)}
+                onFocus={() => setHoveredSubSelector(item.selector)}
+                onBlur={() => setHoveredSubSelector('')}
+                tabIndex={0}
+              >
+                <span className="elr-tour-num" aria-hidden="true">{idx + 1}</span>
+                <span><strong>{item.name}：</strong>{item.desc}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+        <div className={'elr-tour-status' + (isDone ? ' is-done' : '')} role="status" aria-live="polite">
+          {waitingMode === 'need-paper'
+            ? '请先点击高亮的论文进入阅读界面，才能继续下一步'
+            : waitingMode === 'need-library'
+              ? '请先点击左下角返回论文库，才能继续下一步'
+              : waitingMode === 'need-expand-workspace'
+                ? '请先点击「功能栏」标签展开工作区，才能继续下一步'
+                : (isDone ? '✓ 已体验此功能' : step.actionHint)}
+        </div>
         <div className="elr-tour-foot">
           <div className="elr-tour-dots" aria-hidden="true">
             {STEPS.map((item, idx) => (
@@ -408,12 +511,69 @@ export function OnboardingTour({ active, onFinish }) {
           </div>
           <div className="elr-tour-actions">
             {stepIndex > 0 && <button type="button" className="elr-tour-btn" onClick={goPrev}>上一步</button>}
-            <button type="button" className="elr-tour-btn primary" onClick={goNext}>
+            <button type="button" className="elr-tour-btn primary" disabled={waitingBlocked} onClick={goNext}>
               {lastStep ? '完成引导' : '下一步'}
             </button>
           </div>
         </div>
       </aside>
+    </div>,
+    document.body
+  );
+}
+
+export function WelcomeDialog({ active, onStart, onSkip }) {
+  const startRef = useRef(null);
+
+  useEffect(() => {
+    if (!active) return;
+    startRef.current?.focus();
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        markOnboardingDone();
+        onSkip();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [active, onSkip]);
+
+  if (!active) return null;
+
+  function handleSkip() {
+    markOnboardingDone();
+    onSkip();
+  }
+
+  return createPortal(
+    <div className="elr-welcome-backdrop" role="presentation">
+      <section
+        className="elr-welcome-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="elr-welcome-title"
+        aria-describedby="elr-welcome-blessing"
+      >
+        <div className="elr-welcome-head">
+          <img className="elr-welcome-icon" src={appIcon} alt="" width={46} height={46} draggable={false} />
+          <div className="elr-welcome-titles">
+            <span className="elr-welcome-eyebrow">初次见面 · CoReader</span>
+            <h2 id="elr-welcome-title" className="elr-welcome-title">欢迎开启你的文献阅读之旅</h2>
+          </div>
+        </div>
+        <blockquote id="elr-welcome-blessing" className="elr-welcome-blessing">
+          愿你在英文文献的字里行间从容前行，每一次翻阅都有灵感落笔，每一次追问都更近所求。愿这份安静专注的阅读体验，陪你把好想法一点点读透、写实。
+        </blockquote>
+        <p className="elr-welcome-note">
+          我们已在论文库中为你预置经典示例论文《Attention Is All You Need》。花约 1 分钟跟随新手引导，即可熟悉论文库搜索与视图、阅读主区、顶栏工具、功能栏按钮与卡片拖拽。
+        </p>
+        <div className="elr-welcome-actions">
+          <button type="button" className="elr-welcome-btn" onClick={handleSkip}>跳过</button>
+          <button ref={startRef} type="button" className="elr-welcome-btn primary" onClick={onStart}>开始新手引导</button>
+        </div>
+        <p className="elr-welcome-footnote">后续可随时在「设置 → 阅读设置」中重新查看引导</p>
+      </section>
     </div>,
     document.body
   );

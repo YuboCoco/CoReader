@@ -40,3 +40,14 @@ test('ignores unavailable releases and lets the background caller handle connect
   assert.equal(await findAppUpdate('0.1.9', async () => new Response(null, { status: 404 })), null);
   await assert.rejects(findAppUpdate('0.1.9', async () => { throw new Error('offline'); }), /offline/);
 });
+
+test('falls back to following redirects when a runtime returns an opaque redirect', async () => {
+  const calls = [];
+  const update = await findAppUpdate('0.1.1', async (_url, options) => {
+    calls.push(options.redirect);
+    if (options.redirect === 'manual') return { status: 0, type: 'opaqueredirect', headers: { get: () => null } };
+    return { status: 200, ok: true, url: stableTag + 'v0.1.2', headers: { get: () => null } };
+  });
+  assert.deepEqual(calls, ['manual', 'follow']);
+  assert.deepEqual(update, { version: '0.1.2', url: stableTag + 'v0.1.2' });
+});

@@ -86,10 +86,28 @@ button, input, select, textarea { font: inherit; }
       --elr-card-scroll-thumb: color-mix(in srgb, var(--dsw-alias-label-secondary) 50%, transparent);
     }
   }
+  .elr-body.dock-bottom .elr-feature-grid {
+    scrollbar-color: transparent transparent;
+    &::-webkit-scrollbar { height: 6px; width: 6px; }
+    &::-webkit-scrollbar-track { background: transparent; margin: 4px; }
+    &::-webkit-scrollbar-button { display: none; }
+    &::-webkit-scrollbar-corner { background: transparent; }
+    &::-webkit-scrollbar-thumb {
+      border-radius: 99px;
+      background: transparent;
+    }
+    &:hover::-webkit-scrollbar-thumb,
+    &.elr-scrolling::-webkit-scrollbar-thumb {
+      background: color-mix(in srgb, var(--dsw-alias-label-secondary) 35%, transparent);
+    }
+    &::-webkit-scrollbar-thumb:hover {
+      background: color-mix(in srgb, var(--dsw-alias-label-secondary) 60%, transparent);
+    }
+  }
 }
 
 /* Evaluate the material on each surface so it follows that surface's theme. */
-:is(.elr-sec[data-elr-docked-card], .elr-sec[data-elr-floating-card], .elr-drag-ghost,
+:is(.elr-sec[data-elr-docked-card], .elr-sec[data-elr-floating-card],
   .pl-sidebar, .pl-main, .pl-list li, .pl-dialog,
   .settings.model-center, .settings.connection-detail, .elr-settings-panel, .elr-card-menu,
   .elr-popup, .elr-note-bubble, .elr-selection-tools, .elr-workspace-tab, .elr-agent-model-menu,
@@ -148,7 +166,23 @@ button, input, select, textarea { font: inherit; }
 .model-center-chrome { flex: 0 0 auto; padding: 14px var(--settings-gutter) 12px; border-bottom: 1px solid var(--dsw-alias-border-l1); }
 .model-center-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .model-center-header h2 { font-size: 18px; }
-.model-center-version { display: flex; align-items: center; gap: 11px; color: var(--dsw-alias-label-secondary); }
+.model-center-version { display: flex; align-items: center; gap: 10px; color: var(--dsw-alias-label-secondary); font-size: 12.5px; }
+.settings .model-center-version .model-center-update-check {
+  min-height: 26px;
+  padding: 2px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.settings .model-center-version .model-center-update-check:hover:not(:disabled) {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+.settings .model-center-version .model-center-update-check:disabled { opacity: .65; cursor: progress; }
+.model-center-update-status { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
 .settings .model-center-header .quiet { width: 32px; height: 32px; padding: 0; border-radius: 50%; font-size: 20px; line-height: 1; }
 .settings .model-center-header .quiet:hover { background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 70%, transparent); }
 .model-center-tabs, .kimi-connection-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--dsw-alias-bg-base) 40%, transparent); }

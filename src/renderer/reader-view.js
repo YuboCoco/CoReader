@@ -8,24 +8,36 @@ import ChevronRight from 'kubai-icons-react/icons/chevron-right';
 import ChevronUp from 'kubai-icons-react/icons/chevron-up';
 import Languages from 'kubai-icons-react/icons/languages';
 import Scan from 'kubai-icons-react/icons/scan';
+import AudioLines from 'kubai-icons-react/duotone/icons/audio-lines';
 import CircleHelp from 'kubai-icons-react/duotone/icons/circle-help';
+import CloudRain from 'kubai-icons-react/duotone/icons/cloud-rain';
 import Copy from 'kubai-icons-react/duotone/icons/copy';
 import FileText from 'kubai-icons-react/duotone/icons/file-text';
+import FolderOpen from 'kubai-icons-react/duotone/icons/folder-open';
 import Home from 'kubai-icons-react/duotone/icons/home';
+import Images from 'kubai-icons-react/duotone/icons/images';
 import Info from 'kubai-icons-react/duotone/icons/info';
 import LayoutDashboard from 'kubai-icons-react/duotone/icons/layout-dashboard';
+import Paintbrush from 'kubai-icons-react/duotone/icons/paintbrush';
 import PanelBottom from 'kubai-icons-react/duotone/icons/panel-bottom';
+import Pause from 'kubai-icons-react/duotone/icons/pause';
 import Play from 'kubai-icons-react/duotone/icons/play';
 import Quote from 'kubai-icons-react/duotone/icons/quote';
+import Repeat from 'kubai-icons-react/duotone/icons/repeat';
 import RotateCw from 'kubai-icons-react/duotone/icons/rotate-cw';
 import Search from 'kubai-icons-react/duotone/icons/search';
 import Settings from 'kubai-icons-react/duotone/icons/settings';
+import Shuffle from 'kubai-icons-react/duotone/icons/shuffle';
 import Sidebar from 'kubai-icons-react/duotone/icons/sidebar';
 import TextSize from 'kubai-icons-react/duotone/icons/text-size';
+import Volume from 'kubai-icons-react/duotone/icons/volume';
+import Waves from 'kubai-icons-react/duotone/icons/waves';
 import ZoomIn from 'kubai-icons-react/duotone/icons/zoom-in';
 import { EmptyState } from './empty-state.jsx';
 import ZoomOut from 'kubai-icons-react/duotone/icons/zoom-out';
 import * as desktop from './desktop-runtime.js';
+import { alignPageTextLayer } from './pdf-text-align.mjs';
+import { pickNextAmbientIndex } from '../ambient-shared.mjs';
 import { AgentPanel } from './agent-panel.jsx';
 import { PaperLibrary } from './paper-library.jsx';
 import { FigurePicker } from './figure-picker.jsx';
@@ -43,10 +55,12 @@ import { availableEfforts, effortLabels } from '../model-capabilities.mjs';
 const h = React.createElement;
 
 const MAX_SELECTION = 6000;
-const PAGE_THEMES = ['default', 'paper', 'eye', 'ivory', 'mist', 'sage', 'linen'];
+const LIGHT_PAGE_THEMES = ['default', 'paper', 'eye', 'ivory', 'mist', 'sage', 'linen'];
+const DARK_PAGE_THEMES = ['dark-slate', 'dark-midnight', 'dark-sepia', 'dark-forest', 'dark-oled'];
+const PAGE_THEMES = [...LIGHT_PAGE_THEMES, ...DARK_PAGE_THEMES];
 const UI_TONES = {
   light: ['blue', 'green', 'amber', 'pink', 'prism-light'],
-  dark: ['navy', 'ink', 'forest', 'plum', 'ember', 'prism-dark'],
+  dark: ['default', 'navy', 'ink', 'forest', 'plum', 'ember', 'prism-dark'],
   duo: ['duo-blue', 'duo-orange', 'duo-green', 'duo-purple'],
 };
 const FIGURE_SORT_ORDERS = ['document-asc', 'document-desc', 'time-asc', 'time-desc'];
@@ -61,7 +75,7 @@ const loadPaperPlanning = () => import('../paper-planning.js');
 const SIDE_READER_MIN_W = 360;
 const PANE_DIVIDER_SIZE = 8;
 const ANALYSIS_CARD_KEYS = ['summary', 'references', 'figure', 'agent'];
-const CARD_KEYS = ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS];
+const CARD_KEYS = ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS, 'album', 'ambient'];
 const CUSTOM_CARD_LAYOUT_LIMIT = 3;
 const CARD_HEADER_HEIGHT = 54;
 const CARD_MIN_H = 272;
@@ -79,8 +93,8 @@ const AGENT_CARD_MIN_H = 320;
 const BOTTOM_COMPACT_CARD_WIDTH = 248;
 const CARD_DOCK_BOTTOM_GAP = 14;
 const BOTTOM_DOCK_HEAD_H = 38;
-const BOTTOM_DOCK_GRID_PADDING = 10;
-const SIDE_H_MIN = CARD_MIN_H + BOTTOM_DOCK_HEAD_H + 6 + BOTTOM_DOCK_GRID_PADDING + 1;
+const BOTTOM_DOCK_GRID_PADDING = 4;
+const SIDE_H_MIN = CARD_MIN_H + BOTTOM_DOCK_HEAD_H + 6 + BOTTOM_DOCK_GRID_PADDING + 6 + 1;
 const SIDE_H_DEFAULT = SIDE_H_MIN + 17;
 const BOTTOM_READER_MIN_H = 140;
 const SELECTION_PANE_MIN_W = 102;
@@ -343,12 +357,13 @@ const DEFAULT_SHARED = {
   analysisOpen: Object.fromEntries(ANALYSIS_CARD_KEYS.map((key) => [key, true])),
   cardFont: CARD_FONT_DEFAULT,
   agentModel: null,
-  sideWidth: SIDE_DEFAULT, dualSideWidth: SIDE_DUAL_MIN, sideHeight: SIDE_H_DEFAULT, dock: 'right',
+  sideWidth: SIDE_DEFAULT, dualSideWidth: SIDE_DUAL_MIN, sideHeight: SIDE_H_DEFAULT, dock: 'right', sideDock: 'right',
   panMode: false,
   // (v19 #4) Pages across: 0 = one page, 1 = two pages, 2 = three pages. It used
   // to be a boolean; a number keeps the old value readable (see the migration
   // below) and gives the toolbar a real three-way choice.
   spreadMode: 0,
+  pdfOffsetX: 0,
   capsulePosition: 'top',
   glassEnabled: true, glassTintLight: 1, glassTintDark: 1,
   theme: 'default',
@@ -358,7 +373,7 @@ const DEFAULT_SHARED = {
   // surface reads as one blue / green interface. `default` keeps the host
   // tokens untouched, so an old snapshot looks exactly as before.
   uiTone: 'default',
-  popupOn: false, autoTranslateSelection: false, popupLayout: 'stacked', paperId: '',
+  popupOn: false, autoTranslateSelection: false, autoTranslatePaper: false, popupLayout: 'stacked', paperId: '',
   // (v21 #1) The reference column. `references` holds the parsed bibliography
   // enriched with resolved addresses, so it survives a tab switch together with
   // the analysis it belongs to. `referencesBusy` is transient and only guards
@@ -371,13 +386,23 @@ const DEFAULT_SHARED = {
   figureSort: 'time-desc',
   // (v8 #6) Height of the upper half of the side pane (selection card plus the
   // movable sections), and (v8 #7) their order.
-  sideTopHeight: 220, sectionOrder: ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS],
+  sideTopHeight: 220, sectionOrder: ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS, 'album', 'ambient'],
   // (v27) Which of the three function cards are ENABLED. Closing a card removes
   // it from this list; the card manager (the ⚙ in the card column's header) adds
   // it back. A separate list from `sectionOrder` on purpose: order must survive a
   // card being closed and reopened, otherwise reopening would silently move it to
   // the end of the column.
-  cards: ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS],
+  cards: ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS, 'album', 'ambient'],
+  albumOpen: true,
+  albumFolder: '',
+  albumImages: [],
+  albumInterval: 5,
+  ambientOpen: true,
+  ambientFolder: '',
+  ambientTrack: 'nature/campfire.mp3',
+  ambientMix: { 'nature/campfire.mp3': 0.65 },
+  ambientMode: 'single',
+  ambientVolume: 0.8,
   floatingCards: {},
   // (v25 #3) Horizontal size of that block when the side panel is docked at the
   // bottom (the two halves sit side by side there).
@@ -399,7 +424,7 @@ const DEFAULT_SHARED = {
   cardHeights: {},
   customCardLayouts: Array(CUSTOM_CARD_LAYOUT_LIMIT).fill(null),
 };
-const CARD_OPEN_FIELDS = { selection: 'selectionCardOpen', recent: 'recentOpen', terms: 'termsOpen', marks: 'marksOpen' };
+const CARD_OPEN_FIELDS = { selection: 'selectionCardOpen', recent: 'recentOpen', terms: 'termsOpen', marks: 'marksOpen', album: 'albumOpen', ambient: 'ambientOpen' };
 function cardOpenPatch(state, keys, open) {
   const patch = {};
   for (const key of keys) {
@@ -410,9 +435,9 @@ function cardOpenPatch(state, keys, open) {
   return patch;
 }
 const CARD_LAYOUT_FIELDS = [
-  'dock', 'sectionOrder', 'cards', 'floatingCards', 'cardWidths', 'cardHeights', 'featureColumns', 'featureCardColumns',
+  'dock', 'sideDock', 'sectionOrder', 'cards', 'floatingCards', 'cardWidths', 'cardHeights', 'featureColumns', 'featureCardColumns',
   'sideWidth', 'dualSideWidth', 'sideHeight', 'sideTopWidth', 'sideTopHeight', 'selectionSplit', 'selectionWidthSplit',
-  'selectionCardOpen', 'recentOpen', 'termsOpen', 'marksOpen', 'analysisOpen',
+  'selectionCardOpen', 'recentOpen', 'termsOpen', 'marksOpen', 'albumOpen', 'ambientOpen', 'analysisOpen',
 ];
 
 const snapshotCardLayout = (state) => Object.fromEntries(CARD_LAYOUT_FIELDS.map((key) => [key, state[key] ?? DEFAULT_SHARED[key]]));
@@ -461,6 +486,7 @@ if (!oldSnapshot) {
   if (!shared.paperId) Object.assign(shared, storedForPaper(DRAFT_RESULT_KEY));
 }
 delete shared.darkMode;
+shared.sideDock = shared.sideDock === 'left' ? 'left' : 'right';
 if (!PAGE_THEMES.includes(shared.theme)) shared.theme = 'default';
 if (shared.capsulePosition !== 'bottom') shared.capsulePosition = 'top';
 // (v19 #4) `spreadMode` was a boolean (false = one page, true = two pages) and is
@@ -469,6 +495,7 @@ if (shared.spreadMode === true) shared.spreadMode = 1;
 else if (shared.spreadMode === false || shared.spreadMode == null) shared.spreadMode = 0;
 else if (!Number.isFinite(Number(shared.spreadMode))) shared.spreadMode = 0;
 else shared.spreadMode = Math.max(0, Math.min(2, Math.trunc(Number(shared.spreadMode))));
+shared.pdfOffsetX = Number.isFinite(Number(shared.pdfOffsetX)) ? Math.max(-100, Math.min(100, Math.round(Number(shared.pdfOffsetX)))) : 0;
 // (v20) The full-text translation column and the three-column layout and the
 // translation overlay were removed at the user's request. Drop their stored
 // flags so an old snapshot cannot resurrect a feature that no longer exists.
@@ -482,10 +509,53 @@ delete shared.tab;
 {
   const known = CARD_KEYS;
   const saved = Array.isArray(shared.cards) ? shared.cards : null;
+  const hasAlbumState = 'albumOpen' in savedView || 'albumFolder' in savedView;
+  const hasAmbientState = 'ambientOpen' in savedView || 'ambientFolder' in savedView;
   if (!saved) shared.cards = known.slice();
   else {
     const kept = [...new Set([...known.filter((k) => saved.indexOf(k) !== -1), ...ANALYSIS_CARD_KEYS])];
+    if (!hasAlbumState && !kept.includes('album')) kept.push('album');
+    if (!hasAmbientState && !kept.includes('ambient')) kept.push('ambient');
     shared.cards = kept;
+  }
+  shared.albumOpen = shared.albumOpen !== false;
+  shared.albumFolder = typeof shared.albumFolder === 'string' ? shared.albumFolder : '';
+  shared.albumImages = Array.isArray(shared.albumImages)
+    ? [...new Set(shared.albumImages.filter((item) => typeof item === 'string' && item.trim()))]
+    : [];
+  {
+    const rawInterval = Number(shared.albumInterval);
+    shared.albumInterval = Number.isFinite(rawInterval) ? Math.min(60, Math.max(1, Math.round(rawInterval))) : 5;
+  }
+  shared.ambientOpen = shared.ambientOpen !== false;
+  shared.ambientFolder = typeof shared.ambientFolder === 'string' ? shared.ambientFolder : '';
+  {
+    const remapLegacyTrack = (name) => {
+      if (name === 'campfire.wav') return 'nature/campfire.mp3';
+      if (name === 'rain.wav') return 'rain/light-rain.mp3';
+      if (name === 'ocean.wav') return 'nature/waves.mp3';
+      return typeof name === 'string' ? name : 'nature/campfire.mp3';
+    };
+    shared.ambientTrack = remapLegacyTrack(shared.ambientTrack || 'nature/campfire.mp3');
+    const rawMix = shared.ambientMix && typeof shared.ambientMix === 'object' ? shared.ambientMix : null;
+    const cleanMix = {};
+    if (rawMix) {
+      for (const [key, val] of Object.entries(rawMix)) {
+        const mappedKey = remapLegacyTrack(key);
+        const vol = Number(val);
+        if (mappedKey && Number.isFinite(vol)) {
+          cleanMix[mappedKey] = Math.min(1, Math.max(0.05, vol));
+        }
+      }
+    } else if (shared.ambientTrack) {
+      cleanMix[shared.ambientTrack] = 0.65;
+    }
+    shared.ambientMix = cleanMix;
+  }
+  shared.ambientMode = shared.ambientMode === 'random' ? 'random' : 'single';
+  {
+    const rawVol = Number(shared.ambientVolume);
+    shared.ambientVolume = Number.isFinite(rawVol) ? Math.min(1, Math.max(0, rawVol)) : 0.8;
   }
   if (!Array.isArray(shared.sectionOrder)) shared.sectionOrder = known.slice();
   else shared.sectionOrder = [...new Set([...shared.sectionOrder.filter((key) => known.includes(key)), ...known])];
@@ -691,12 +761,16 @@ const CSS = [
   '.elr-seg.active { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, var(--dsw-alias-bg-layer-1)); color: var(--dsw-alias-brand-primary); font-weight: 600; }',
   '.elr-field { box-sizing: border-box; border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); border-radius: 6px; padding: 5px 8px; font-size: 12px; width: 150px; max-width: 100%; }',
   '.elr-body { position: relative; flex: 1; min-height: 0; display: flex; overflow: hidden; }',
+  '.elr-body.dock-left > .elr-side { order: 0; }',
+  '.elr-body.dock-left > .elr-resizer { order: 1; }',
+  '.elr-body.dock-left > .elr-main { order: 2; }',
   // (v15 #4) Both columns are independent scroll roots. `min-height: 0` +
   // `overflow: hidden` on the flex parent lets each column own its scrollbar.
   '.elr-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }',
   '.elr-side { --elr-sidebar-available: calc(100% - min(' + SIDE_READER_MIN_W + 'px, ' + (SIDE_READER_SHARE * 100) + '%) - ' + PANE_DIVIDER_SIZE + 'px); display: flex; flex-direction: column; box-sizing: border-box; min-width: min(' + SIDE_MIN + 'px, var(--elr-sidebar-available)); max-width: min(70%, var(--elr-sidebar-available)); min-height: 0; overflow: hidden; overscroll-behavior: contain; transition: transform var(--duration-md) var(--ease-out); }',
   '.elr-side[data-dual-columns] { min-width: min(' + SIDE_DUAL_MIN + 'px, var(--elr-sidebar-available)); max-width: var(--elr-sidebar-available); }',
   '.elr-side.is-stowed { position: absolute; inset: 0 0 0 auto; transform: translateX(100%); transition: transform var(--duration-exit-md) var(--ease-in); pointer-events: none; }',
+  '.elr-body.dock-left .elr-side.is-stowed { inset: 0 auto 0 0; transform: translateX(-100%); }',
   '.elr-body.dock-bottom .elr-side.is-stowed { inset: auto 0 0; transform: translateY(100%); }',
   // (v25 #3) The analysis column always stacks its tabs header above its body,
   // including in the horizontal bottom dock where `side` itself is a row.
@@ -726,18 +800,19 @@ const CSS = [
   '.elr-side-body { scrollbar-width: thin; scrollbar-color: transparent transparent; }',
   '.elr-side-body.elr-scrolling { scrollbar-color: var(--dsw-alias-label-secondary) transparent; }',
   // A fixed-width track with a grip that grows along the track.
-  '.elr-divider { box-sizing: border-box; flex: 0 0 ' + PANE_DIVIDER_SIZE + 'px; position: relative; display: grid; place-items: center; cursor: col-resize; touch-action: none; user-select: none; background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 78%, transparent); border-inline: 1px solid var(--dsw-alias-border-l1); }',
+  '.elr-divider { box-sizing: border-box; flex: 0 0 ' + PANE_DIVIDER_SIZE + 'px; position: relative; display: grid; place-items: center; cursor: col-resize; touch-action: none; user-select: none; background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 78%, transparent); border-inline: 1px solid var(--dsw-alias-border-l1); transition: background var(--duration-feedback) var(--ease-out), border-color var(--duration-feedback) var(--ease-out); }',
   '.elr-divider::before { content: ""; position: absolute; inset: 0 -5px; }',
-  '.elr-divider::after { content: ""; width: 4px; height: 56px; max-height: 100%; border-radius: 999px; background: var(--dsw-alias-brand-primary); opacity: .68; transform: scaleY(.46); transition: transform var(--duration-feedback) var(--ease-out), opacity var(--duration-feedback) var(--ease-out); pointer-events: none; }',
-  '.elr-divider:is(:hover,.active,:focus-visible)::after { transform: scaleY(1); opacity: 1; }',
+  '.elr-divider::after { content: ""; width: 4px; height: 56px; max-height: 100%; border-radius: 999px; background: var(--dsw-alias-brand-primary); opacity: .68; transform: scaleY(.46); transition: transform var(--duration-feedback) var(--ease-out), opacity var(--duration-feedback) var(--ease-out), box-shadow var(--duration-feedback) var(--ease-out); pointer-events: none; }',
+  '.elr-divider:is(:hover,.active,:focus-visible) { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, var(--dsw-alias-border-l1)); }',
+  '.elr-divider:is(:hover,.active,:focus-visible)::after { transform: scaleY(1); opacity: 1; box-shadow: 0 0 8px color-mix(in srgb, var(--dsw-alias-brand-primary) 50%, transparent); }',
   '.elr-divider.axis-row { cursor: row-resize; border-inline: 0; border-block: 1px solid var(--dsw-alias-border-l1); }',
   '.elr-divider.axis-row::before { inset: -5px 0; }',
   '.elr-divider.axis-row::after { width: 56px; height: 4px; max-width: 100%; transform: scaleX(.46); }',
-  '.elr-divider.axis-row:is(:hover,.active,:focus-visible)::after { transform: scaleX(1); }',
+  '.elr-divider.axis-row:is(:hover,.active,:focus-visible)::after { transform: scaleX(1); box-shadow: 0 0 8px color-mix(in srgb, var(--dsw-alias-brand-primary) 50%, transparent); }',
   '.elr-divider:focus-visible { outline: 1px solid var(--dsw-alias-brand-primary); outline-offset: -1px; }',
   '@media (prefers-reduced-motion: reduce) { .elr-divider::after { transition-property: opacity; } }',
   '.elr-body.is-resizing-panes { user-select: none; }',
-  '.elr-body.is-resizing-panes .elr-feature-column > .elr-sec { transition: none; }',
+  '.elr-body.is-resizing-panes .elr-feature-column > .elr-sec, .elr-body.is-resizing-panes .elr-pdf-container > .pdfViewer { transition: none; }',
   '.elr-resizer { z-index: 6; }',
   // (v8 #7) Reorderable side sections (recent reading, notes, selection).
   // (v31 #1) Each section is a self-contained CARD now: its own border,
@@ -782,12 +857,13 @@ const CSS = [
   '.elr-card-dock-target > .elr-side-body { background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, transparent); }',
   // (v31 #2) The floating clone that follows the pointer while reordering.
   // It is portalled to <body>, positioned fixed, and never receives events.
-  '.elr-drag-ghost { position: fixed; inset: 0 auto auto 0; z-index: 200; pointer-events: none; box-sizing: border-box; display: grid; place-items: center; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--radius-lg, 16px); color: var(--dsw-alias-label-primary); overflow: hidden; will-change: transform; }',
-  '.elr-drag-ghost.is-lifting { animation: elr-drag-lift-pop 160ms cubic-bezier(.34, 1.45, .64, 1) both; }',
-  '@keyframes elr-drag-lift-pop { from { opacity: .82; filter: drop-shadow(0 2px 4px rgb(10 18 30 / .10)); } to { opacity: 1; filter: drop-shadow(0 10px 26px rgb(10 18 30 / .22)); } }',
+  '.elr-drag-ghost { position: fixed; inset: 0 auto auto 0; z-index: 200; pointer-events: none; box-sizing: border-box; display: grid; place-items: center; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--radius-lg, 16px); color: var(--dsw-alias-label-primary); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 94%, transparent); box-shadow: 0 10px 26px rgb(10 18 30 / .20), var(--elr-frosted-rim); overflow: hidden; will-change: transform; contain: layout style paint; }',
+  '.elr-drag-ghost.is-lifting { animation: elr-drag-lift-pop 140ms cubic-bezier(.22, 1, .36, 1) both; }',
+  '@keyframes elr-drag-lift-pop { from { opacity: .84; scale: .96; } to { opacity: 1; scale: 1; } }',
   '.elr-drag-ghost-label { max-width: 100%; max-height: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(13px + var(--elr-card-font-adjust, 0px)); font-weight: 650; }',
   '.elr-drag-ghost.is-vertical .elr-drag-ghost-label { writing-mode: vertical-rl; }',
   'body.elr-card-dragging, body.elr-card-dragging * { cursor: grabbing !important; }',
+  'body.elr-card-dragging .elr-main, body.elr-card-dragging .elr-sec[data-elr-floating-card] { pointer-events: none !important; }',
   // Faint 15% text-color drop hint line that grows from its middle and glides between gaps.
   '.elr-drop-line { position: fixed; inset: 0 auto auto 0; z-index: 195; pointer-events: none; border-radius: 999px; background: color-mix(in srgb, var(--dsw-alias-label-primary) 15%, transparent); transform-origin: center center; transition: transform 150ms cubic-bezier(.22, 1, .36, 1), width 150ms cubic-bezier(.22, 1, .36, 1), height 150ms cubic-bezier(.22, 1, .36, 1); }',
   '.elr-drop-line.is-horizontal { animation: elr-drop-line-grow-x 160ms cubic-bezier(.22, 1, .36, 1) both; }',
@@ -824,11 +900,11 @@ const CSS = [
   '.elr-card-x:hover { color: var(--dsw-alias-state-error-primary); }',
   '.elr-card-x::before, .elr-card-x::after { content: ""; position: absolute; width: 10px; height: 1.5px; border-radius: 1px; background: currentColor; transform: rotate(45deg); }',
   '.elr-card-x::after { transform: rotate(-45deg); }',
-  '.elr-floating-card { position: fixed; z-index: 114; box-sizing: border-box; box-shadow: 0 10px 32px rgba(0,0,0,.24); color: var(--dsw-alias-label-primary); font-size: 13px; }',
+  '.elr-floating-card { position: fixed; z-index: 114; box-sizing: border-box; box-shadow: 0 10px 32px rgba(0,0,0,.24); color: var(--dsw-alias-label-primary); font-size: 13px; --elr-rz-corner: 15px; }',
   '.elr-floating-card.is-front { z-index: 115; }',
   '.elr-floating-card .elr-card-content { overflow: auto; }',
-  '.elr-floating-card .elr-rz:not(.elr-rz-se):is(:hover, :active) { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 23%, transparent); }',
-  '.elr-floating-card .elr-rz-se::after { content: ""; position: absolute; right: 3px; bottom: 3px; width: 8px; height: 8px; color: var(--dsw-alias-label-secondary); background: repeating-linear-gradient(-45deg, currentColor 0 1px, transparent 1px 3px); clip-path: polygon(100% 0, 100% 100%, 0 100%); pointer-events: none; }',
+  '.elr-floating-card .elr-rz-se::after { content: ""; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px; color: var(--dsw-alias-label-secondary); opacity: .55; background: repeating-linear-gradient(-45deg, currentColor 0 1.25px, transparent 1.25px 3.2px); clip-path: polygon(100% 0, 100% 100%, 0 100%); pointer-events: none; transition: color var(--duration-feedback) var(--ease-out), opacity var(--duration-feedback) var(--ease-out); }',
+  '.elr-floating-card .elr-rz-se:is(:hover, .is-resizing)::after { color: var(--dsw-alias-brand-primary); opacity: .95; }',
   '.elr-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 7px 12px; border-bottom: 1px solid var(--dsw-alias-border-l1); }',
   '.elr-btn { border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); border-radius: 7px; padding: 6px 12px; cursor: pointer; font-size: calc(12px + var(--elr-card-font-adjust, 0px)); }',
   '.elr-btn:hover:not(:disabled) { border-color: var(--dsw-alias-brand-primary); }',
@@ -942,6 +1018,9 @@ const CSS = [
   // It deliberately does NOT include SIZE containment (`strict` would imply it
   // and collapse this absolutely-positioned box to zero height).
   '.elr-pdf-container { position: absolute; inset: 0; overflow: auto; overscroll-behavior: contain; contain: layout paint style; }',
+  '.elr-pdf-container > .pdfViewer { transform: translate3d(calc(var(--elr-pdf-offset-x, 0) * 0.45cqw), 0, 0); transition: transform 60ms linear; }',
+  '.elr-pdf-container .textLayer span { letter-spacing: normal; word-spacing: normal; }',
+  '@media (prefers-reduced-motion: reduce) { .elr-pdf-container > .pdfViewer { transition: none; } }',
   '.elr-pdf-wrap.is-start { min-height: 0; background: var(--dsw-alias-bg-base); }',
   '.elr-pdf-wrap.is-start > .elr-pdf-container { visibility: hidden; }',
   '.elr-drag-mask { position: absolute; inset: 10px; z-index: 5; display: flex; align-items: center; justify-content: center; border: 2px dashed var(--dsw-alias-brand-primary); border-radius: 14px; background: var(--dsw-alias-bg-overlay); color: var(--dsw-alias-brand-primary); font-size: 15px; font-weight: 600; pointer-events: none; }',
@@ -1044,16 +1123,45 @@ const CSS = [
   // directly, so ANY edge or corner can be dragged. `overflow: hidden` is kept
   // because the inner body owns its own scrollbar.
   '.elr-resizable { overflow: hidden; }',
-  '.elr-grip-corner { position: absolute; right: 2px; bottom: 2px; width: 12px; height: 12px; pointer-events: none; background: linear-gradient(135deg, transparent 0 45%, var(--dsw-alias-border-l2) 45% 55%, transparent 55% 70%, var(--dsw-alias-border-l2) 70% 80%, transparent 80%); }',
-  '.elr-rz { position: absolute; z-index: 6; background: transparent; touch-action: none; }',
-  '.elr-rz-n { top: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }',
-  '.elr-rz-s { bottom: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }',
-  '.elr-rz-e { right: 0; top: 10px; bottom: 10px; width: 6px; cursor: ew-resize; }',
-  '.elr-rz-w { left: 0; top: 10px; bottom: 10px; width: 6px; cursor: ew-resize; }',
-  '.elr-rz-ne { top: 0; right: 0; width: 14px; height: 14px; cursor: nesw-resize; }',
-  '.elr-rz-nw { top: 0; left: 0; width: 14px; height: 14px; cursor: nwse-resize; }',
-  '.elr-rz-se { bottom: 0; right: 0; width: 14px; height: 14px; cursor: nwse-resize; }',
-  '.elr-rz-sw { bottom: 0; left: 0; width: 14px; height: 14px; cursor: nwse-resize; }',
+  '.elr-grip-corner { position: absolute; right: 3px; bottom: 3px; width: 11px; height: 11px; pointer-events: none; opacity: .65; background: linear-gradient(135deg, transparent 0 45%, var(--dsw-alias-border-l2) 45% 55%, transparent 55% 70%, var(--dsw-alias-border-l2) 70% 80%, transparent 80%); transition: opacity var(--duration-feedback) var(--ease-out), filter var(--duration-feedback) var(--ease-out); }',
+  '.elr-rz { position: absolute; z-index: 6; background: transparent; touch-action: none; transition: background var(--duration-feedback) var(--ease-out); }',
+  '.elr-rz::before { content: ""; position: absolute; pointer-events: none; opacity: 0; transition: opacity var(--duration-feedback) var(--ease-out), transform var(--duration-feedback) var(--ease-out), filter var(--duration-feedback) var(--ease-out); }',
+  '.elr-rz:is(:hover, .is-resizing)::before { opacity: .94; }',
+  '.elr-rz.is-resizing::before { opacity: 1; }',
+  '.elr-rz-n { top: 0; left: 18px; right: 18px; height: 7px; cursor: ns-resize; border-radius: 999px; }',
+  '.elr-rz-s { bottom: 0; left: 18px; right: 18px; height: 7px; cursor: ns-resize; border-radius: 999px; }',
+  '.elr-rz-e { right: 0; top: 18px; bottom: 18px; width: 7px; cursor: ew-resize; border-radius: 999px; }',
+  '.elr-rz-w { left: 0; top: 18px; bottom: 18px; width: 7px; cursor: ew-resize; border-radius: 999px; }',
+  '.elr-rz-n::before, .elr-rz-s::before { left: 6px; right: 6px; height: 2.5px; border-radius: 999px; background: var(--dsw-alias-brand-primary); box-shadow: 0 0 8px color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }',
+  '.elr-rz-n::before { top: 0; transform: scaleX(.72); }',
+  '.elr-rz-s::before { bottom: 0; transform: scaleX(.72); }',
+  '.elr-rz-n:is(:hover, .is-resizing)::before, .elr-rz-s:is(:hover, .is-resizing)::before { transform: scaleX(1); }',
+  '.elr-rz-n:is(:hover, .is-resizing) { background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent), transparent 76%); }',
+  '.elr-rz-s:is(:hover, .is-resizing) { background: radial-gradient(ellipse at 50% 100%, color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent), transparent 76%); }',
+  '.elr-rz-e::before, .elr-rz-w::before { top: 6px; bottom: 6px; width: 2.5px; border-radius: 999px; background: var(--dsw-alias-brand-primary); box-shadow: 0 0 8px color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }',
+  '.elr-rz-e::before { right: 0; transform: scaleY(.72); }',
+  '.elr-rz-w::before { left: 0; transform: scaleY(.72); }',
+  '.elr-rz-e:is(:hover, .is-resizing)::before, .elr-rz-w:is(:hover, .is-resizing)::before { transform: scaleY(1); }',
+  '.elr-rz-e:is(:hover, .is-resizing) { background: radial-gradient(ellipse at 100% 50%, color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent), transparent 76%); }',
+  '.elr-rz-w:is(:hover, .is-resizing) { background: radial-gradient(ellipse at 0% 50%, color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent), transparent 76%); }',
+  '.elr-rz-ne { top: 0; right: 0; width: 18px; height: 18px; cursor: nesw-resize; border-top-right-radius: var(--elr-rz-corner, 15px); }',
+  '.elr-rz-nw { top: 0; left: 0; width: 18px; height: 18px; cursor: nwse-resize; border-top-left-radius: var(--elr-rz-corner, 15px); }',
+  '.elr-rz-se { bottom: 0; right: 0; width: 18px; height: 18px; cursor: nwse-resize; border-bottom-right-radius: var(--elr-rz-corner, 15px); }',
+  '.elr-rz-sw { bottom: 0; left: 0; width: 18px; height: 18px; cursor: nesw-resize; border-bottom-left-radius: var(--elr-rz-corner, 15px); }',
+  ':is(.elr-rz-ne, .elr-rz-nw, .elr-rz-se, .elr-rz-sw)::before { width: 15px; height: 15px; box-sizing: border-box; border: 0 solid var(--dsw-alias-brand-primary); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--dsw-alias-brand-primary) 60%, transparent)); transform: scale(.86); }',
+  ':is(.elr-rz-ne, .elr-rz-nw, .elr-rz-se, .elr-rz-sw):is(:hover, .is-resizing)::before { transform: scale(1); }',
+  '.elr-rz-nw::before { top: 0; left: 0; border-top-width: 2.5px; border-left-width: 2.5px; border-top-left-radius: var(--elr-rz-corner, 16px); transform-origin: top left; }',
+  '.elr-rz-ne::before { top: 0; right: 0; border-top-width: 2.5px; border-right-width: 2.5px; border-top-right-radius: var(--elr-rz-corner, 16px); transform-origin: top right; }',
+  '.elr-rz-sw::before { bottom: 0; left: 0; border-bottom-width: 2.5px; border-left-width: 2.5px; border-bottom-left-radius: var(--elr-rz-corner, 16px); transform-origin: bottom left; }',
+  '.elr-rz-se::before { bottom: 0; right: 0; border-bottom-width: 2.5px; border-right-width: 2.5px; border-bottom-right-radius: var(--elr-rz-corner, 16px); transform-origin: bottom right; }',
+  '.elr-rz-nw:is(:hover, .is-resizing) { background: radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent), transparent 76%); }',
+  '.elr-rz-ne:is(:hover, .is-resizing) { background: radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent), transparent 76%); }',
+  '.elr-rz-sw:is(:hover, .is-resizing) { background: radial-gradient(circle at 0% 100%, color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent), transparent 76%); }',
+  '.elr-rz-se:is(:hover, .is-resizing) { background: radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent), transparent 76%); }',
+  '.elr-popup, .elr-note-bubble { --elr-rz-corner: 15px; }',
+  '.elr-formula-card { --elr-rz-corner: 9px; }',
+  '.elr-resizable:has(.elr-rz-se:is(:hover, .is-resizing)) > .elr-grip-corner { opacity: 1; filter: drop-shadow(0 0 2px var(--dsw-alias-brand-primary)); }',
+  '@media (prefers-reduced-motion: reduce) { .elr-rz, .elr-rz::before, .elr-grip-corner { transition: none; } }',
   // (v18 #3/#5) A box that resizes by dragging its own bottom edge. The height
   // is written into the element's inline style by the handle, so React never
   // fights the browser over it.
@@ -1109,13 +1217,23 @@ const CSS = [
   // (v45) The texture is back, after the user asked for it explicitly — but it
   // is built from low-alpha CSS gradients instead of the v8 opaque sheet, so it
   // can never stamp hard lines across a chart.
-  '.elr-pdf-container[data-elr-page-theme] .pdfViewer .page .canvasWrapper::before { background-color: var(--elr-paper-color); content: ""; position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; mix-blend-mode: darken; border-radius: 2px; }',
+  '.elr-pdf-container[data-elr-page-theme]:not([data-elr-page-dark]) .pdfViewer .page .canvasWrapper::before { background-color: var(--elr-paper-color); content: ""; position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; mix-blend-mode: darken; border-radius: 2px; }',
   '.elr-pdf-container[data-elr-page-theme="paper"] { --elr-paper-color: #f7f3e9; }',
   '.elr-pdf-container[data-elr-page-theme="eye"] { --elr-paper-color: #faf6e5; }',
   '.elr-pdf-container[data-elr-page-theme="linen"] { --elr-paper-color: #f4f1e8; }',
   '.elr-pdf-container[data-elr-page-theme="sage"] { --elr-paper-color: #eff5ef; }',
   '.elr-pdf-container[data-elr-page-theme="mist"] { --elr-paper-color: #eff4f7; }',
   '.elr-pdf-container[data-elr-page-theme="ivory"] { --elr-paper-color: #faf8f1; }',
+  '.elr-pdf-container[data-elr-page-dark] .pdfViewer .page, .elr-pdf-container[data-elr-page-dark] .pdfViewer .page .canvasWrapper { background-color: var(--elr-paper-color); }',
+  '.elr-pdf-container[data-elr-page-dark] .pdfViewer .page { box-shadow: 0 2px 12px rgb(0 0 0 / .45), inset 0 0 0 1px rgb(255 255 255 / .08); }',
+  '.elr-pdf-container[data-elr-page-dark] .pdfViewer .page .canvasWrapper > canvas:not(.elr-hl-overlay):not(.elr-find-overlay) { filter: invert(1) hue-rotate(180deg) contrast(.94) brightness(.90); }',
+  '.elr-pdf-container[data-elr-page-dark] .pdfViewer .page .canvasWrapper::before { background-color: var(--elr-paper-color); content: ""; position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; mix-blend-mode: lighten; border-radius: 2px; }',
+  '.elr-pdf-container[data-elr-page-dark] .elr-hl-overlay, .elr-pdf-container[data-elr-page-dark] .elr-find-overlay { mix-blend-mode: screen; }',
+  '.elr-pdf-container[data-elr-page-theme="dark-slate"] { --elr-paper-color: #1b2028; }',
+  '.elr-pdf-container[data-elr-page-theme="dark-midnight"] { --elr-paper-color: #141d2b; }',
+  '.elr-pdf-container[data-elr-page-theme="dark-sepia"] { --elr-paper-color: #211c17; }',
+  '.elr-pdf-container[data-elr-page-theme="dark-forest"] { --elr-paper-color: #14211b; }',
+  '.elr-pdf-container[data-elr-page-theme="dark-oled"] { --elr-paper-color: #0d0f14; }',
   '.elr-pdf-container:is([data-elr-page-theme="paper"], [data-elr-page-theme="eye"], [data-elr-page-theme="linen"]) .pdfViewer .page .canvasWrapper::after { content: ""; position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; mix-blend-mode: darken; }',
   // Fibres run in two near-orthogonal directions at coprime pitches (3px / 4px /
   // 7px) so no visible plaid can emerge, plus an isotropic speckle and three
@@ -1249,21 +1367,25 @@ const CSS = [
   // be clipped away — and a clipped handle cannot be grabbed. `z-index: 3` keeps
   // them above the card body; the card itself is not `draggable` (only its ⠿
   // head is), so a pointerdown here cannot start a native drag.
-  '.elr-card-rz { position: absolute; top: 0; bottom: 0; width: 7px; cursor: col-resize; background: transparent; touch-action: none; z-index: 3; }',
+  '.elr-card-rz { position: absolute; top: 10px; bottom: 10px; width: 8px; cursor: col-resize; background: transparent; touch-action: none; z-index: 3; border-radius: 999px; }',
   '.elr-card-rz.is-right { right: 0; }',
   '.elr-card-rz.is-left { left: 0; }',
-  '.elr-card-rz::before { content: ""; position: absolute; top: 0; bottom: 0; width: 1px; background: var(--dsw-alias-border-l1); opacity: 0; transition: opacity var(--duration-feedback) var(--ease-out); }',
+  '.elr-card-rz::before { content: ""; position: absolute; top: 6px; bottom: 6px; width: 2.5px; border-radius: 999px; background: var(--dsw-alias-brand-primary); opacity: 0; box-shadow: 0 0 8px color-mix(in srgb, var(--dsw-alias-brand-primary) 54%, transparent); transition: opacity var(--duration-feedback) var(--ease-out), transform var(--duration-feedback) var(--ease-out); transform: scaleY(.72); pointer-events: none; }',
+  '.elr-card-rz::after { content: ""; position: absolute; inset: 0; border-radius: 999px; opacity: 0; transition: opacity var(--duration-feedback) var(--ease-out); pointer-events: none; }',
   '.elr-card-rz.is-right::before { right: 0; }',
   '.elr-card-rz.is-left::before { left: 0; }',
-  '.elr-card-rz:hover::before, .elr-card-rz:active::before { opacity: 1; background: var(--dsw-alias-brand-primary); }',
-  // (v38 #1) Bottom edge handle — right dock only, where the cards are stacked
-  // and each one can have its own height. It spans the card's full width so the
-  // whole lower border is grabbable, and it sits INSIDE the border box for the
-  // same clipping reason as the side handles. `cursor: row-resize` is the only
-  // thing distinguishing it from a side handle, so the hairline is horizontal.
-  '.elr-card-rz.is-bottom { top: auto; bottom: 0; left: 0; right: 0; width: auto; height: 7px; cursor: row-resize; }',
-  '.elr-card-rz.is-bottom::before { top: auto; bottom: 0; left: 0; right: 0; width: auto; height: 1px; }',
-  '.elr-card-rz.is-bottom:hover::before, .elr-card-rz.is-bottom:active::before { opacity: 1; background: var(--dsw-alias-brand-primary); }',
+  '.elr-card-rz.is-right::after { background: radial-gradient(ellipse at 100% 50%, color-mix(in srgb, var(--dsw-alias-brand-primary) 20%, transparent), transparent 78%); }',
+  '.elr-card-rz.is-left::after { background: radial-gradient(ellipse at 0% 50%, color-mix(in srgb, var(--dsw-alias-brand-primary) 20%, transparent), transparent 78%); }',
+  '.elr-card-rz:is(:hover, :active, .is-resizing)::before { opacity: .94; transform: scaleY(1); }',
+  '.elr-card-rz:is(:hover, :active, .is-resizing)::after { opacity: 1; }',
+  '.elr-card-rz.is-resizing::before { opacity: 1; }',
+  // (v38 #1) Bottom edge handle — right/left dock only, where the cards are stacked
+  // and each one can have its own height.
+  '.elr-card-rz.is-bottom { top: auto; bottom: 0; left: 10px; right: 10px; width: auto; height: 8px; cursor: row-resize; border-radius: 999px; }',
+  '.elr-card-rz.is-bottom::before { top: auto; bottom: 0; left: 6px; right: 6px; width: auto; height: 2.5px; transform: scaleX(.72); }',
+  '.elr-card-rz.is-bottom::after { background: radial-gradient(ellipse at 50% 100%, color-mix(in srgb, var(--dsw-alias-brand-primary) 20%, transparent), transparent 78%); }',
+  '.elr-card-rz.is-bottom:is(:hover, :active, .is-resizing)::before { opacity: .94; transform: scaleX(1); }',
+  '.elr-card-rz.is-bottom.is-resizing::before { opacity: 1; }',
   '.elr-recent-name { cursor: pointer; }',
   '.elr-recent-item.current { border-color: var(--dsw-alias-brand-primary); }',
   '.elr-recent-item.current .elr-recent-name { color: var(--dsw-alias-brand-primary); font-weight: 600; }',
@@ -1449,6 +1571,90 @@ const CSS = [
   '.elr-card-font-menu output { color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }',
   '.elr-card-font-menu input { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--dsw-alias-brand-primary); }',
   '.elr-card-font-menu > button { justify-self: start; }',
+  '.elr-reader-options.elr-theme-menu { width: min(304px, calc(100vw - 20px)); max-height: min(500px, calc(100vh - 20px)); overflow: auto; padding: 10px; gap: 10px; }',
+  '.elr-theme-menu-group { display: grid; gap: 6px; }',
+  '.elr-theme-menu-label { font-size: 11.5px; font-weight: 600; color: var(--dsw-alias-label-secondary); }',
+  '.elr-theme-menu-sublabel { font-size: 11px; color: var(--dsw-alias-label-secondary); opacity: .85; margin-top: 2px; }',
+  '.elr-theme-chip-grid { display: flex; flex-wrap: wrap; gap: 5px; }',
+  '.elr-theme-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 999px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 60%, transparent); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; cursor: pointer; transition: border-color .15s var(--ease-out), background-color .15s var(--ease-out), color .15s var(--ease-out); }',
+  '.elr-theme-chip:hover:not(:disabled) { border-color: var(--dsw-alias-border-l2); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, var(--dsw-alias-bg-layer-1)); }',
+  '.elr-theme-chip[aria-pressed="true"] { border-color: var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, var(--dsw-alias-bg-layer-1)); color: var(--dsw-alias-brand-primary); font-weight: 600; }',
+  '.elr-theme-chip:disabled { opacity: .45; cursor: default; }',
+  '.elr-theme-swatch { width: 11px; height: 11px; flex: 0 0 11px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--dsw-alias-label-primary) 24%, transparent); background: var(--elr-swatch, var(--dsw-alias-bg-layer-1)); }',
+  '.elr-album-card { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }',
+  '.elr-album-card .elr-function-head { position: relative; z-index: 4; transition: transform 220ms var(--ease-out), opacity 180ms var(--ease-out); }',
+  '.elr-album-card.has-photos .elr-function-head { position: absolute; inset: 0 0 auto 0; background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent) 0%, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 52%, transparent) 72%, transparent 100%); backdrop-filter: blur(8px); }',
+  '.elr-album-card.has-photos.is-head-hidden .elr-function-head { transform: translateY(-100%); opacity: 0; pointer-events: none; transition-timing-function: var(--ease-in); }',
+  '.elr-body.dock-bottom [data-elr-docked-card="album"] > .elr-album-card { flex-direction: row; }',
+  '.elr-body.dock-bottom [data-elr-docked-card="album"] > .elr-album-card.has-photos .elr-function-head { inset: 0 auto 0 0; width: ' + (CARD_HEADER_HEIGHT - 2) + 'px; height: auto; min-height: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent) 0%, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 52%, transparent) 72%, transparent 100%); }',
+  '.elr-body.dock-bottom [data-elr-docked-card="album"] > .elr-album-card.has-photos.is-head-hidden .elr-function-head { transform: translateX(-100%); }',
+  '.elr-body.dock-bottom [data-elr-docked-card="album"] > .elr-album-card.has-photos:not(.is-head-hidden) .elr-album-hud { left: ' + (CARD_HEADER_HEIGHT + 4) + 'px; }',
+  '.elr-settings-range { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; }',
+  '.elr-settings-range input { width: 100%; min-width: 0; margin: 0; accent-color: var(--dsw-alias-brand-primary); cursor: pointer; }',
+  '.elr-settings-range output { min-width: 3ch; text-align: end; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-secondary); }',
+  '.elr-album-picker-backdrop { position: fixed; inset: 0; z-index: 420; display: grid; place-items: center; padding: 20px; background: rgb(10 14 22 / .44); backdrop-filter: blur(4px); }',
+  '.elr-album-picker { width: min(740px, 100%); max-height: min(620px, calc(100vh - 48px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 70%, transparent); border-radius: 18px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); box-shadow: 0 22px 54px rgb(8 12 20 / .34); }',
+  '.elr-album-picker-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; border-bottom: 1px solid var(--dsw-alias-border-l1); }',
+  '.elr-album-picker-title { margin: 0; font-size: 15px; font-weight: 650; }',
+  '.elr-album-picker-path { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--dsw-alias-label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+  '.elr-album-picker-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 16px; font-size: 12px; color: var(--dsw-alias-label-secondary); border-bottom: 1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 60%, transparent); }',
+  '.elr-album-picker-grid { flex: 1 1 auto; min-height: 180px; overflow: auto; padding: 14px 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 10px; align-content: start; }',
+  '.elr-album-thumb { position: relative; display: flex; flex-direction: column; gap: 5px; padding: 5px; border: 1.5px solid var(--dsw-alias-border-l1); border-radius: 12px; background: var(--dsw-alias-bg-layer-2); color: inherit; font: inherit; text-align: start; cursor: pointer; transition: border-color .15s var(--ease-out), background-color .15s var(--ease-out), transform .15s var(--ease-out); }',
+  '.elr-album-thumb:hover { border-color: var(--dsw-alias-border-l2); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, var(--dsw-alias-bg-layer-2)); }',
+  '.elr-album-thumb[aria-pressed="true"] { border-color: var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, var(--dsw-alias-bg-layer-1)); }',
+  '.elr-album-thumb-img { width: 100%; aspect-ratio: 4 / 3; border-radius: 8px; object-fit: cover; display: block; background: var(--dsw-alias-bg-base); }',
+  '.elr-album-thumb-name { font-size: 11px; color: var(--dsw-alias-label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+  '.elr-album-thumb[aria-pressed="true"] .elr-album-thumb-name { color: var(--dsw-alias-brand-primary); font-weight: 600; }',
+  '.elr-album-thumb-check { position: absolute; top: 10px; right: 10px; width: 20px; height: 20px; border-radius: 999px; display: grid; place-items: center; font-size: 11px; font-weight: 700; border: 1.5px solid rgb(255 255 255 / .85); background: rgb(16 20 28 / .45); color: transparent; }',
+  '.elr-album-thumb[aria-pressed="true"] .elr-album-thumb-check { background: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); color: #fff; }',
+  '.elr-album-picker-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 16px; border-top: 1px solid var(--dsw-alias-border-l1); background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 55%, transparent); }',
+  '.elr-album-picker-foot-hint { font-size: 12px; color: var(--dsw-alias-label-secondary); }',
+  '.elr-album-picker-actions { display: flex; align-items: center; gap: 8px; }',
+  '.elr-ambient-card { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }',
+  '.elr-ambient-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; gap: 7px; margin: 0 var(--elr-card-inset) var(--elr-card-inset) var(--elr-card-leading); padding: var(--elr-card-content-gap); border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--elr-card-content-radius); background: var(--elr-card-content-bg); overflow: hidden; }',
+  '.elr-ambient-source { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 0 0 auto; }',
+  '.elr-ambient-source-name { flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: var(--dsw-alias-label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+  '.elr-ambient-source .elr-btn { padding: 3px 8px; font-size: 11.5px; flex: 0 0 auto; }',
+  '.elr-ambient-search { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 3px 8px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); }',
+  '.elr-ambient-search input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; outline: none; }',
+  '.elr-ambient-cats { flex: 0 0 auto; display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }',
+  '.elr-ambient-cats::-webkit-scrollbar { display: none; }',
+  '.elr-ambient-cat { flex: 0 0 auto; padding: 3px 8px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 999px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-secondary); font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }',
+  '.elr-ambient-cat[aria-pressed="true"] { border-color: var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, var(--dsw-alias-bg-layer-1)); color: var(--dsw-alias-brand-primary); font-weight: 600; }',
+  '.elr-ambient-grid { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 6px; align-content: start; padding-right: 2px; }',
+  '.elr-ambient-tile { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); transition: border-color .15s var(--ease-out), background-color .15s var(--ease-out); }',
+  '.elr-ambient-tile:hover { border-color: var(--dsw-alias-border-l2); }',
+  '.elr-ambient-tile.is-active { border-color: var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 11%, var(--dsw-alias-bg-layer-1)); }',
+  '.elr-ambient-track { display: flex; align-items: center; gap: 6px; width: 100%; padding: 0; border: 0; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; font-size: calc(12px + var(--elr-card-font-adjust, 0px)); text-align: start; cursor: pointer; }',
+  '.elr-ambient-tile.is-active .elr-ambient-track { color: var(--dsw-alias-brand-primary); font-weight: 600; }',
+  '.elr-ambient-track-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+  '.elr-ambient-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: var(--dsw-alias-brand-primary); opacity: 0; }',
+  '.elr-ambient-tile.is-playing .elr-ambient-dot { opacity: 1; animation: elr-ambient-pulse 1.5s var(--ease-in-out) infinite; }',
+  '.elr-ambient-tile-vol { display: flex; align-items: center; gap: 5px; }',
+  '.elr-ambient-tile-vol input { flex: 1 1 auto; min-width: 0; margin: 0; height: 4px; accent-color: var(--dsw-alias-brand-primary); cursor: pointer; }',
+  '.elr-ambient-tile-vol span { font-size: 10.5px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; min-width: 3ch; text-align: end; }',
+  '@keyframes elr-ambient-pulse { 0%, 100% { transform: scale(.85); opacity: .65; } 50% { transform: scale(1.25); opacity: 1; } }',
+  '.elr-ambient-controls { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 70%, transparent); }',
+  '.elr-ambient-play { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid var(--dsw-alias-brand-primary); border-radius: 999px; background: var(--dsw-alias-brand-primary); color: #fff; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }',
+  '.elr-ambient-play:disabled { opacity: .45; cursor: default; }',
+  '.elr-ambient-mode { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 999px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 11.5px; cursor: pointer; }',
+  '.elr-ambient-mode:hover:not(:disabled) { border-color: var(--dsw-alias-border-l2); }',
+  '.elr-ambient-mode:disabled { opacity: .45; cursor: default; }',
+  '.elr-ambient-vol { flex: 1 1 82px; min-width: 68px; display: inline-flex; align-items: center; gap: 4px; color: var(--dsw-alias-label-secondary); font-size: 11px; }',
+  '.elr-ambient-vol input { flex: 1 1 auto; min-width: 40px; margin: 0; accent-color: var(--dsw-alias-brand-primary); cursor: pointer; }',
+  '.elr-ambient-vol output { min-width: 3.4ch; text-align: end; font-variant-numeric: tabular-nums; }',
+  '@media (prefers-reduced-motion: reduce) { .elr-ambient-tile.is-playing .elr-ambient-dot { animation: none; } }',
+  '.elr-album-empty { margin: 0 var(--elr-card-inset) var(--elr-card-inset) var(--elr-card-leading); padding: var(--elr-card-content-gap); border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--elr-card-content-radius); background: var(--elr-card-content-bg); flex: 1 1 auto; min-height: 0; display: grid; place-items: center; }',
+  '.elr-album-stage { position: relative; flex: 1 1 auto; min-height: 0; margin: 0 var(--elr-card-inset) var(--elr-card-inset) var(--elr-card-leading); border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--elr-card-content-radius); background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 72%, transparent); overflow: hidden; cursor: pointer; }',
+  '.elr-album-card.has-photos .elr-album-stage { margin: 0; border: 0; border-radius: 0; }',
+  '.elr-album-photo { width: 100%; height: 100%; display: block; object-fit: cover; user-select: none; animation: elr-album-fade 360ms var(--ease-out) both; }',
+  '@keyframes elr-album-fade { from { opacity: .35; scale: 1.015; } to { opacity: 1; scale: 1; } }',
+  '.elr-album-hud { position: absolute; inset: auto 8px 8px 8px; z-index: 4; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; border: 1px solid rgb(255 255 255 / .18); background: rgb(16 20 28 / .58); backdrop-filter: blur(8px); color: #fff; font-size: 11.5px; transition: transform 220ms var(--ease-out), opacity 180ms var(--ease-out); }',
+  '.elr-album-card.is-head-hidden .elr-album-hud { transform: translateY(120%); opacity: 0; pointer-events: none; transition-timing-function: var(--ease-in); }',
+  '.elr-album-hud-count { margin-inline-end: auto; font-variant-numeric: tabular-nums; padding-inline: 4px; opacity: .92; }',
+  '.elr-album-hud-btn { height: 24px; min-width: 24px; padding: 0 7px; border: 0; border-radius: 999px; background: rgb(255 255 255 / .14); color: #fff; font: inherit; font-size: 11.5px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer; }',
+  '.elr-album-hud-btn:hover { background: rgb(255 255 255 / .26); }',
+  '@media (prefers-reduced-motion: reduce) { .elr-album-photo { animation: none; } .elr-album-card .elr-function-head, .elr-album-hud { transition: none; } }',
   ':is([data-elr-docked-card],[data-elr-floating-card]) { font-size: calc(13px + var(--elr-card-font-adjust, 0px)); }',
   '.elr-feature-grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: ' + CARD_GRID_GAP + 'px; padding: 0 ' + CARD_GRID_PADDING + 'px 10px; overflow: hidden auto; align-items: stretch; }',
   '.elr-body:not(.dock-bottom) .elr-feature-grid { scrollbar-gutter: stable; }',
@@ -1480,7 +1686,7 @@ const CSS = [
   '.elr-summary-recovery { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }',
   '.elr-body.dock-bottom .elr-side { display: block; }',
   '.elr-body.dock-bottom .elr-side-top { width: 100%; height: 100%; }',
-  '.elr-body.dock-bottom .elr-feature-grid { display: flex; flex-direction: row; align-items: stretch; padding-block-end: ' + BOTTOM_DOCK_GRID_PADDING + 'px; overflow: auto hidden; }',
+  '.elr-body.dock-bottom .elr-feature-grid { display: flex; flex-direction: row; align-items: stretch; padding-block-end: ' + BOTTOM_DOCK_GRID_PADDING + 'px; overflow-x: scroll; overflow-y: hidden; }',
   '.elr-body.dock-bottom .elr-feature-column { box-sizing: border-box; flex: 0 0 auto; min-width: 100%; width: max-content; flex-direction: row; align-items: stretch; padding-inline-end: 10px; }',
   '.elr-body.dock-bottom [data-elr-docked-card] { --elr-card-leading: 0px; box-sizing: border-box; flex: 0 0 auto; width: var(--elr-dock-card-width, 308px); min-width: var(--elr-dock-card-min-width, 226px); }',
   '.elr-body.dock-bottom [data-elr-docked-card="selection"] { --elr-dock-card-width: 510px; --elr-dock-card-min-width: 356px; }',
@@ -1488,7 +1694,10 @@ const CSS = [
   '.elr-body.dock-bottom [data-elr-docked-card="summary"] { --elr-dock-card-width: 420px; --elr-dock-card-min-width: 284px; }',
   '.elr-body.dock-bottom :is([data-elr-docked-card="references"],[data-elr-docked-card="figure"]) { --elr-dock-card-width: 380px; --elr-dock-card-min-width: 284px; }',
   '.elr-body.dock-bottom :is([data-elr-docked-card="terms"],[data-elr-docked-card="marks"]) { --elr-dock-card-width: 440px; --elr-dock-card-min-width: 330px; }',
+  '.elr-body.dock-bottom [data-elr-docked-card="album"] { --elr-dock-card-width: 340px; --elr-dock-card-min-width: 240px; }',
+  '.elr-body.dock-bottom [data-elr-docked-card="ambient"] { --elr-dock-card-width: 368px; --elr-dock-card-min-width: 270px; }',
   '.elr-body.dock-bottom [data-elr-docked-card] > :first-child > :not(.elr-function-head) { min-width: 0; margin-block-start: var(--elr-card-inset); }',
+  '.elr-body.dock-bottom [data-elr-docked-card="album"] > .elr-album-card.has-photos > :not(.elr-function-head) { margin-block-start: 0; }',
   '.elr-body.dock-bottom [data-elr-docked-card] .elr-selection-content { padding-block-start: 0; }',
   '.elr-body.dock-bottom [data-elr-docked-card] .elr-analysis-card-body > .elr-col > .elr-toolbar { min-height: 35px; padding: 0 8px 6px; }',
   '.elr-detail-split { display: grid; grid-template-columns: minmax(92px, 37%) minmax(0, 1fr); gap: var(--elr-card-content-gap); margin: 0 var(--elr-card-inset) var(--elr-card-inset) var(--elr-card-leading); flex: 1 1 0; min-height: 0; min-width: 0; }',
@@ -1543,6 +1752,7 @@ const CSS = [
   '.elr-sec[data-elr-folding="closing-height"] > :first-child > .elr-card-fold-content { box-sizing: border-box; min-height: var(--elr-fold-content-size); }',
   '.elr-body.dock-bottom [data-elr-docked-card][data-elr-folding="closing-width"] > :first-child > .elr-card-fold-content { box-sizing: border-box; min-width: var(--elr-fold-content-size); }',
   '.elr-workspace-tab { --elr-frosted-fill: var(--elr-glass-chrome-fill); position: absolute; z-index: 95; right: 0; top: 50%; translate: 0 -50%; writing-mode: vertical-rl; padding: 12px 8px; border: 1px solid transparent; border-radius: 12px 0 0 12px; color: var(--dsw-alias-label-primary); font: inherit; letter-spacing: .09em; background: var(--elr-frosted-background); backdrop-filter: var(--elr-frosted-filter); box-shadow: var(--elr-frosted-rim), 0 3px 13px rgba(0,0,0,.17); cursor: pointer; }',
+  '.elr-body.dock-left .elr-workspace-tab { left: 0; right: auto; border-radius: 0 12px 12px 0; }',
   '.elr-body.dock-bottom .elr-workspace-tab { inset: auto auto 0 50%; translate: -50% 0; writing-mode: horizontal-tb; padding: 6px 17px; border-radius: 12px 12px 0 0; }',
   '.elr-workspace-tab:hover { color: var(--dsw-alias-brand-primary); }',
   '@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .elr-workspace-tab { background: var(--dsw-alias-bg-layer-1); backdrop-filter: none; } }',
@@ -1563,14 +1773,14 @@ const CSS = [
   '.elr-feature-column > .elr-sec, .elr-floating-card { transition: box-shadow var(--duration-feedback) var(--ease-out); }',
   '.elr-body.dock-bottom .elr-feature-column > .elr-sec.is-collapsed { flex: 0 0 54px; width: 54px; min-width: 54px; max-width: 54px; min-height: 0; max-height: none; }',
   '@media (prefers-reduced-motion: reduce) { .elr-side, .elr-side.is-stowed { transition: none; } .elr-sec:not(.dragging) > :first-child > .elr-card-fold-content { transition-duration: var(--duration-reduced); } }',
-  '.elr-sec[data-elr-docked-card], .elr-sec[data-elr-floating-card], .elr-drag-ghost { background: var(--elr-frosted-background); --elr-sec-radius: 15px; border: 1px solid transparent; border-radius: var(--elr-sec-radius); box-shadow: 0 2px 4px rgb(12 20 34 / .12), 0 8px 18px rgb(12 20 34 / .12); backdrop-filter: var(--elr-frosted-filter); }',
-  '.elr-sec[data-elr-floating-card], .elr-drag-ghost { --elr-card-fill: var(--elr-glass-floating-fill); --elr-card-blur: var(--elr-glass-floating-blur); box-shadow: 0 3px 8px rgb(10 18 30 / .17), 0 12px 36px rgb(10 18 30 / .24); }',
+  '.elr-sec[data-elr-docked-card], .elr-sec[data-elr-floating-card] { background: var(--elr-frosted-background); --elr-sec-radius: 15px; border: 1px solid transparent; border-radius: var(--elr-sec-radius); box-shadow: 0 2px 4px rgb(12 20 34 / .12), 0 8px 18px rgb(12 20 34 / .12); backdrop-filter: var(--elr-frosted-filter); }',
+  '.elr-sec[data-elr-floating-card] { --elr-card-fill: var(--elr-glass-floating-fill); --elr-card-blur: var(--elr-glass-floating-blur); box-shadow: 0 3px 8px rgb(10 18 30 / .17), 0 12px 36px rgb(10 18 30 / .24); }',
   '.elr-sec[data-elr-docked-card="recent"] { --elr-card-fill: calc(var(--elr-glass-docked-fill) - 4%); }',
   '.elr-recent-item.current { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 11%, transparent); }',
   '.elr-recent-item:hover { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent); }',
   // Paint the bevel inside the existing border box. Offset, feathered shadows
   // merge at the rounded corners and follow the same light across every card.
-  '.elr-sec[data-elr-docked-card]::after, .elr-sec[data-elr-floating-card]::after, .elr-drag-ghost::after { content: ""; position: absolute; inset: 0; border-radius: calc(var(--elr-sec-radius) - 1px); pointer-events: none; z-index: 2; box-shadow: var(--elr-frosted-rim); }',
+  '.elr-sec[data-elr-docked-card]::after, .elr-sec[data-elr-floating-card]::after { content: ""; position: absolute; inset: 0; border-radius: calc(var(--elr-sec-radius) - 1px); pointer-events: none; z-index: 2; box-shadow: var(--elr-frosted-rim); }',
   '.elr-sec[data-elr-floating-card][data-elr-folding] { contain: layout; }',
   '.elr-gesturing .elr-feature-grid .elr-sec[data-elr-docked-card] { backdrop-filter: none; }',
   '@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .elr-sec[data-elr-docked-card], .elr-sec[data-elr-floating-card], .elr-drag-ghost { background: var(--dsw-alias-bg-layer-1); backdrop-filter: none; } }',
@@ -1875,8 +2085,10 @@ function renderGenerationMetadata(record, selection, t) {
 }
 
 const readerIcons = {
-  play: Play, refresh: RotateCw, copy: Copy, info: Info,
+  play: Play, pause: Pause, refresh: RotateCw, copy: Copy, info: Info,
   dockRight: Sidebar, dockBottom: PanelBottom, font: TextSize, layout: LayoutDashboard,
+  palette: Paintbrush, album: Images, folderOpen: FolderOpen,
+  audio: AudioLines, rain: CloudRain, waves: Waves, repeat: Repeat, shuffle: Shuffle, volume: Volume,
   settings: Settings, translate: Languages, capture: Scan, home: Home, search: Search,
   note: FileText, term: CircleHelp, agent: Quote, previous: ChevronLeft, next: ChevronRight,
   down: ChevronDown, up: ChevronUp, zoomIn: ZoomIn, zoomOut: ZoomOut,
@@ -1892,13 +2104,15 @@ const readerIconPaths = {
   stowBottom: 'M5 5l5 5 5-5m-11 8h12',
 };
 
-function readerIcon(name, size = 20) {
+function readerIcon(name, size = 20, flip = false) {
   const Glyph = readerIcons[name];
   if (Glyph) return h(Glyph, { size, trigger: 'none', style: {
-    '--kd-b': 'color-mix(in srgb, currentColor 40%, transparent)', transform: name === 'dockRight' ? 'scaleX(-1)' : undefined,
+    '--kd-b': 'color-mix(in srgb, currentColor 40%, transparent)',
+    transform: (name === 'dockRight' ? !flip : flip) ? 'scaleX(-1)' : undefined,
   } });
   return h('svg', { viewBox: '0 0 20 20', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5,
     strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true,
+    style: flip ? { transform: 'scaleX(-1)' } : undefined,
   }, h('path', { d: readerIconPaths[name] }));
 }
 
@@ -1962,11 +2176,16 @@ function frameWriter(paint) {
 // handle is being dragged, and hover tracking over the text layer costs one
 // hit test per frame on top of the layout the drag already forces.
 const GESTURE_CLASS = 'elr-gesturing';
+let gestureDepth = 0;
 function gestureStart() {
+  gestureDepth += 1;
   try { document.body.classList.add(GESTURE_CLASS); } catch (_) {}
 }
 function gestureEnd() {
+  gestureDepth = Math.max(0, gestureDepth - 1);
+  if (gestureDepth > 0) return;
   try { document.body.classList.remove(GESTURE_CLASS); } catch (_) {}
+  try { document.dispatchEvent(new CustomEvent('reader-gesture-end')); } catch (_) {}
 }
 
 // (v18 #3) Edge/corner resize for the floating cards. The browser's native
@@ -2096,7 +2315,8 @@ function termPopoverSpace(rect, bounds, card = rect, dock = 'right') {
   const height = Math.min(430, bounds.bottom - bounds.top);
   const centerX = rect.anchorX ?? (rect.left + rect.right) / 2;
   const centerY = rect.anchorY ?? (rect.top + rect.bottom) / 2;
-  const sides = dock === 'bottom' ? ['above', 'left', 'right', 'below'] : ['left', 'right', 'above', 'below'];
+  const sides = dock === 'bottom' ? ['above', 'left', 'right', 'below']
+    : (dock === 'left' ? ['right', 'left', 'above', 'below'] : ['left', 'right', 'above', 'below']);
   const candidates = (target) => {
     const left = Math.max(0, Math.min(width, target.left - gap - bounds.left));
     const right = Math.max(0, Math.min(width, bounds.right - target.right - gap));
@@ -2196,6 +2416,8 @@ function resizeHandles(onPatch, minWidth, minHeight, getBounds, { edges = RESIZE
       const cleanup = () => {
         if (!active) return false;
         active = false;
+        handle.classList.remove('is-resizing');
+        card.classList.remove('is-resizing-edge');
         if (cancelRef?.current === cancel) cancelRef.current = null;
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', finish);
@@ -2232,6 +2454,8 @@ function resizeHandles(onPatch, minWidth, minHeight, getBounds, { edges = RESIZE
         cancel();
       };
       if (cancelRef) cancelRef.current = cancel;
+      handle.classList.add('is-resizing');
+      card.classList.add('is-resizing-edge');
       gestureStart();
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', finish);
@@ -2442,7 +2666,7 @@ function pdfGlyphAt(x, y) {
     range.setStart(node, first);
     range.setEnd(node, end);
     const rect = range.getBoundingClientRect();
-    if (x > rect.left + .25 && x < rect.right - .25 && y >= rect.top && y <= rect.bottom) return { node, first, end };
+    if (x >= rect.left - .5 && x <= rect.right + .5 && y >= rect.top - 1.5 && y <= rect.bottom + 1.5) return { node, first, end };
   }
   return null;
 }
@@ -2478,6 +2702,682 @@ function termContextFromText(source, term) {
   const offset = source.toLowerCase().indexOf(term.toLowerCase());
   return offset < 0 ? source.slice(0, 1600).trim() : termContextWindow(source, offset, term.length);
 }
+
+const PAGE_THEME_SWATCHES = {
+  default: 'linear-gradient(135deg, #ffffff 50%, #242a34 50%)',
+  paper: '#f7f3ea',
+  eye: '#f3ecd6',
+  ivory: '#fbf9f3',
+  mist: '#ecf2f8',
+  sage: '#e8f2ea',
+  linen: '#f2ede3',
+  'dark-slate': '#1b2028',
+  'dark-midnight': '#141d2b',
+  'dark-sepia': '#211c17',
+  'dark-forest': '#14211b',
+  'dark-oled': '#0d0f14',
+};
+
+const UI_TONE_SWATCHES = {
+  default: '#191c22',
+  blue: '#d4e5f7',
+  green: '#d5ebdd',
+  amber: '#f4e3c5',
+  pink: '#f5dbe3',
+  'prism-light': 'linear-gradient(135deg, #d7e8ff, #f5d8f0)',
+  navy: '#172235',
+  ink: '#1c2026',
+  forest: '#182821',
+  plum: '#251d31',
+  ember: '#2d1f1b',
+  'prism-dark': 'linear-gradient(135deg, #1d2f52, #3e1f49)',
+  'duo-blue': 'linear-gradient(135deg, #f8fbff 50%, #1c3554 50%)',
+  'duo-orange': 'linear-gradient(135deg, #f5f5f5 50%, #5c3322 50%)',
+  'duo-green': 'linear-gradient(135deg, #faf8f2 50%, #234232 50%)',
+  'duo-purple': 'linear-gradient(135deg, #f4f3f8 50%, #382a52 50%)',
+};
+
+const ALBUM_DEFAULT_INTERVAL_SEC = 5;
+const ALBUM_HEAD_HIDE_MS = 2600;
+
+function albumFileUrl(folderPath, fileName) {
+  return 'litreader://app/album-file?folder=' + encodeURIComponent(folderPath) + '&name=' + encodeURIComponent(fileName);
+}
+
+const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, intervalSec, open, floatingHost, toneCls, header, onSaveAlbum }) {
+  const [state, setState] = React.useState({ folder: '', images: [], status: 'idle' });
+  const [index, setIndex] = React.useState(0);
+  const [headVisible, setHeadVisible] = React.useState(false);
+  const [picker, setPicker] = React.useState(null);
+  const hideTimerRef = React.useRef(null);
+  const pressingRef = React.useRef(false);
+
+  const clearHideTimer = React.useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+  }, []);
+
+  const availableSet = React.useMemo(() => new Set(state.images), [state.images]);
+  const activeImages = React.useMemo(() => {
+    if (!state.images.length) return [];
+    const chosen = Array.isArray(selectedImages) ? selectedImages.filter((name) => availableSet.has(name)) : [];
+    return chosen.length > 0 ? chosen : state.images;
+  }, [availableSet, selectedImages, state.images]);
+
+  const resolvedFolder = state.folder || folder;
+  const hasPhotos = open && Boolean(resolvedFolder) && activeImages.length > 0;
+
+  const scheduleAutoHide = React.useCallback(() => {
+    clearHideTimer();
+    if (!hasPhotos || pressingRef.current) return;
+    hideTimerRef.current = setTimeout(() => {
+      hideTimerRef.current = null;
+      setHeadVisible(false);
+    }, ALBUM_HEAD_HIDE_MS);
+  }, [clearHideTimer, hasPhotos]);
+
+  const revealHead = React.useCallback(() => {
+    if (!hasPhotos) return;
+    setHeadVisible(true);
+    scheduleAutoHide();
+  }, [hasPhotos, scheduleAutoHide]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setState((prev) => ({ folder: folder || prev.folder, images: prev.folder === (folder || prev.folder) ? prev.images : [], status: 'loading' }));
+    const readerApi = window.reader;
+    if (!readerApi?.listAlbumFolder) {
+      setState({ folder: folder || '', images: [], status: folder ? 'unauthorized' : 'idle' });
+      return undefined;
+    }
+    readerApi.listAlbumFolder(folder || '').then((result) => {
+      if (cancelled) return;
+      if (result?.unauthorized) {
+        setState({ folder: folder || '', images: [], status: 'unauthorized' });
+        return;
+      }
+      if (result?.missing) {
+        setState({ folder: folder || '', images: [], status: 'missing' });
+        return;
+      }
+      const images = Array.isArray(result?.images) ? result.images : [];
+      const actualFolder = result?.path || folder || '';
+      setState({ folder: actualFolder, images, status: actualFolder ? 'ready' : 'idle' });
+      setIndex(0);
+    }).catch(() => {
+      if (!cancelled) setState({ folder: folder || '', images: [], status: folder ? 'missing' : 'idle' });
+    });
+    return () => { cancelled = true; };
+  }, [folder]);
+
+  React.useEffect(() => {
+    setIndex(0);
+  }, [activeImages]);
+
+  React.useEffect(() => {
+    clearHideTimer();
+    if (!hasPhotos) {
+      setHeadVisible(true);
+      return undefined;
+    }
+    setHeadVisible(false);
+    return undefined;
+  }, [clearHideTimer, hasPhotos]);
+
+  React.useEffect(() => clearHideTimer, [clearHideTimer]);
+
+  React.useEffect(() => {
+    if (!hasPhotos || activeImages.length <= 1) return undefined;
+    const rawSec = Number(intervalSec);
+    const delayMs = (Number.isFinite(rawSec) ? Math.min(60, Math.max(1, Math.round(rawSec))) : ALBUM_DEFAULT_INTERVAL_SEC) * 1000;
+    const id = setInterval(() => {
+      setIndex((prev) => (prev + 1) % activeImages.length);
+    }, delayMs);
+    return () => clearInterval(id);
+  }, [activeImages.length, hasPhotos, intervalSec]);
+
+  React.useEffect(() => {
+    if (!picker) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setPicker(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [picker]);
+
+  const chooseFolder = async (event, insidePicker = false) => {
+    event?.stopPropagation?.();
+    const currentPath = (insidePicker ? picker?.folder : '') || state.folder || folder || '';
+    const chosen = await window.reader?.chooseAlbumFolder?.(currentPath);
+    if (!chosen?.path) return;
+    const images = Array.isArray(chosen.images) ? chosen.images : [];
+    if (images.length > 0) {
+      setPicker({ folder: chosen.path, images, selected: [] });
+      return;
+    }
+    if (insidePicker) {
+      setPicker({ folder: chosen.path, images: [], selected: [] });
+      return;
+    }
+    setState({ folder: chosen.path, images: [], status: chosen.missing ? 'missing' : 'ready' });
+    setIndex(0);
+    onSaveAlbum(chosen.path, []);
+  };
+
+  const openPickerForCurrent = (event) => {
+    event?.stopPropagation?.();
+    const currentFolder = state.folder || folder;
+    if (!currentFolder || state.status === 'unauthorized' || state.status === 'missing') {
+      chooseFolder(event);
+      return;
+    }
+    revealHead();
+    const currentValid = Array.isArray(selectedImages) ? selectedImages.filter((n) => availableSet.has(n)) : [];
+    setPicker({ folder: currentFolder, images: state.images, selected: currentValid });
+  };
+
+  const togglePickedPhoto = (name) => {
+    setPicker((prev) => {
+      if (!prev) return prev;
+      const exists = prev.selected.includes(name);
+      return {
+        ...prev,
+        selected: exists ? prev.selected.filter((item) => item !== name) : [...prev.selected, name],
+      };
+    });
+  };
+
+  const confirmPicker = () => {
+    if (!picker) return;
+    const targetFolder = picker.folder;
+    const images = picker.images;
+    const selected = picker.selected.filter((name) => images.includes(name));
+    setState({ folder: targetFolder, images, status: 'ready' });
+    setIndex(0);
+    setPicker(null);
+    onSaveAlbum(targetFolder, selected);
+  };
+
+  const stepPhoto = (delta, event) => {
+    event?.stopPropagation?.();
+    if (!activeImages.length) return;
+    revealHead();
+    setIndex((prev) => (prev + delta + activeImages.length) % activeImages.length);
+  };
+
+  const handlePointerDownCapture = () => {
+    if (!hasPhotos) return;
+    pressingRef.current = true;
+    clearHideTimer();
+    setHeadVisible(true);
+    const release = () => {
+      pressingRef.current = false;
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointercancel', release);
+      scheduleAutoHide();
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+  };
+
+  const activeName = hasPhotos ? activeImages[index % activeImages.length] : '';
+  const photoUrl = activeName ? albumFileUrl(resolvedFolder, activeName) : '';
+
+  let emptyTitle = '选择照片文件夹';
+  let emptyActionLabel = '选择文件夹';
+  if (folder) {
+    if (state.status === 'loading') emptyTitle = '正在读取文件夹照片…';
+    else if (state.status === 'unauthorized' || state.status === 'missing') {
+      emptyTitle = state.status === 'missing' ? '原文件夹已移动或不可访问' : '需要重新授权照片文件夹';
+      emptyActionLabel = '重新选择文件夹';
+    } else if (!state.images.length) {
+      emptyTitle = '该文件夹内暂无支持的图片';
+      emptyActionLabel = '更换文件夹';
+    }
+  }
+
+  const pickerNode = picker && floatingHost ? createPortal(h('div', {
+    className: 'elr-album-picker-backdrop' + (toneCls || ''),
+    onClick: () => setPicker(null),
+  },
+    h('div', {
+      className: 'elr-album-picker',
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-label': '选择相册照片',
+      onClick: (e) => e.stopPropagation(),
+    },
+      h('div', { className: 'elr-album-picker-head' },
+        h('h3', { className: 'elr-album-picker-title' }, '选择相册照片'),
+        h('span', { className: 'elr-album-picker-path', title: picker.folder }, picker.folder),
+        h('button', {
+          type: 'button',
+          className: 'elr-btn',
+          onClick: (e) => chooseFolder(e, true),
+        }, '更换文件夹')
+      ),
+      h('div', { className: 'elr-album-picker-bar' },
+        h('span', null, '共 ' + picker.images.length + ' 张照片 · ' + (picker.selected.length ? '已选 ' + picker.selected.length + ' 张' : '当前未选择（将轮播全部照片）')),
+        h('button', {
+          type: 'button',
+          className: 'elr-btn',
+          disabled: !picker.selected.length,
+          onClick: () => setPicker((prev) => (prev ? { ...prev, selected: [] } : prev)),
+        }, '清空选择（轮播全部）')
+      ),
+      picker.images.length ? h('div', { className: 'elr-album-picker-grid' },
+        picker.images.map((name) => {
+          const picked = picker.selected.includes(name);
+          return h('button', {
+            key: name,
+            type: 'button',
+            className: 'elr-album-thumb',
+            'aria-pressed': picked,
+            onClick: () => togglePickedPhoto(name),
+          },
+            h('img', {
+              src: albumFileUrl(picker.folder, name),
+              alt: name,
+              className: 'elr-album-thumb-img',
+              loading: 'lazy',
+              decoding: 'async',
+              draggable: false,
+            }),
+            h('span', { className: 'elr-album-thumb-check', 'aria-hidden': true }, picked ? '✓' : ''),
+            h('span', { className: 'elr-album-thumb-name', title: name }, name)
+          );
+        })
+      ) : h('div', { className: 'elr-album-picker-grid' },
+        h(EmptyState, {
+          size: 'card',
+          icon: 'image',
+          title: '该文件夹内暂无支持的图片',
+          primaryAction: { label: '更换文件夹', onClick: (e) => chooseFolder(e, true) },
+        })
+      ),
+      h('div', { className: 'elr-album-picker-foot' },
+        h('span', { className: 'elr-album-picker-foot-hint' }, '可点选单张或多张图片；不选则轮播整个文件夹'),
+        h('div', { className: 'elr-album-picker-actions' },
+          h('button', { type: 'button', className: 'elr-btn', onClick: () => setPicker(null) }, '取消'),
+          h('button', { type: 'button', className: 'elr-btn primary', onClick: confirmPicker }, '确定')
+        )
+      )
+    )
+  ), floatingHost) : null;
+
+  return h('div', {
+    className: 'elr-album-card' + (hasPhotos ? ' has-photos' : '') + (hasPhotos && !headVisible ? ' is-head-hidden' : ''),
+    onPointerDownCapture: handlePointerDownCapture,
+    onClickCapture: revealHead,
+    onFocusCapture: revealHead,
+  },
+    header,
+    hasPhotos ? h('div', { className: 'elr-album-stage elr-card-fold-content', inert: !open },
+      h('img', {
+        key: photoUrl,
+        src: photoUrl,
+        alt: activeName,
+        className: 'elr-album-photo',
+        draggable: false,
+      }),
+      h('div', { className: 'elr-album-hud', onClick: (e) => e.stopPropagation() },
+        h('span', { className: 'elr-album-hud-count' }, ((index % activeImages.length) + 1) + ' / ' + activeImages.length),
+        activeImages.length > 1 ? h('button', {
+          type: 'button', className: 'elr-album-hud-btn', title: '上一张', 'aria-label': '上一张',
+          onClick: (e) => stepPhoto(-1, e),
+        }, '‹') : null,
+        activeImages.length > 1 ? h('button', {
+          type: 'button', className: 'elr-album-hud-btn', title: '下一张', 'aria-label': '下一张',
+          onClick: (e) => stepPhoto(1, e),
+        }, '›') : null,
+        h('button', {
+          type: 'button', className: 'elr-album-hud-btn', title: '选择照片 / 文件夹', 'aria-label': '选择照片 / 文件夹',
+          onClick: openPickerForCurrent,
+        }, readerIcon('folderOpen', 13), '选照片')
+      )
+    ) : h('div', { className: 'elr-album-empty elr-card-fold-content', inert: !open },
+      h(EmptyState, {
+        size: 'card',
+        icon: 'image',
+        title: emptyTitle,
+        primaryAction: state.status === 'loading' ? undefined : { label: emptyActionLabel, onClick: chooseFolder },
+      })
+    ),
+    pickerNode
+  );
+});
+
+function ambientUrl(folderPath, fileName) {
+  if (!fileName) return '';
+  if (!folderPath) return 'litreader://app/ambient-file?source=builtin&name=' + encodeURIComponent(fileName);
+  return 'litreader://app/ambient-file?source=custom&folder=' + encodeURIComponent(folderPath) + '&name=' + encodeURIComponent(fileName);
+}
+
+const AmbientAudioChannel = React.memo(function AmbientAudioChannel({ url, volume, loop, playing, onEnded }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const audio = ref.current;
+    if (audio) audio.volume = Math.min(1, Math.max(0, Number(volume) || 0));
+  }, [volume]);
+  React.useEffect(() => {
+    const audio = ref.current;
+    if (!audio || !url) return;
+    if (!playing) {
+      audio.pause();
+      return;
+    }
+    audio.volume = Math.min(1, Math.max(0, Number(volume) || 0));
+    const p = audio.play();
+    if (p?.catch) p.catch(() => {});
+  }, [playing, url]);
+  return h('audio', { ref, src: url, loop, preload: 'auto', onEnded });
+});
+
+const AmbientCard = React.memo(function AmbientCard({ folder, track, mix, playMode, volume, open, header, onUpdate }) {
+  const [state, setState] = React.useState({ folder: '', tracks: [], status: 'loading' });
+  const [playing, setPlaying] = React.useState(false);
+  const [category, setCategory] = React.useState('all');
+  const [query, setQuery] = React.useState('');
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setState((prev) => ({ folder: folder || '', tracks: prev.folder === (folder || '') ? prev.tracks : [], status: 'loading' }));
+    const readerApi = window.reader;
+    if (!readerApi?.listAmbientTracks) {
+      setState({ folder: folder || '', tracks: [], status: 'unauthorized' });
+      return undefined;
+    }
+    readerApi.listAmbientTracks(folder || '').then((result) => {
+      if (cancelled) return;
+      if (result?.unauthorized) {
+        setState({ folder: folder || '', tracks: [], status: 'unauthorized' });
+        return;
+      }
+      if (result?.missing) {
+        setState({ folder: folder || '', tracks: [], status: 'missing' });
+        return;
+      }
+      const tracks = Array.isArray(result?.tracks) ? result.tracks : [];
+      setState({ folder: folder ? (result?.path || folder) : '', tracks, status: 'ready' });
+      setCategory('all');
+    }).catch(() => {
+      if (!cancelled) setState({ folder: folder || '', tracks: [], status: 'missing' });
+    });
+    return () => { cancelled = true; };
+  }, [folder]);
+
+  const tracks = state.tracks;
+  const tracksByName = React.useMemo(() => new Map(tracks.map((item) => [item.name, item])), [tracks]);
+  const mixMap = mix && typeof mix === 'object' ? mix : {};
+  const activeMixEntries = React.useMemo(() => {
+    const valid = Object.entries(mixMap).filter(([name]) => tracksByName.has(name));
+    if (valid.length > 0) return valid;
+    return [];
+  }, [mixMap, tracksByName]);
+
+  const masterVolume = Number.isFinite(Number(volume)) ? Math.min(1, Math.max(0, Number(volume))) : 0.8;
+  const isRandomSingle = playMode === 'random' && activeMixEntries.length <= 1;
+  const activeTrackName = activeMixEntries[0]?.[0] || (tracksByName.has(track) ? track : tracks[0]?.name || '');
+
+  const chooseFolder = async (event) => {
+    event?.stopPropagation?.();
+    const chosen = await window.reader?.chooseAmbientFolder?.(folder || '');
+    if (!chosen?.path) return;
+    const nextTracks = Array.isArray(chosen.tracks) ? chosen.tracks : [];
+    const first = nextTracks[0]?.name || '';
+    setState({ folder: chosen.path, tracks: nextTracks, status: chosen.missing ? 'missing' : 'ready' });
+    setCategory('all');
+    setQuery('');
+    onUpdate({
+      ambientFolder: chosen.path,
+      ambientTrack: first,
+      ambientMix: first ? { [first]: 0.65 } : {},
+    });
+  };
+
+  const resetBuiltin = (event) => {
+    event?.stopPropagation?.();
+    setCategory('all');
+    setQuery('');
+    onUpdate({
+      ambientFolder: '',
+      ambientTrack: 'nature/campfire.mp3',
+      ambientMix: { 'nature/campfire.mp3': 0.65 },
+    });
+  };
+
+  const toggleTrack = (name) => {
+    const next = { ...mixMap };
+    if (name in next) {
+      delete next[name];
+      const remaining = Object.keys(next);
+      onUpdate({ ambientMix: next, ambientTrack: remaining[0] || track });
+      if (!remaining.length) setPlaying(false);
+    } else {
+      next[name] = 0.65;
+      onUpdate({ ambientMix: next, ambientTrack: name });
+      setPlaying(true);
+    }
+  };
+
+  const setTrackVolume = (name, value) => {
+    const clamped = Math.min(1, Math.max(0.05, Number(value) || 0.65));
+    onUpdate({ ambientMix: { ...mixMap, [name]: clamped } });
+  };
+
+  const togglePlayAll = () => {
+    if (playing) {
+      setPlaying(false);
+      return;
+    }
+    if (!activeMixEntries.length && tracks.length) {
+      const seed = tracksByName.has(track) ? track : tracks[0].name;
+      onUpdate({ ambientMix: { ...mixMap, [seed]: 0.65 }, ambientTrack: seed });
+    }
+    setPlaying(true);
+  };
+
+  const triggerRandomMix = () => {
+    if (!tracks.length) return;
+    const count = tracks.length === 1 ? 1 : (tracks.length >= 3 ? (Math.random() < 0.5 ? 2 : 3) : 2);
+    const pool = [...tracks];
+    const picked = {};
+    for (let i = 0; i < count && pool.length; i++) {
+      const idx = Math.floor(Math.random() * pool.length);
+      const [chosen] = pool.splice(idx, 1);
+      picked[chosen.name] = Number((0.4 + Math.random() * 0.45).toFixed(2));
+    }
+    const keys = Object.keys(picked);
+    onUpdate({ ambientMix: picked, ambientTrack: keys[0] || '' });
+    setPlaying(true);
+  };
+
+  const handleEnded = (endedName) => {
+    if (!playing || !tracks.length) return;
+    if (playMode === 'random') {
+      const idx = tracks.findIndex((item) => item.name === endedName);
+      const nextIdx = pickNextAmbientIndex(tracks.length, Math.max(0, idx), 'random');
+      const nextItem = tracks[nextIdx];
+      if (nextItem) {
+        onUpdate({
+          ambientTrack: nextItem.name,
+          ambientMix: { [nextItem.name]: mixMap[endedName] ?? 0.65 },
+        });
+      }
+    }
+  };
+
+  const categories = React.useMemo(() => {
+    const seen = new Map();
+    for (const item of tracks) {
+      if (item.category && item.category !== 'custom' && !seen.has(item.category)) {
+        seen.set(item.category, item.categoryLabel || item.category);
+      }
+    }
+    return [...seen.entries()];
+  }, [tracks]);
+
+  const visibleTracks = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return tracks.filter((item) => {
+      if (category === 'active' && !(item.name in mixMap)) return false;
+      if (category !== 'all' && category !== 'active' && item.category !== category) return false;
+      if (q && !item.title.toLowerCase().includes(q) && !item.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [tracks, category, query, mixMap]);
+
+  const sourceLabel = folder
+    ? (folder.split(/[/\\]/).filter(Boolean).at(-1) || folder)
+    : 'SoftEcho 白噪音 (' + tracks.length + ')';
+
+  const trackIcon = (item) => {
+    if (item.category === 'rain' || /rain/i.test(item.name)) return readerIcon('rain', 14);
+    if (/wave|ocean|river|water|waterfall/i.test(item.name)) return readerIcon('waves', 14);
+    return readerIcon('audio', 14);
+  };
+
+  let emptyTitle = '暂无支持播放的音频';
+  let emptyAction = { label: '打开文件夹', onClick: chooseFolder };
+  if (state.status === 'loading') emptyTitle = '正在读取音频列表…';
+  else if (state.status === 'unauthorized' || state.status === 'missing') {
+    emptyTitle = state.status === 'missing' ? '原文件夹已移动或不可访问' : '需要重新授权音频文件夹';
+    emptyAction = { label: '重新选择文件夹', onClick: chooseFolder };
+  }
+
+  return h('div', { className: 'elr-ambient-card' },
+    header,
+    activeMixEntries.map(([name, trackVol]) => h(AmbientAudioChannel, {
+      key: (folder || 'builtin') + '::' + name,
+      url: ambientUrl(folder ? (state.folder || folder) : '', name),
+      volume: masterVolume * trackVol,
+      loop: !isRandomSingle,
+      playing,
+      onEnded: () => handleEnded(name),
+    })),
+    h('div', { className: 'elr-ambient-body elr-card-fold-content', inert: !open },
+      h('div', { className: 'elr-ambient-source' },
+        h('span', { className: 'elr-ambient-source-name', title: folder || '内置 SoftEcho 白噪音库（assets/sounds）' },
+          sourceLabel + (activeMixEntries.length ? ' · 已混音 ' + activeMixEntries.length : '')
+        ),
+        activeMixEntries.length ? h('button', {
+          type: 'button', className: 'elr-btn',
+          onClick: () => { setPlaying(false); onUpdate({ ambientMix: {} }); },
+        }, '清空') : null,
+        folder ? h('button', { type: 'button', className: 'elr-btn', onClick: resetBuiltin }, '内置') : null,
+        h('button', { type: 'button', className: 'elr-btn', onClick: chooseFolder }, '打开文件夹')
+      ),
+      tracks.length > 6 ? h('div', { className: 'elr-ambient-search' },
+        readerIcon('search', 13),
+        h('input', {
+          type: 'search',
+          value: query,
+          placeholder: '筛选白噪音（如：雨、烤火、图书馆）…',
+          'aria-label': '筛选白噪音',
+          onChange: (e) => setQuery(e.target.value),
+        })
+      ) : null,
+      categories.length > 1 || activeMixEntries.length > 0 ? h('div', { className: 'elr-ambient-cats', role: 'tablist', 'aria-label': '白噪音分类' },
+        h('button', {
+          type: 'button', className: 'elr-ambient-cat', 'aria-pressed': category === 'all',
+          onClick: () => setCategory('all'),
+        }, '全部'),
+        h('button', {
+          type: 'button', className: 'elr-ambient-cat', 'aria-pressed': category === 'active',
+          onClick: () => setCategory('active'),
+        }, '已开启 (' + activeMixEntries.length + ')'),
+        categories.map(([catId, catLabel]) => h('button', {
+          key: catId, type: 'button', className: 'elr-ambient-cat', 'aria-pressed': category === catId,
+          onClick: () => setCategory(catId),
+        }, catLabel))
+      ) : null,
+      tracks.length ? (visibleTracks.length ? h('div', { className: 'elr-ambient-grid' },
+        visibleTracks.map((item) => {
+          const active = item.name in mixMap;
+          const trackVol = active ? mixMap[item.name] : 0.65;
+          const isPlaying = active && playing;
+          return h('div', {
+            key: item.name,
+            className: 'elr-ambient-tile' + (active ? ' is-active' : '') + (isPlaying ? ' is-playing' : ''),
+          },
+            h('button', {
+              type: 'button',
+              className: 'elr-ambient-track',
+              'aria-pressed': active,
+              onClick: () => toggleTrack(item.name),
+            },
+              trackIcon(item),
+              h('span', { className: 'elr-ambient-track-title', title: item.title }, item.title),
+              h('span', { className: 'elr-ambient-dot', 'aria-hidden': true })
+            ),
+            active ? h('div', { className: 'elr-ambient-tile-vol' },
+              h('input', {
+                type: 'range',
+                min: 0.05,
+                max: 1,
+                step: 0.05,
+                value: trackVol,
+                'aria-label': item.title + ' 音量',
+                onChange: (e) => setTrackVolume(item.name, e.target.value),
+              }),
+              h('span', null, Math.round(trackVol * 100) + '%')
+            ) : null
+          );
+        })
+      ) : h(EmptyState, {
+        size: 'card',
+        icon: 'search',
+        title: category === 'active' ? '当前尚未开启任何白噪音' : '没有匹配的白噪音',
+      })) : h(EmptyState, {
+        size: 'card',
+        icon: 'sliders',
+        title: emptyTitle,
+        primaryAction: state.status === 'loading' ? undefined : (folder ? { label: '恢复内置', onClick: resetBuiltin } : emptyAction),
+      }),
+      h('div', { className: 'elr-ambient-controls' },
+        h('button', {
+          type: 'button',
+          className: 'elr-ambient-play',
+          disabled: !tracks.length,
+          onClick: togglePlayAll,
+        }, readerIcon(playing ? 'pause' : 'play', 13), playing ? '暂停' : '播放'),
+        h('button', {
+          type: 'button',
+          className: 'elr-ambient-mode',
+          disabled: !tracks.length,
+          title: playMode === 'random' ? '切换为循环混音' : '切换为单曲随机',
+          onClick: () => onUpdate({ ambientMode: playMode === 'random' ? 'single' : 'random' }),
+        }, readerIcon(playMode === 'random' ? 'shuffle' : 'repeat', 13), playMode === 'random' ? '随机播放' : '循环混音'),
+        h('button', {
+          type: 'button',
+          className: 'elr-ambient-mode',
+          disabled: !tracks.length,
+          title: '随机组合多种白噪音同时播放',
+          onClick: triggerRandomMix,
+        }, '随机混音'),
+        h('label', { className: 'elr-ambient-vol' },
+          readerIcon('volume', 13),
+          h('input', {
+            type: 'range',
+            min: 0,
+            max: 1,
+            step: 0.02,
+            value: masterVolume,
+            'aria-label': '白噪音总音量',
+            'aria-valuetext': Math.round(masterVolume * 100) + '%',
+            onChange: (e) => onUpdate({ ambientVolume: Number(e.target.value) }),
+          }),
+          h('output', { 'aria-hidden': true }, Math.round(masterVolume * 100) + '%')
+        )
+      )
+    )
+  );
+});
 
 function isPdf(file) {
   if (!file) return false;
@@ -2516,8 +3416,11 @@ function Reader(props) {
   const [dualSideWidth, setDualSideWidth] = useShared('dualSideWidth');
   const [sideHeight, setSideHeight] = useShared('sideHeight');
   const [dock, setDock] = useShared('dock');
+  const [sideDock] = useShared('sideDock');
+  const isLeftSide = dock !== 'bottom' && sideDock === 'left';
   const [panMode, setPanMode] = useShared('panMode');
   const [spreadMode, setSpreadMode] = useShared('spreadMode');
+  const [pdfOffsetX, setPdfOffsetX] = useShared('pdfOffsetX');
   const [capsulePosition] = useShared('capsulePosition');
   const [theme, setTheme] = useShared('theme');
   // (v40) Reader chrome tint (淡蓝 / 淡绿), independent from `theme` above.
@@ -2525,6 +3428,7 @@ function Reader(props) {
   // Floating cards also need the tone when the portal host is under document.body.
   const toneCls = uiTone === 'default' ? '' : ' elr-tone-' + uiTone;
   const [popupOn, setPopupOn] = useShared('popupOn');
+  const [autoTranslatePaper] = useShared('autoTranslatePaper');
   const [paperId, setPaperId] = useShared('paperId');
   // (v8 #6) Height of the upper side block, so the selection card and the
   // translation/analysis area can be sized independently.
@@ -2558,6 +3462,18 @@ function Reader(props) {
   const [selectionCardOpen] = useShared('selectionCardOpen');
   // (v32 #1) Per-card widths for the side-by-side bottom dock only. `{}` means
   // "no override", which falls back to an even split of the row.
+  const [albumOpen] = useShared('albumOpen');
+  const [albumFolder] = useShared('albumFolder');
+  const [albumImages] = useShared('albumImages');
+  const [albumInterval, setAlbumInterval] = useShared('albumInterval');
+  const rawAlbumInterval = Number(albumInterval);
+  const albumIntervalSec = Number.isFinite(rawAlbumInterval) ? Math.min(60, Math.max(1, Math.round(rawAlbumInterval))) : ALBUM_DEFAULT_INTERVAL_SEC;
+  const [ambientOpen] = useShared('ambientOpen');
+  const [ambientFolder] = useShared('ambientFolder');
+  const [ambientTrack] = useShared('ambientTrack');
+  const [ambientMix] = useShared('ambientMix');
+  const [ambientMode] = useShared('ambientMode');
+  const [ambientVolume] = useShared('ambientVolume');
   const [cardWidths, setCardWidths] = useShared('cardWidths');
   // (v38) Per-card heights for the stacked right dock only. `{}` means "no
   // override", which falls back to the even share introduced in v37.
@@ -2566,6 +3482,7 @@ function Reader(props) {
   const cardFontSize = Math.max(CARD_FONT_MIN, Math.min(CARD_FONT_MAX, Number(cardFont) || CARD_FONT_DEFAULT));
   const cardFontAdjust = (cardFontSize - CARD_FONT_DEFAULT) + 'px';
   const cardFontMenuId = React.useId();
+  const themeMenuId = React.useId();
   const [cardMaxHeight, setCardMaxHeight] = React.useState(displayCardHeightLimit);
   const [featureColumns, setFeatureColumns] = useShared('featureColumns');
   const dualColumns = dock === 'right' && Number(featureColumns) === 2;
@@ -2711,6 +3628,22 @@ function Reader(props) {
   const [noteBubble, setNoteBubble] = React.useState(null);
   const noteBubbleRef = React.useRef(noteBubble);
   noteBubbleRef.current = noteBubble;
+  const noteBubbleElement = React.useRef(null);
+  const noteBubbleMotion = React.useRef(null);
+  const noteBubbleTrigger = React.useRef(null);
+  React.useLayoutEffect(() => {
+    const trigger = noteBubbleTrigger.current;
+    const node = noteBubbleElement.current;
+    if (!trigger || !node) return;
+    noteBubbleTrigger.current = null;
+    noteBubbleMotion.current = animateSelectionSurface(node, trigger.rect, trigger.keyboard, false, noteBubbleMotion.current);
+  }, [noteBubble]);
+  React.useLayoutEffect(() => {
+    if (selectionTools || popup || noteBubble) {
+      document.dispatchEvent(new CustomEvent('reader-glass-sync'));
+    }
+  }, [Boolean(selectionTools), Boolean(popup), Boolean(noteBubble)]);
+  React.useEffect(() => () => noteBubbleMotion.current?.cancel(), []);
   const [popupLayout, setPopupLayout] = useShared('popupLayout');
   const popupHorizontal = popupLayout === 'side-by-side';
   const summaryInfoId = React.useId();
@@ -2720,6 +3653,8 @@ function Reader(props) {
   const cardGestureCancelRef = React.useRef(null);
   const cardPositionsBeforeMove = React.useRef(null);
   const cardMoveAnimations = React.useRef(new Map());
+  const floatingSettleRef = React.useRef(null);
+  const floatingSettleAnimRef = React.useRef(null);
   // (v32 #3) Same idea for the two live-resize handles below: the pending pixel
   // size is written to the element during the gesture and only committed to
   // shared state on pointerup, so one drag re-renders once instead of ~60 times.
@@ -2871,8 +3806,46 @@ function Reader(props) {
     return () => {
       for (const animation of running.values()) animation.cancel();
       running.clear();
+      floatingSettleAnimRef.current?.cancel();
+      floatingSettleAnimRef.current = null;
     };
   }, []);
+
+  // Animate a floating card expanding back from its dragged capsule into full window size.
+  React.useLayoutEffect(() => {
+    const pending = floatingSettleRef.current;
+    if (!pending || ghost) return;
+    floatingSettleRef.current = null;
+    if (reduceMotion()) return;
+    const node = floatingHost.querySelector('[data-elr-floating-card="' + pending.key + '"]');
+    if (!node) return;
+    const to = node.getBoundingClientRect();
+    const { from } = pending;
+    if (!to.width || !to.height || !from?.w || !from?.h) return;
+    floatingSettleAnimRef.current?.cancel();
+    const fromScale = from.scale ?? 0.92;
+    const fromX = from.x + (from.w * (1 - fromScale)) / 2;
+    const fromY = from.y + (from.h * (1 - fromScale)) / 2;
+    const dx = fromX - to.left;
+    const dy = fromY - to.top;
+    const sx = (from.w * fromScale) / Math.max(1, to.width);
+    const sy = (from.h * fromScale) / Math.max(1, to.height);
+    const animation = node.animate([
+      {
+        opacity: 0.9,
+        transformOrigin: 'top left',
+        transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(' + sx + ',' + sy + ')',
+      },
+      {
+        opacity: 1,
+        transformOrigin: 'top left',
+        transform: 'translate3d(0,0,0) scale(1, 1)',
+      },
+    ], { duration: 200, easing: 'cubic-bezier(.22, 1, .36, 1)' });
+    floatingSettleAnimRef.current = animation;
+    animation.onfinish = () => { if (floatingSettleAnimRef.current === animation) floatingSettleAnimRef.current = null; };
+    animation.oncancel = () => { if (floatingSettleAnimRef.current === animation) floatingSettleAnimRef.current = null; };
+  }, [floatingCards, ghost]);
   // (v8 #3) Formula explanation card: { x, y, text, body, busy }.
   const [formulaCard, setFormulaCard] = React.useState(null);
   const formulaRunRef = React.useRef(null);
@@ -4413,6 +5386,7 @@ function Reader(props) {
     pdfTextJobRef.current = null;
     const s = pdfStateRef.current;
     s?.resize?.disconnect();
+    s?.dispose?.();
     const task = pdfLoadingTaskRef.current;
     pdfLoadingTaskRef.current = null;
     pdfDocRef.current = null;
@@ -4471,13 +5445,29 @@ function Reader(props) {
         enableDetailCanvas: window.reader?.platform !== 'darwin' && window.devicePixelRatio <= 1.5,
       });
       linkService.setViewer(viewer);
-      const state = { eventBus, linkService, viewer, V, pdfjsLib, container, fitPage: false, updatingFit: false };
-      state.resize = new ResizeObserver(() => {
+      const state = { eventBus, linkService, viewer, V, pdfjsLib, container, fitPage: false, updatingFit: false, pendingResize: false, pageOps: new WeakMap() };
+      const applyContainerResize = () => {
         if (!viewer.pdfDocument || !container.clientWidth || !container.clientHeight) return;
+        state.pendingResize = false;
         if (state.fitPage) fitPdfPage(state);
         viewer.update();
+      };
+      state.resize = new ResizeObserver(() => {
+        if (!viewer.pdfDocument || !container.clientWidth || !container.clientHeight) return;
+        // Defer expensive PDF re-scaling and canvas invalidation until pane/card
+        // resize gestures end so dragging the divider stays responsive.
+        if (document.body.classList.contains(GESTURE_CLASS)) {
+          state.pendingResize = true;
+          return;
+        }
+        applyContainerResize();
       });
       state.resize.observe(container);
+      const onGestureEnd = () => {
+        if (state.pendingResize) applyContainerResize();
+      };
+      document.addEventListener('reader-gesture-end', onGestureEnd);
+      state.dispose = () => document.removeEventListener('reader-gesture-end', onGestureEnd);
       eventBus.on('pagechanging', (e) => {
         if (e?.pageNumber) pdfReading.onOriginalPage(e.pageNumber);
       });
@@ -4491,6 +5481,22 @@ function Reader(props) {
       // (v13 #1) ONE coalesced decoration pass for a burst of per-page events,
       // instead of a full-document pass per page per event.
       eventBus.on('textlayerrendered', (event) => {
+        const pageView = event?.source;
+        const pageEl = pageView?.div;
+        const pdfPage = pageView?.pdfPage;
+        if (pageEl && pdfPage) {
+          let opsPromise = state.pageOps.get(pdfPage);
+          if (!opsPromise) {
+            opsPromise = pdfPage.getOperatorList().catch(() => null);
+            state.pageOps.set(pdfPage, opsPromise);
+          }
+          opsPromise.then((operators) => {
+            if (pdfStateRef.current !== state || !pageEl.isConnected || !operators) return;
+            if (alignPageTextLayer(pageEl, operators, pdfjsLib.OPS, pdfPage.getViewport({ scale: 1 }))) {
+              scheduleDecorateRef.current();
+            }
+          });
+        }
         scheduleDecorateRef.current();
         const pending = findScrollRef.current;
         if (pending && event && pending.page === event.pageNumber) pending.scroll();
@@ -5953,11 +6959,12 @@ function Reader(props) {
       closeTranslationPopup();
       const layout = selectionTranslationLayout(rect, draft, NOTE_POPUP_MIN.h);
       setSelectionTools({ ...tools, position: layout.position });
-      setNoteBubble({ ...draft, ...layout.box, anchorRange: tools.range });
+      setNoteBubble({ ...draft, ...layout.box, anchorRange: tools.range, sourceRange: tools.range });
     } else setNoteBubble(draft);
   };
   const closeNoteBubble = () => {
-    const range = noteBubbleRef.current?.anchorRange;
+    noteBubbleTrigger.current = null;
+    const range = noteBubbleRef.current?.anchorRange || noteBubbleRef.current?.sourceRange;
     if (range) setSelectionTools((tools) => tools?.range === range ? { ...tools, position: selectionToolLayout(tools.rect) } : tools);
     setNoteBubble(null);
   };
@@ -6212,6 +7219,7 @@ function Reader(props) {
     const capture = readerRef.current;
     if (!card || !capture) return;
     const initial = card.getBoundingClientRect();
+    const isFloating = card.hasAttribute('data-elr-floating-card');
     const pointer = event.pointerId;
     const startX = event.clientX;
     const startY = event.clientY;
@@ -6241,37 +7249,52 @@ function Reader(props) {
     const grabY = clampPopup(offsetY / sourceCapsule.h, 0, 1);
     const containsPoint = (rect, x, y) => Boolean(rect
       && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom);
-    const dragLocation = (x, y) => {
+    let dragCache = null;
+    const buildDragCache = () => {
       const panel = workspaceStowed ? null : sideTopElRef.current;
-      const inDock = containsPoint(panel?.getBoundingClientRect(), x, y);
+      const panelRect = panel ? panel.getBoundingClientRect() : null;
+      const columns = panel ? [...panel.querySelectorAll('.elr-feature-column')].map((colNode) => {
+        const colRect = colNode.getBoundingClientRect();
+        const scrollLeft = colNode.scrollLeft;
+        const scrollTop = colNode.scrollTop;
+        const candidates = [...colNode.querySelectorAll('[data-elr-docked-card]')]
+          .filter((node) => node.dataset.elrDockedCard !== key)
+          .map((node) => {
+            const start = bottomDock
+              ? colRect.left + node.offsetLeft - scrollLeft
+              : colRect.top + node.offsetTop - scrollTop;
+            const span = bottomDock ? node.offsetWidth : node.offsetHeight;
+            return { key: node.dataset.elrDockedCard, start, end: start + span, mid: start + span / 2 };
+          });
+        return { column: Number(colNode.dataset.featureColumn), rect: colRect, candidates };
+      }) : [];
+      dragCache = { panel, panelRect, columns };
+      return dragCache;
+    };
+    const dragLocation = (x, y) => {
+      const { panel, panelRect } = dragCache || buildDragCache();
+      const inDock = containsPoint(panelRect, x, y);
       const vertical = bottomDock && inDock;
       const capsule = vertical ? verticalCapsule : horizontalCapsule;
       // Lift the dragged item off the list so it never hides the landing gap:
-      // above a horizontal row, or pulled aside and shrunk to 90% in a vertical list.
-      const liftX = inDock && !bottomDock ? -18 : 0;
+      // above a horizontal row, pulled aside and shrunk to 90% in a vertical list,
+      // or shrunk gently when carrying a floating card over the reading page.
+      const liftX = inDock && !bottomDock ? (sideDock === 'left' ? 18 : -18) : 0;
       const liftY = inDock && bottomDock ? -26 : 0;
-      const scale = inDock && !bottomDock ? 0.9 : 1;
+      const scale = inDock ? (bottomDock ? 1 : 0.9) : 0.92;
       const box = fitPopupBox({ ...capsule, x: x - grabX * capsule.w + liftX, y: y - grabY * capsule.h + liftY }, bounds);
       return { panel, inDock, vertical, scale, box };
     };
     const dockAt = (x, y, { panel, inDock }) => {
       if (!panel || !inDock) return null;
-      const columns = [...panel.querySelectorAll('.elr-feature-column')];
-      const featureColumn = columns.find((node) => x <= node.getBoundingClientRect().right) || columns.at(-1);
-      if (!featureColumn) return null;
-      const column = Number(featureColumn.dataset.featureColumn);
+      const { columns } = dragCache || buildDragCache();
+      const colInfo = columns.find((item) => x <= item.rect.right) || columns.at(-1);
+      if (!colInfo) return null;
+      const { column, rect: columnBounds, candidates } = colInfo;
       const position = bottomDock ? x : y;
-      const candidates = [...featureColumn.querySelectorAll('[data-elr-docked-card]')]
-        .filter((node) => node.dataset.elrDockedCard !== key);
-      // Hit testing uses stable layout coordinates (offsetLeft/offsetTop) so sibling ripples never cause jitter.
-      const columnBounds = featureColumn.getBoundingClientRect();
       let gapIndex = candidates.length;
       for (let i = 0; i < candidates.length; i += 1) {
-        const node = candidates[i];
-        const midpoint = bottomDock
-          ? columnBounds.left + node.offsetLeft - featureColumn.scrollLeft + node.offsetWidth / 2
-          : columnBounds.top + node.offsetTop - featureColumn.scrollTop + node.offsetHeight / 2;
-        if (position < midpoint) {
+        if (position < candidates[i].mid) {
           gapIndex = i;
           break;
         }
@@ -6284,19 +7307,11 @@ function Reader(props) {
       if (candidates.length > 0) {
         const prevNode = gapIndex > 0 ? candidates[gapIndex - 1] : null;
         const nextNode = gapIndex < candidates.length ? candidates[gapIndex] : null;
-        if (bottomDock) {
-          const prevEnd = prevNode ? columnBounds.left + prevNode.offsetLeft - featureColumn.scrollLeft + prevNode.offsetWidth : null;
-          const nextStart = nextNode ? columnBounds.left + nextNode.offsetLeft - featureColumn.scrollLeft : null;
-          const lineX = prevEnd != null && nextStart != null ? (prevEnd + nextStart) / 2
-            : prevEnd != null ? prevEnd + 4 : nextStart - 4;
-          lineRect = { x: lineX - 1, y: columnBounds.top + 8, w: 2, h: Math.max(24, columnBounds.height - 16), vertical: true };
-        } else {
-          const prevEnd = prevNode ? columnBounds.top + prevNode.offsetTop - featureColumn.scrollTop + prevNode.offsetHeight : null;
-          const nextStart = nextNode ? columnBounds.top + nextNode.offsetTop - featureColumn.scrollTop : null;
-          const lineY = prevEnd != null && nextStart != null ? (prevEnd + nextStart) / 2
-            : prevEnd != null ? prevEnd + 4 : nextStart - 4;
-          lineRect = { x: columnBounds.left + 8, y: lineY - 1, w: Math.max(24, columnBounds.width - 16), h: 2, vertical: false };
-        }
+        const pos = prevNode && nextNode ? (prevNode.end + nextNode.start) / 2
+          : prevNode ? prevNode.end + 4 : nextNode.start - 4;
+        lineRect = bottomDock
+          ? { x: pos - 1, y: columnBounds.top + 8, w: 2, h: Math.max(24, columnBounds.height - 16), vertical: true }
+          : { x: columnBounds.left + 8, y: pos - 1, w: Math.max(24, columnBounds.width - 16), h: 2, vertical: false };
       } else {
         lineRect = bottomDock
           ? { x: columnBounds.left + 8, y: columnBounds.top + 8, w: 2, h: Math.max(24, columnBounds.height - 16), vertical: true }
@@ -6306,7 +7321,7 @@ function Reader(props) {
         column,
         gapIndex,
         origin: false,
-        target: (candidates[gapIndex] || candidates.at(-1))?.dataset.elrDockedCard,
+        target: (candidates[gapIndex] || candidates.at(-1))?.key,
         after: gapIndex >= candidates.length,
         lineRect,
       };
@@ -6316,10 +7331,20 @@ function Reader(props) {
     let hover = null;
     let previewVertical;
     let lastBox = null;
+    let lastScale = 1;
+    let shrinkClone = null;
+    let shrinkAnim = null;
+    const stopShrink = () => {
+      shrinkAnim?.cancel();
+      shrinkAnim = null;
+      shrinkClone?.remove();
+      shrinkClone = null;
+    };
     const painter = frameWriter(({ x, y }) => {
       const location = dragLocation(x, y);
       const { vertical, scale, box } = location;
       lastBox = box;
+      lastScale = scale;
       const next = dockAt(x, y, location);
       if (next?.column !== hover?.column || next?.origin !== hover?.origin
         || next?.gapIndex !== hover?.gapIndex || next?.target !== hover?.target || next?.after !== hover?.after) {
@@ -6336,10 +7361,11 @@ function Reader(props) {
       }
       preview.style.transform = 'translate3d(' + box.x + 'px,' + box.y + 'px,0) scale(' + scale + ')';
     });
-    const cleanup = (settledBox = null) => {
+    const cleanup = (settledBox = null, docked = false) => {
       if (cardGestureCancelRef.current !== cleanup) return;
       cardGestureCancelRef.current = null;
       painter.cancel();
+      stopShrink();
       document.body.classList.remove('elr-card-dragging');
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', finish);
@@ -6349,7 +7375,11 @@ function Reader(props) {
       capture.removeEventListener('lostpointercapture', cancel);
       try { if (capture.hasPointerCapture?.(pointer)) capture.releasePointerCapture(pointer); } catch (_) {}
       if (started) {
-        rememberCardPositions(key, true, settledBox || lastBox);
+        const settleSource = settledBox || lastBox;
+        if (!docked && isFloating && settleSource) {
+          floatingSettleRef.current = { key, from: { ...settleSource, scale: lastScale } };
+        }
+        rememberCardPositions(key, true, settleSource);
         gestureEnd();
         setGhost(null);
         setCardDrop(null);
@@ -6366,6 +7396,48 @@ function Reader(props) {
         setTermBubble(null);
         const location = dragLocation(x, y);
         lastBox = location.box;
+        lastScale = location.scale;
+        if (isFloating && !reduceMotion() && initial.height > CARD_HEADER_HEIGHT + 8) {
+          const clone = card.cloneNode(true);
+          clone.classList.remove('dragging', 'is-resizing-edge');
+          clone.setAttribute('aria-hidden', 'true');
+          clone.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
+          Object.assign(clone.style, {
+            position: 'fixed',
+            left: initial.left + 'px',
+            top: initial.top + 'px',
+            width: initial.width + 'px',
+            height: initial.height + 'px',
+            margin: '0',
+            zIndex: '199',
+            pointerEvents: 'none',
+            overflow: 'hidden',
+            contain: 'layout style paint',
+            backdropFilter: 'none',
+            transformOrigin: 'top left',
+            willChange: 'transform, opacity',
+          });
+          floatingHost.appendChild(clone);
+          shrinkClone = clone;
+          const destX = location.box.x + (location.box.w * (1 - location.scale)) / 2;
+          const destY = location.box.y + (location.box.h * (1 - location.scale)) / 2;
+          const dx = destX - initial.left;
+          const dy = destY - initial.top;
+          const sx = (location.box.w * location.scale) / Math.max(1, initial.width);
+          const sy = (location.box.h * location.scale) / Math.max(1, initial.height);
+          shrinkAnim = clone.animate([
+            {
+              opacity: 1,
+              transform: 'translate3d(0,0,0) scale(1, 1)',
+            },
+            {
+              opacity: 0,
+              transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(' + sx + ',' + sy + ')',
+            },
+          ], { duration: 170, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'forwards' });
+          shrinkAnim.onfinish = stopShrink;
+        }
+        dragCache = buildDragCache();
         hover = dockAt(x, y, location);
         rememberCardPositions(key);
         setCardDrop(hover);
@@ -6378,6 +7450,7 @@ function Reader(props) {
       const { clientX: x, clientY: y } = e;
       const inside = x >= 0 && y >= 0 && x <= window.innerWidth && y <= window.innerHeight;
       let settledBox = null;
+      let docked = false;
       if (started && inside) {
         const location = dragLocation(x, y);
         const { box } = location;
@@ -6386,13 +7459,15 @@ function Reader(props) {
         const readingPane = readingSpaceRef.current ?? capture.querySelector('.elr-main');
         const expand = !location.inDock && containsPoint(readingPane?.getBoundingClientRect(), x, y);
         if (target && !expand) {
+          docked = true;
           if (!target.origin) dockFunctionCard(key, target.target, target.after, columnCount === 2 ? target.column : null);
         } else if (expand) {
           const placed = placeFunctionCard({ ...size, x: box.x, y: box.y }, (open || expand) && !compactCards[key], bounds);
+          floatingSettleRef.current = { key, from: { ...box, scale: location.scale } };
           floatFunctionCard(key, { ...size, x: placed.x, y: placed.y }, bounds, open, expand);
         }
       }
-      cleanup(settledBox);
+      cleanup(settledBox, docked);
       if (!started && onTap && handle.isConnected) {
         const target = handle.getBoundingClientRect();
         if (x >= target.left && x <= target.right && y >= target.top && y <= target.bottom) onTap();
@@ -6482,6 +7557,8 @@ function Reader(props) {
     const up = () => {
       if (!active) return;
       active = false;
+      grip.classList.remove('is-resizing');
+      card.classList.remove('is-resizing-edge');
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
@@ -6492,6 +7569,8 @@ function Reader(props) {
       else setSideWidth(Math.round(pending));
     };
     try { document.body.style.userSelect = 'none'; } catch (_) {}
+    grip.classList.add('is-resizing');
+    card.classList.add('is-resizing-edge');
     gestureStart();
     try { grip.setPointerCapture(event.pointerId); } catch (_) {}
     window.addEventListener('pointermove', move);
@@ -6564,6 +7643,8 @@ function Reader(props) {
       window.removeEventListener('blur', cancel);
       grip.removeEventListener('lostpointercapture', interrupt);
       if (frame) window.cancelAnimationFrame(frame);
+      grip.classList.remove('is-resizing');
+      card.classList.remove('is-resizing-edge');
       scroller.classList.remove('is-resizing-card');
       gestureEnd();
       return true;
@@ -6585,6 +7666,8 @@ function Reader(props) {
       cleanup();
     };
     cardGestureCancelRef.current = cancel;
+    grip.classList.add('is-resizing');
+    card.classList.add('is-resizing-edge');
     scroller.classList.add('is-resizing-card');
     gestureStart();
     try { grip.setPointerCapture(pointerId); } catch (_) {}
@@ -6606,7 +7689,9 @@ function Reader(props) {
             : key === 'summary' ? t('tab.summary')
               : key === 'references' ? t('references.title')
                 : key === 'figure' ? t('figure.title')
-                  : '阅读助手'
+                  : key === 'album' ? '相册'
+                    : key === 'ambient' ? '白噪音'
+                      : '阅读助手'
   );
   const enabledCards = CARD_KEYS.filter((key) => Array.isArray(cards) && cards.indexOf(key) !== -1);
   const setCardEnabled = (key, on) => {
@@ -6825,7 +7910,7 @@ function Reader(props) {
         left: Math.max(cardBox.left, stripRect.left), right: Math.min(cardBox.right, stripRect.right),
         top: Math.max(cardBox.top, stripRect.top), bottom: Math.min(cardBox.bottom, stripRect.bottom),
       };
-      const fit = termPopoverSpace(rect, bounds, cardRect, dock);
+      const fit = termPopoverSpace(rect, bounds, cardRect, isLeftSide ? 'left' : dock);
       if (fit.width < 60 || fit.maxHeight < 36) { closeTermBubble(); return; }
       bubble.style.width = fit.width + 'px';
       bubble.style.maxHeight = fit.maxHeight + 'px';
@@ -7029,7 +8114,10 @@ function Reader(props) {
       try { handle.setPointerCapture(event.pointerId); } catch (_) {}
       event.preventDefault();
     };
-    const pointerSize = (event) => sizeAt(drag.limits.start + drag.origin - coordinate(event), drag.limits);
+    const pointerSize = (event) => sizeAt(
+      drag.limits.start + (coordinate(event) - drag.origin) * (isLeftSide ? 1 : -1),
+      drag.limits,
+    );
     const move = (event) => {
       if (drag && event.pointerId === drag.id) painter.push(pointerSize(event));
     };
@@ -7065,8 +8153,8 @@ function Reader(props) {
         event.preventDefault();
         return;
       }
-      const towardReader = bottom ? 'ArrowUp' : 'ArrowLeft';
-      const awayFromReader = bottom ? 'ArrowDown' : 'ArrowRight';
+      const towardReader = bottom ? 'ArrowUp' : (isLeftSide ? 'ArrowRight' : 'ArrowLeft');
+      const awayFromReader = bottom ? 'ArrowDown' : (isLeftSide ? 'ArrowLeft' : 'ArrowRight');
       if (drag || ![towardReader, awayFromReader, 'Home', 'End'].includes(event.key)) return;
       const limits = readLimits();
       if (!limits) return;
@@ -7098,7 +8186,7 @@ function Reader(props) {
       window.removeEventListener('blur', cancel);
       window.removeEventListener('resize', onViewportResize);
     };
-  }, [dock, dualColumns, hasPaper, workspaceStowed]);
+  }, [dock, sideDock, dualColumns, hasPaper, workspaceStowed]);
 
   // (v8 #6) Splitter between the upper side block (selection card + movable
   // sections) and the translation/analysis area. Without it the two halves
@@ -7224,7 +8312,12 @@ function Reader(props) {
           disabled: !hasPdf,
           onChange: (e) => setTheme(e.target.value),
         },
-          PAGE_THEMES.map((key) => h('option', { key, value: key }, t('theme.' + key)))
+          h('optgroup', { label: t('theme.light') },
+            LIGHT_PAGE_THEMES.map((key) => h('option', { key, value: key }, t('theme.' + key)))
+          ),
+          h('optgroup', { label: t('theme.dark') },
+            DARK_PAGE_THEMES.map((key) => h('option', { key, value: key }, t('theme.' + key)))
+          )
         ))
       : null,
     settingsRow('tone', t('tone.label'), h('select', {
@@ -7232,7 +8325,6 @@ function Reader(props) {
       value: uiTone,
       onChange: (e) => setUiTone(e.target.value),
     },
-      h('option', { value: 'default' }, t('tone.default')),
       Object.entries(UI_TONES).map(([group, tones]) => h('optgroup', { key: group, label: t('tone.' + group) },
         tones.map((tone) => h('option', { key: tone, value: tone }, t('tone.' + tone)))
       ))
@@ -7244,7 +8336,15 @@ function Reader(props) {
     settingsRow('popup', t('popup.label'), settingsSeg('popup', [
       { value: 'off', label: t('popup.offShort') },
       { value: 'on', label: t('popup.onShort') },
-    ], popupOn ? 'on' : 'off', (next) => setPopupOn(next === 'on')))
+    ], popupOn ? 'on' : 'off', (next) => setPopupOn(next === 'on'))),
+    settingsRow('albumInterval', '相册轮播', h('span', { className: 'elr-settings-range' },
+      h('input', {
+        type: 'range', min: 1, max: 60, step: 1, value: albumIntervalSec,
+        'aria-label': '相册轮播时长', 'aria-valuetext': albumIntervalSec + ' 秒',
+        onChange: (e) => setAlbumInterval(Number(e.target.value)),
+      }),
+      h('output', null, albumIntervalSec + 's')
+    ))
   );
   // (v46) The single "appearance" entry point: one button plus, while open,
   // the panel directly beneath it. The panel lives INSIDE the button's span
@@ -7430,6 +8530,22 @@ function Reader(props) {
           h('button', { type: 'button', className: 'elr-btn', disabled: !showOriginalPdf,
             title: t('spread.label'), onClick: () => choosePdfOption(() => setSpreadMode((value) => (Number(value) + 1) % 3)),
           }, t('spread.label') + ' · ' + t(['spread.one', 'spread.two', 'spread.three'][spreadMode])),
+          showOriginalPdf ? h('div', { className: 'elr-reader-offset' },
+            h('label', null,
+              h('span', null, '页面左右位置'),
+              h('output', null, !pdfOffsetX ? '居中' : ((pdfOffsetX < 0 ? '左移 ' : '右移 ') + Math.abs(pdfOffsetX) + '%')),
+              h('input', {
+                type: 'range', min: -100, max: 100, step: 2, value: pdfOffsetX || 0,
+                'aria-label': '页面左右位置',
+                'aria-valuetext': !pdfOffsetX ? '居中' : ((pdfOffsetX < 0 ? '左移 ' : '右移 ') + Math.abs(pdfOffsetX) + '%'),
+                onChange: (event) => setPdfOffsetX(Number(event.target.value)),
+              })
+            ),
+            h('button', {
+              type: 'button', className: 'elr-btn', disabled: !pdfOffsetX,
+              onClick: () => setPdfOffsetX(0),
+            }, '居中复位')
+          ) : null,
           h('button', { type: 'button', className: 'elr-btn', onClick: () => choosePdfOption(toggleFullscreen) }, fullscreenLabel)
         )
       )
@@ -7476,7 +8592,8 @@ function Reader(props) {
         + (spreadMode === 2 ? ' elr-three' : '')
         + (figurePicking ? ' elr-picking-figure' : ''),
       'data-elr-page-theme': theme === 'default' ? undefined : theme,
-      style: { display: previewMode === 'native' ? 'none' : '' },
+      'data-elr-page-dark': DARK_PAGE_THEMES.includes(theme) ? 'true' : undefined,
+      style: { display: previewMode === 'native' ? 'none' : '', '--elr-pdf-offset-x': String(pdfOffsetX || 0) },
       'aria-hidden': !showOriginalPdf || undefined,
       inert: !showOriginalPdf,
     }, h('div', { ref: viewerElRef, className: 'pdfViewer' }), originalMedia.hover ? h(OriginalPdfMediaAction, {
@@ -7495,6 +8612,7 @@ function Reader(props) {
       nativeLayer,
       pdfAnalysisReady && paperId ? h(PdfTranslations, {
         key: paperId + ':' + dropSeq, paper: paperId, page: pageNum, pageCount, mode: pdfReading.mode,
+        autoTranslatePaper,
         target: pdfReading.target, selectedParagraph: pdfReading.selectedParagraph,
         surfaceRef: compareSurface, loadBlocks: pdfReading.loadBlocks, getChapter: pdfReading.getChapter,
         getAssets: pdfReading.getAssets, hover: pdfReading.hover, onHover: pdfReading.setHover,
@@ -7616,12 +8734,14 @@ function Reader(props) {
   const main = h('div', { className: 'elr-main' },
     mode === 'pdf' ? h('div', { ref: readingSpaceRef, className: 'elr-reading-space', 'data-reading-mode': pdfReading.mode,
       'data-capsule-position': hasPdf ? capsulePosition : undefined,
+      'data-tools-side': isLeftSide ? 'right' : 'left',
       style: { '--elr-original-width': pdfReading.ratio + '%' } },
       mainContent,
       readingCapsule,
       readingTools,
-      pdfAnalysisReady && pdfReading.outlineOpen ? h(PdfOutline, {
-        key: paperId, id: outlineId, nodes: pdfReading.outline.nodes, current: pdfReading.current, status: pdfReading.outline.status,
+      pdfAnalysisReady ? h(PdfOutline, {
+        key: paperId, id: outlineId, open: pdfReading.outlineOpen,
+        nodes: pdfReading.outline.nodes, current: pdfReading.current, status: pdfReading.outline.status,
         onJump: pdfReading.jump, onRetry: pdfReading.loadOutline,
       }) : null,
     ) : mainContent
@@ -8281,17 +9401,47 @@ function Reader(props) {
     onModelChange: setAgentModel, onModelSettings: openModelSettings,
     renderAnswer: (answer, source) => renderMarkdown(answer, (inline) => renderInline(inline, source)),
   }) : h('div', { className: 'elr-out elr-out-empty' }, '请先打开 PDF。');
+  const saveAlbumConfig = React.useCallback((nextFolder, nextImages) => {
+    writeShared({ albumFolder: nextFolder, albumImages: nextImages });
+  }, []);
+  const saveAmbientConfig = React.useCallback((patch) => {
+    writeShared(patch);
+  }, []);
+  const albumCard = h(AlbumCard, {
+    folder: albumFolder,
+    selectedImages: albumImages,
+    intervalSec: albumIntervalSec,
+    open: albumOpen,
+    floatingHost,
+    toneCls,
+    header: cardHeader('album', albumOpen),
+    onSaveAlbum: saveAlbumConfig,
+  });
+  const ambientCard = h(AmbientCard, {
+    folder: ambientFolder,
+    track: ambientTrack,
+    mix: ambientMix,
+    playMode: ambientMode,
+    volume: ambientVolume,
+    open: ambientOpen,
+    header: cardHeader('ambient', ambientOpen),
+    onUpdate: saveAmbientConfig,
+  });
   const cardNodes = {
     selection: selCard, recent: recentSection, terms: termsSection, marks: marksSection,
     summary: analysisCard('summary', summaryPanel, summaryActions),
     references: analysisCard('references', referencesPanel, referencesActions),
     figure: analysisCard('figure', figurePanel),
     agent: analysisCard('agent', agentPanel),
+    album: albumCard,
+    ambient: ambientCard,
   };
   const openCards = {
     selection: selectionCardOpen, recent: recentOpen, marks: marksOpen, terms: termsOpen,
     summary: analysisOpen.summary, references: analysisOpen.references,
     figure: analysisOpen.figure, agent: analysisOpen.agent,
+    album: albumOpen,
+    ambient: ambientOpen,
   };
   const compactCards = {
     selection: !hasSelectionDraft && !selection && !selectionResult && !selectionBusy,
@@ -8302,6 +9452,8 @@ function Reader(props) {
     references: !references.length && !referencesBusy && !pdfTextBusy,
     figure: !figureEntries.length && !figureStatus,
     agent: mode !== 'pdf' || !paperId,
+    album: false,
+    ambient: false,
   };
   const dockedCards = functionCardOrder(sectionOrder).filter((key) => enabledCards.includes(key) && !floatingCards[key]);
   const floatingCardNodes = hasPaper && ownsCardWindows ? enabledCards.filter((key) => floatingCards[key]).map((key) => {
@@ -8401,7 +9553,7 @@ function Reader(props) {
   const allDockedCardsCollapsed = dockedCards.length > 0 && dockedCards.every((key) => !openCards[key]);
   const bulkCardLabel = allDockedCardsCollapsed ? '展开所有卡片' : '缩小所有卡片';
   const otherDock = dock === 'bottom' ? 'right' : 'bottom';
-  const switchDockLabel = t('dock.switch', { side: t('dock.' + otherDock + 'Short') });
+  const switchDockLabel = otherDock === 'bottom' ? '切换到页面下方' : ('切换到页面' + (sideDock === 'left' ? '左侧' : '右侧'));
   const columnCount = dualColumns ? 2 : 1;
   const cardColumns = Array.from({ length: columnCount }, () => []);
   const workspaceCards = dockedCards.map((key, index) => {
@@ -8432,9 +9584,9 @@ function Reader(props) {
   },
     h('div', { className: 'elr-col-head elr-card-head elr-workspace-head' },
       h('span', null, t('cards.title')),
-      h('button', { type: 'button', className: 'elr-card-control', 'data-tour': 'dock', title: switchDockLabel, 'aria-label': switchDockLabel, onClick: () => setDock(otherDock) }, readerIcon(otherDock === 'right' ? 'dockRight' : 'dockBottom')),
+      h('button', { type: 'button', className: 'elr-card-control', 'data-tour': 'dock', title: switchDockLabel, 'aria-label': switchDockLabel, onClick: () => setDock(otherDock) }, readerIcon(otherDock === 'right' ? 'dockRight' : 'dockBottom', 20, sideDock === 'left')),
       dock === 'right' ? h('button', { type: 'button', className: 'elr-card-control', 'data-tour': 'columns', title: columnCount === 1 ? '切换为两列' : '切换为一列', 'aria-label': columnCount === 1 ? '切换为两列' : '切换为一列', onClick: () => setFeatureColumns(columnCount === 1 ? 2 : 1) }, h(LayoutIcon, { name: columnCount === 1 ? 'workspaceTwoColumns' : 'workspaceOneColumn' })) : null,
-      h('button', { type: 'button', className: 'elr-card-control', title: '卡片字号', 'aria-label': '卡片字号',
+      h('button', { type: 'button', className: 'elr-card-control', 'data-tour': 'font', title: '卡片字号', 'aria-label': '卡片字号',
         'aria-haspopup': 'dialog', popoverTarget: cardFontMenuId }, readerIcon('font')),
       h('div', { id: cardFontMenuId, className: 'elr-reader-options elr-card-font-menu', role: 'dialog', 'aria-label': '卡片字号', popover: 'auto' },
         h('label', null,
@@ -8446,12 +9598,56 @@ function Reader(props) {
         h('button', { type: 'button', className: 'elr-btn', disabled: cardFontSize === CARD_FONT_DEFAULT,
           onClick: () => setCardFont(CARD_FONT_DEFAULT) }, '恢复默认')
       ),
+      h('button', { type: 'button', className: 'elr-card-control', 'data-tour': 'theme', title: '主题配色', 'aria-label': '主题配色',
+        'aria-haspopup': 'dialog', popoverTarget: themeMenuId }, readerIcon('palette')),
+      h('div', { id: themeMenuId, className: 'elr-reader-options elr-theme-menu', role: 'dialog', 'aria-label': '主题配色', popover: 'auto' },
+        h('div', { className: 'elr-theme-menu-group' },
+          h('div', { className: 'elr-theme-menu-label' }, t('theme.label')),
+          h('div', { className: 'elr-theme-menu-sublabel' }, t('theme.light')),
+          h('div', { className: 'elr-theme-chip-grid' },
+            LIGHT_PAGE_THEMES.map((key) => h('button', {
+              key,
+              type: 'button',
+              className: 'elr-theme-chip',
+              disabled: !hasPdf,
+              'aria-pressed': theme === key,
+              onClick: () => setTheme(key),
+            }, h('span', { className: 'elr-theme-swatch', 'aria-hidden': true, style: { '--elr-swatch': PAGE_THEME_SWATCHES[key] } }), t('theme.' + key)))
+          ),
+          h('div', { className: 'elr-theme-menu-sublabel' }, t('theme.dark')),
+          h('div', { className: 'elr-theme-chip-grid' },
+            DARK_PAGE_THEMES.map((key) => h('button', {
+              key,
+              type: 'button',
+              className: 'elr-theme-chip',
+              disabled: !hasPdf,
+              'aria-pressed': theme === key,
+              onClick: () => setTheme(key),
+            }, h('span', { className: 'elr-theme-swatch', 'aria-hidden': true, style: { '--elr-swatch': PAGE_THEME_SWATCHES[key] } }), t('theme.' + key)))
+          )
+        ),
+        h('div', { className: 'elr-theme-menu-group' },
+          h('div', { className: 'elr-theme-menu-label' }, t('tone.label')),
+          Object.entries(UI_TONES).map(([group, tones]) => h(React.Fragment, { key: group },
+            h('div', { className: 'elr-theme-menu-sublabel' }, t('tone.' + group)),
+            h('div', { className: 'elr-theme-chip-grid' },
+              tones.map((tone) => h('button', {
+                key: tone,
+                type: 'button',
+                className: 'elr-theme-chip',
+                'aria-pressed': uiTone === tone,
+                onClick: () => setUiTone(tone),
+              }, h('span', { className: 'elr-theme-swatch', 'aria-hidden': true, style: { '--elr-swatch': UI_TONE_SWATCHES[tone] } }), t('tone.' + tone)))
+            )
+          ))
+        )
+      ),
       h('span', { className: 'elr-spacer' }),
-      h('button', { type: 'button', className: 'elr-card-control',
+      h('button', { type: 'button', className: 'elr-card-control', 'data-tour': 'bulk',
         title: bulkCardLabel, 'aria-label': bulkCardLabel, disabled: !dockedCards.length,
         onClick: () => setDockedCardsOpen(allDockedCardsCollapsed),
       }, readerIcon(allDockedCardsCollapsed ? 'expand' : 'collapse')),
-      h('button', { type: 'button', className: 'elr-card-control', title: '卡片布局',
+      h('button', { type: 'button', className: 'elr-card-control', 'data-tour': 'layout', title: '卡片布局',
         'aria-label': '卡片布局', 'aria-haspopup': 'dialog', popoverTarget: layoutMenuId,
       }, readerIcon('layout')),
       h('div', { ref: layoutMenuRef, id: layoutMenuId, className: 'elr-reader-options elr-card-layout-menu',
@@ -8472,10 +9668,10 @@ function Reader(props) {
       h('button', { type: 'button', className: 'elr-btn elr-save-layout', onClick: saveCardLayout }, '保存布局'),
       layoutLimitReached ? h('div', { className: 'elr-card-layout-limit', role: 'status' }, '自定义布局已达上限（3 个）。') : null
       ),
-      h('button', { type: 'button', ref: cardMenuButtonRef, className: 'elr-card-control' + (cardMenuOpen ? ' active' : ''), title: t('card.manage'), 'aria-label': t('card.manage'), 'aria-haspopup': 'dialog', 'aria-expanded': cardMenuOpen, onClick: (e) => { e.stopPropagation(); setCardMenuOpen((v) => !v); } }, readerIcon('settings')),
-      h('button', { type: 'button', ref: workspaceCloseRef, className: 'elr-card-control',
+      h('button', { type: 'button', ref: cardMenuButtonRef, className: 'elr-card-control' + (cardMenuOpen ? ' active' : ''), 'data-tour': 'manage', title: t('card.manage'), 'aria-label': t('card.manage'), 'aria-haspopup': 'dialog', 'aria-expanded': cardMenuOpen, onClick: (e) => { e.stopPropagation(); setCardMenuOpen((v) => !v); } }, readerIcon('settings')),
+      h('button', { type: 'button', ref: workspaceCloseRef, className: 'elr-card-control', 'data-tour': 'stow',
         title: t('cards.stow'), 'aria-label': t('cards.stow'), 'aria-controls': workspaceId, onClick: toggleWorkspace,
-      }, readerIcon(dock === 'bottom' ? 'stowBottom' : 'stowRight'))
+      }, readerIcon(dock === 'bottom' ? 'stowBottom' : 'stowRight', 20, isLeftSide))
     ),
     h('div', { className: 'elr-side-body elr-feature-grid', 'data-columns': String(columnCount),
       style: { '--elr-card-max-height': cardMaxHeight + 'px', '--elr-card-font-adjust': cardFontAdjust },
@@ -8649,7 +9845,17 @@ function Reader(props) {
         onClick: () => finishMark(() => addHighlight(text, color, anchors)),
       }, h('span', { 'aria-hidden': true }))),
       h('span', { className: 'elr-selection-divider', 'aria-hidden': true }),
-      actionButton('note', t('mark.badgeNote'), () => addNote(text, rect, selectionTools)),
+      actionButton('note', t('mark.badgeNote'), (event) => {
+        const trigger = { rect: event.currentTarget.getBoundingClientRect(), keyboard: !event.detail };
+        if (noteBubbleRef.current && (noteBubbleRef.current.sourceRange === selectionTools.range || noteBubbleRef.current.anchorRange === selectionTools.range)) {
+          const node = noteBubbleElement.current;
+          if (node) noteBubbleMotion.current = animateSelectionSurface(node, trigger.rect, trigger.keyboard, true, noteBubbleMotion.current);
+          closeNoteBubble();
+          return;
+        }
+        noteBubbleTrigger.current = trigger;
+        addNote(text, rect, selectionTools);
+      }, { 'aria-pressed': Boolean(noteBubble && (noteBubble.sourceRange === selectionTools.range || noteBubble.anchorRange === selectionTools.range)) }),
       actionButton('translate', t('selection.inline'), (event) => {
         const enabled = !popupOn;
         const trigger = { rect: event.currentTarget.getBoundingClientRect(), keyboard: !event.detail };
@@ -8958,6 +10164,8 @@ function Reader(props) {
   const noteNode = noteBubble ? createPortal(
     h('div', {
       className: 'elr-note-bubble elr-resizable' + toneCls,
+      ref: noteBubbleElement,
+      onPointerDownCapture: () => noteBubbleMotion.current?.cancel(),
       // (v18 #3) Edge-resize for the annotation bubble as well, so EVERY floating
       // card can be sized from any border.
       style: {
@@ -9072,7 +10280,8 @@ function Reader(props) {
     floatingHost
   ) : null;
 
-  const bodyClass = 'elr-body' + (dock === 'bottom' ? ' dock-bottom' : '');
+  const bodyClass = 'elr-body' + (dock === 'bottom' ? ' dock-bottom' : (isLeftSide ? ' dock-left' : ''));
+  const bodyPanes = [main, hasPaper && !workspaceStowed ? resizer : null, hasPaper ? side : null];
 
   return h('div', {
     ref: readerRef,
@@ -9092,7 +10301,7 @@ function Reader(props) {
     head,
     h('input', { ref: pdfFileRef, type: 'file', accept: '.pdf,application/pdf', hidden: true, onChange: onPdfFile }),
     h('input', { ref: txtFileRef, type: 'file', accept: '.txt,.md,.text,text/plain', hidden: true, onChange: onTxtFile }),
-    h('div', { className: bodyClass }, main, hasPaper && !workspaceStowed ? resizer : null, hasPaper ? side : null,
+    h('div', { className: bodyClass }, ...bodyPanes,
       hasPaper && workspaceStowed ? h('button', { ref: workspaceTabRef, type: 'button', className: 'elr-workspace-tab',
         title: t('cards.show'), 'aria-controls': workspaceId, 'aria-expanded': false, onClick: toggleWorkspace,
       }, t('cards.title')) : null,
@@ -9257,9 +10466,12 @@ const dictionaries = {
     'recent.hint': 'Double-click to open',
     'mark.noteTitle': 'Note', 'mark.saveNote': 'Save', 'mark.cancelEdit': 'Cancel', 'mark.clearNote': 'Clear note', 'mark.noteCleared': 'Note cleared',
     'theme.label': 'Page theme', 'theme.default': 'Default',
+    'theme.light': 'Light pages', 'theme.dark': 'Dark pages',
     'theme.paper': 'Paper texture', 'theme.eye': 'Eye-care yellow',
     'theme.ivory': 'Soft ivory', 'theme.mist': 'Mist blue', 'theme.sage': 'Pale sage', 'theme.linen': 'Fine linen',
-    'tone.label': 'Interface tone', 'tone.default': 'Dark theme',
+    'theme.dark-slate': 'Slate night', 'theme.dark-midnight': 'Midnight ink',
+    'theme.dark-sepia': 'Warm charcoal', 'theme.dark-forest': 'Deep forest', 'theme.dark-oled': 'Pitch black',
+    'tone.label': 'Interface tone', 'tone.default': 'Slate Night',
     'tone.light': 'Light themes', 'tone.dark': 'Dark themes', 'tone.duo': 'Two-tone themes',
     'tone.duo-blue': 'White & Blue', 'tone.duo-orange': 'Grey & Orange', 'tone.duo-green': 'Oat & Green', 'tone.duo-purple': 'Mist & Purple',
     'tone.blue': 'Rainwashed Blue', 'tone.green': 'Pine Mist', 'tone.amber': 'Autumn Wheat', 'tone.pink': 'Rose Haze', 'tone.prism-light': 'Sunlit Prism',
@@ -9432,9 +10644,12 @@ const dictionaries = {
     'recent.hint': '双击打开',
     'mark.noteTitle': '批注', 'mark.saveNote': '保存', 'mark.cancelEdit': '取消', 'mark.clearNote': '清除批注', 'mark.noteCleared': '已清除批注',
     'theme.label': '页面配色', 'theme.default': '默认',
+    'theme.light': '浅色纸张', 'theme.dark': '深色纸张',
     'theme.paper': '纸张纹理', 'theme.eye': '护眼黄',
     'theme.ivory': '柔白', 'theme.mist': '雾蓝', 'theme.sage': '浅青绿', 'theme.linen': '细麻纹',
-    'tone.label': '界面配色', 'tone.default': '深色主题',
+    'theme.dark-slate': '玄夜深灰', 'theme.dark-midnight': '深夜靛蓝',
+    'theme.dark-sepia': '暖墨褐纸', 'theme.dark-forest': '墨绿夜读', 'theme.dark-oled': '极夜纯黑',
+    'tone.label': '界面配色', 'tone.default': '玄灰夜幕',
     'tone.light': '浅色主题', 'tone.dark': '深色主题', 'tone.duo': '双拼主题',
     'tone.duo-blue': '白蓝', 'tone.duo-orange': '灰橘', 'tone.duo-green': '米绿', 'tone.duo-purple': '雾紫',
     'tone.blue': '雨后天青', 'tone.green': '山间松雾', 'tone.amber': '秋日麦穗', 'tone.pink': '蔷薇薄雾', 'tone.prism-light': '晴光流彩',

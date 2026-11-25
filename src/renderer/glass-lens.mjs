@@ -187,7 +187,7 @@ function createFilter(split) {
 function composited(element) {
   for (let node = element; node && node !== document.body; node = node.parentElement) {
     const style = getComputedStyle(node);
-    if (style.willChange !== 'auto' || style.transform !== 'none' || style.scale !== 'none'
+    if (style.willChange !== 'auto' || style.transform !== 'none' || style.translate !== 'none' || style.scale !== 'none'
         || Number(style.opacity) < 1 || style.filter !== 'none') return true;
   }
   return false;

@@ -44,13 +44,29 @@ html:root [data-elr-liquid][data-elr-liquid-ink][data-elr-liquid-strong-labels] 
   background-color: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 82%, transparent);
 }
 
-html:root :is(.elr-reader-capsule, .elr-pdf-outline, .elr-parallel-actions)[data-elr-liquid] {
+html:root :is(.elr-reader-capsule, .elr-parallel-actions)[data-elr-liquid] {
   transition-property: --elr-liquid-density, --elr-liquid-protection, --elr-liquid-brightness,
     --elr-liquid-saturation, --elr-liquid-base, --elr-liquid-primary, --elr-liquid-secondary, --elr-liquid-hover;
   transition-duration: var(--duration-sm), var(--duration-sm), var(--duration-sm), var(--duration-sm),
     var(--duration-sm), var(--duration-sm), var(--duration-sm), var(--duration-feedback);
   transition-timing-function: var(--ease-in-out), var(--ease-in-out), var(--ease-in-out), var(--ease-in-out),
     var(--ease-in-out), var(--ease-in-out), var(--ease-in-out), var(--ease-out);
+}
+html:root .elr-pdf-outline[data-elr-liquid] {
+  transition-property: translate, opacity, visibility, --elr-liquid-density, --elr-liquid-protection, --elr-liquid-brightness,
+    --elr-liquid-saturation, --elr-liquid-base, --elr-liquid-primary, --elr-liquid-secondary, --elr-liquid-hover;
+  transition-duration: 240ms, 200ms, 0s, var(--duration-sm), var(--duration-sm), var(--duration-sm), var(--duration-sm),
+    var(--duration-sm), var(--duration-sm), var(--duration-sm), var(--duration-feedback);
+  transition-timing-function: var(--ease-out-strong), var(--ease-out), linear, var(--ease-in-out), var(--ease-in-out), var(--ease-in-out), var(--ease-in-out),
+    var(--ease-in-out), var(--ease-in-out), var(--ease-in-out), var(--ease-out);
+  transition-delay: 0s;
+}
+html:root .elr-pdf-outline.is-closed[data-elr-liquid] {
+  transition-duration: 210ms, 180ms, 0s, var(--duration-sm), var(--duration-sm), var(--duration-sm), var(--duration-sm),
+    var(--duration-sm), var(--duration-sm), var(--duration-sm), var(--duration-feedback);
+  transition-timing-function: var(--ease-in), var(--ease-in), linear, var(--ease-in-out), var(--ease-in-out), var(--ease-in-out), var(--ease-in-out),
+    var(--ease-in-out), var(--ease-in-out), var(--ease-in-out), var(--ease-out);
+  transition-delay: 0s, 0s, 210ms, 0s, 0s, 0s, 0s, 0s, 0s, 0s, 0s;
 }
 
 [data-elr-liquid] :where(.elr-reader-page, .elr-find-count, .elr-popup-title, .desktop-update > strong) {
@@ -82,7 +98,12 @@ html:root .elr-term-popover[data-elr-liquid]::before {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html:root :is(.elr-reader-capsule, .elr-pdf-outline, .elr-parallel-actions)[data-elr-liquid] { transition: none; }
+  html:root :is(.elr-reader-capsule, .elr-parallel-actions)[data-elr-liquid] { transition: none; }
+  html:root .elr-pdf-outline[data-elr-liquid],
+  html:root .elr-pdf-outline.is-closed[data-elr-liquid] {
+    transition: opacity var(--duration-reduced) linear, visibility 0s linear 0s;
+    transition-delay: 0s;
+  }
 }
 
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {

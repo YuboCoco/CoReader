@@ -6,11 +6,12 @@ const surfaces = {
   '.elr-parallel-actions': .10,
   '.elr-reading-round, .elr-find, .elr-zoom-menu, .elr-reader-options, .elr-settings-panel': 0,
   '.elr-selection-tools, .elr-popup, .elr-note-bubble, .elr-term-popover, .elr-formula-card': 0,
-  '.elr-sec[data-elr-floating-card], .elr-drag-ghost, .elr-card-menu, .elr-menu, .elr-agent-model-menu': 0,
+  '.elr-sec[data-elr-floating-card], .elr-card-menu, .elr-menu, .elr-agent-model-menu': 0,
   '.elr-parallel-status, .elr-workspace-tab, .desktop-update': 0,
   '.pl-dialog, .settings.model-center, .settings.connection-detail, .settings.pdf-password, .report-dialog': 0,
 };
 const modalDialogSelector = '.pl-dialog, .settings.model-center, .settings.connection-detail, .settings.pdf-password, .report-dialog';
+const fixedInkSelector = modalDialogSelector + ', .elr-pdf-outline';
 const surfaceSelector = Object.keys(surfaces).join(', ');
 const materialProperties = ['density', 'brightness', 'saturation', 'protection'];
 const sceneSelector = '.elr-view, .elr-reading-space, .elr-pdf-container, .elr-pdf-wrap, .pl-home, .pdfViewer .page';
@@ -119,8 +120,9 @@ function backgroundSampler() {
   function pdfPixel(page, x, y) {
     const wrapper = page.querySelector('.canvasWrapper');
     if (!wrapper) return null;
-    const paper = cssColor(getComputedStyle(wrapper, '::before').backgroundColor) || white;
-    for (const canvas of wrapper.querySelectorAll('canvas')) {
+    const darkPage = Boolean(wrapper.closest('[data-elr-page-dark]'));
+    const paper = cssColor(getComputedStyle(wrapper, '::before').backgroundColor) || (darkPage ? [27, 32, 40] : white);
+    for (const canvas of wrapper.querySelectorAll('canvas:not(.elr-hl-overlay):not(.elr-find-overlay)')) {
       const rect = canvas.getBoundingClientRect();
       if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom || !canvas.width || !canvas.height) continue;
       try {
@@ -137,7 +139,9 @@ function backgroundSampler() {
         const py = Math.floor((y - rect.top) * preview.height / rect.height);
         const index = (py * preview.width + px) * 4;
         const alpha = preview.data[index + 3] / 255;
-        return paper.map((channel, i) => Math.min(channel, mix(255, preview.data[index + i], alpha)));
+        return darkPage
+          ? paper.map((channel, i) => Math.max(channel, mix(0, 255 - preview.data[index + i], alpha) * .9))
+          : paper.map((channel, i) => Math.min(channel, mix(255, preview.data[index + i], alpha)));
       } catch {
         // PDF.js normally owns a readable canvas. A protected canvas uses the theme fallback.
         thumbnail.width = 1;
@@ -209,6 +213,8 @@ export function installLiquidGlass(readSettings, subscribe) {
   let remembered = {};
   try { remembered = JSON.parse(localStorage.getItem(inkKey)) || {}; } catch {}
   let timer;
+  let scrollTimer;
+  let scrollWindowStart = 0;
   let frame;
   let dirtyInk = false;
   let enabled = false;
@@ -216,11 +222,27 @@ export function installLiquidGlass(readSettings, subscribe) {
   let tone;
   function updateSoon() {
     clearTimeout(timer);
-    timer = null;
+    clearTimeout(scrollTimer);
+    timer = scrollTimer = null;
+    scrollWindowStart = 0;
     if (enabled && !frame) frame = requestAnimationFrame(update);
   }
   function schedule() {
-    if (enabled && !timer && !frame) timer = setTimeout(updateSoon, 80);
+    if (!enabled || timer || frame || document.body.classList.contains('elr-card-dragging')
+      || document.body.classList.contains('elr-gesturing')) return;
+    timer = setTimeout(updateSoon, 80);
+  }
+  function scheduleScroll() {
+    if (!enabled || document.body.classList.contains('elr-card-dragging')
+      || document.body.classList.contains('elr-gesturing')) return;
+    const now = Date.now();
+    if (!scrollWindowStart) scrollWindowStart = now;
+    clearTimeout(scrollTimer);
+    if (now - scrollWindowStart >= 360) {
+      updateSoon();
+      return;
+    }
+    scrollTimer = setTimeout(updateSoon, 150);
   }
   const resize = new ResizeObserver(schedule);
 
@@ -234,8 +256,10 @@ export function installLiquidGlass(readSettings, subscribe) {
 
   function restoreFrostedSurfaces() {
     clearTimeout(timer);
+    clearTimeout(scrollTimer);
     cancelAnimationFrame(frame);
-    timer = frame = null;
+    timer = scrollTimer = frame = null;
+    scrollWindowStart = 0;
     for (const { lens } of active.values()) lens?.clear();
     active.clear();
     resize.disconnect();
@@ -255,6 +279,7 @@ export function installLiquidGlass(readSettings, subscribe) {
 
   function update() {
     frame = null;
+    if (document.body.classList.contains('elr-card-dragging') || document.body.classList.contains('elr-gesturing')) return;
     for (const [surface, state] of active) {
       if (!surface.isConnected || !surface.matches(surfaceSelector) || surface.closest('[data-elr-motion-copy]')) {
         state.lens?.clear();
@@ -270,8 +295,17 @@ export function installLiquidGlass(readSettings, subscribe) {
       // Sample the settled card, keeping its material stable during a fold.
       if (surface.matches('.elr-floating-card[data-elr-folding][data-elr-liquid]')) continue;
       const rect = surface.getBoundingClientRect();
+      if (surface.classList.contains('is-closed')) {
+        if (getComputedStyle(surface).visibility === 'hidden' || rect.bottom <= 0 || rect.right <= 0 || rect.top >= innerHeight || rect.left >= innerWidth) {
+          state.lens?.clear();
+        }
+        continue;
+      }
       if (!rect.width || !rect.height || rect.bottom <= 0 || rect.right <= 0 || rect.top >= innerHeight || rect.left >= innerWidth) {
         state.lens?.clear();
+        continue;
+      }
+      if (surface.classList.contains('elr-pdf-outline') && getComputedStyle(surface).translate !== 'none') {
         continue;
       }
       const scheme = getComputedStyle(surface).colorScheme === 'dark' ? 'dark' : 'light';
@@ -299,12 +333,12 @@ export function installLiquidGlass(readSettings, subscribe) {
     }
 
     for (const { surface, state, scheme, scene, rowInk, previousInk, preferenceKey } of measured) {
-      const isDialog = surface.matches(modalDialogSelector);
+      const fixedInk = surface.matches(fixedInkSelector);
       if (surface.dataset.elrLiquid !== scheme) surface.dataset.elrLiquid = scheme;
-      const material = scene ? glassMaterial(scene, scheme, isDialog ? undefined : (rowInk || previousInk), prefs[scheme], scene.readable, !isDialog) : null;
-      const ink = material?.ink ?? (scheme === 'dark' ? 'light' : 'dark');
+      const material = scene ? glassMaterial(scene, scheme, fixedInk ? undefined : (rowInk || previousInk), prefs[scheme], scene.readable, !fixedInk) : null;
+      const ink = fixedInk ? (scheme === 'dark' ? 'light' : 'dark') : (material?.ink ?? (scheme === 'dark' ? 'light' : 'dark'));
       if (surface.dataset.elrLiquidInk !== ink) surface.dataset.elrLiquidInk = ink;
-      if (!isDialog && scene?.readable && remembered[preferenceKey] !== ink) {
+      if (!fixedInk && scene?.readable && remembered[preferenceKey] !== ink) {
         remembered[preferenceKey] = ink;
         dirtyInk = true;
       }
@@ -359,13 +393,25 @@ export function installLiquidGlass(readSettings, subscribe) {
   });
   settingsChanged();
   subscribe(settingsChanged);
-  document.addEventListener('scroll', schedule, { capture: true, passive: true });
+  document.addEventListener('scroll', scheduleScroll, { capture: true, passive: true });
   document.addEventListener('toggle', updateSoon, true);
   document.addEventListener('transitionend', schedule, true);
   document.addEventListener('transitioncancel', schedule, true);
   document.addEventListener('pointermove', (event) => {
+    if (document.body.classList.contains('elr-card-dragging') || document.body.classList.contains('elr-gesturing')) return;
     if (event.buttons && event.target.closest?.('[data-elr-liquid], .elr-split-handle')) schedule();
   }, { passive: true });
+  document.addEventListener('reader-glass-sync', () => {
+    if (!enabled || document.body.classList.contains('elr-card-dragging')
+      || document.body.classList.contains('elr-gesturing')) return;
+    clearTimeout(timer);
+    clearTimeout(scrollTimer);
+    cancelAnimationFrame(frame);
+    timer = scrollTimer = frame = null;
+    scrollWindowStart = 0;
+    update();
+  });
+  document.addEventListener('reader-gesture-end', schedule);
   document.addEventListener('reader-glass-backdrop', ({ detail }) => {
     if (!enabled) return;
     sampler.refresh(detail);

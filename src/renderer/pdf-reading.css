@@ -77,11 +77,25 @@
 .elr-reader-options {
   position: fixed; inset: auto; margin: 7px 0; position-area: block-end span-inline-start;
   position-try-fallbacks: flip-inline, flip-block, flip-block flip-inline; justify-self: end;
-  width: min(224px, calc(100vw - 20px)); max-height: min(380px, calc(100vh - 20px));
+  width: min(244px, calc(100vw - 20px)); max-height: min(380px, calc(100vh - 20px));
   overflow: auto; padding: 8px; border-radius: var(--radius-md);
 }
 .elr-reader-options:popover-open { display: grid; gap: 5px; }
 .elr-reader-options > .elr-btn { text-align: start; }
+.elr-reader-offset {
+  display: grid; gap: 6px; padding: 7px 8px; border-radius: var(--radius-sm);
+  border: 1px solid var(--dsw-alias-border-l1); background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 55%, transparent);
+}
+.elr-reader-offset > label {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px 8px; font-size: 12px;
+}
+.elr-reader-offset > label > output {
+  color: var(--dsw-alias-label-secondary); font-size: 11.5px; font-variant-numeric: tabular-nums;
+}
+.elr-reader-offset > label > input[type="range"] {
+  grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--dsw-alias-brand-primary); cursor: pointer;
+}
+.elr-reader-offset > .elr-btn { justify-self: start; padding: 4px 10px; font-size: 11.5px; }
 
 .elr-view .elr-reading-space .elr-capsule-popover {
   --elr-menu-motion: var(--elr-menu-close-duration, var(--duration-exit-sm));
@@ -165,9 +179,46 @@
 .elr-pdf-outline {
   --elr-frosted-fill: var(--elr-glass-floating-fill);
   --elr-directory-clearance: calc(var(--elr-reader-edge) + 4 * (var(--elr-tool-size) + var(--elr-tool-gap)));
+  --elr-outline-hidden-x: -100%;
   position: absolute; z-index: 14; inset: var(--elr-reader-edge) auto var(--elr-directory-clearance) 0;
   display: flex; flex-direction: column; width: min(250px, calc(100% - var(--elr-reader-edge)));
   border-radius: 0 var(--radius-lg) var(--radius-lg) 0; overflow: hidden;
+  translate: none;
+  opacity: 1;
+  transition:
+    translate 240ms var(--ease-out-strong, cubic-bezier(.22, 1, .36, 1)),
+    opacity 200ms var(--ease-out, cubic-bezier(0, 0, .58, 1)),
+    visibility 0s linear 0s;
+}
+.elr-pdf-outline.is-closed {
+  translate: var(--elr-outline-hidden-x) 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    translate 210ms var(--ease-in, cubic-bezier(.42, 0, 1, 1)),
+    opacity 180ms var(--ease-in, cubic-bezier(.42, 0, 1, 1)),
+    visibility 0s linear 210ms;
+}
+.elr-reading-space[data-tools-side="right"] > .elr-reading-tools {
+  inset: auto var(--elr-reader-edge) var(--elr-reader-edge) auto;
+  justify-items: end;
+}
+.elr-reading-space[data-tools-side="right"] > .elr-reading-tools .elr-find {
+  flex-direction: row-reverse;
+  clip-path: inset(0 0 0 calc(100% - var(--elr-tool-size)) round 999px);
+}
+.elr-reading-space[data-tools-side="right"] > .elr-reading-tools .elr-find.is-open {
+  clip-path: inset(0 0 0 0 round 999px);
+}
+.elr-reading-space[data-tools-side="right"] > .elr-reading-tools .elr-find-toggle {
+  margin-inline-start: 0;
+  margin-inline-end: -1px;
+}
+.elr-reading-space[data-tools-side="right"] > .elr-pdf-outline {
+  --elr-outline-hidden-x: 100%;
+  inset: var(--elr-reader-edge) 0 var(--elr-directory-clearance) auto;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
 }
 @container elr-reader (max-width: 980px) {
   .elr-pdf-outline { inset-block-start: 60px; }
@@ -178,6 +229,13 @@
     width: min(462px, calc(100% - 24px)); grid-template-columns: repeat(4, var(--elr-tool-size));
   }
   .elr-reading-tools .elr-find.is-open ~ .elr-reading-round { translate: calc(var(--elr-search-width) - var(--elr-tool-size)) 0; }
+  .elr-reading-space[data-tools-side="right"] > .elr-reading-tools { justify-content: end; }
+  .elr-reading-space[data-tools-side="right"] > .elr-reading-tools > .elr-reading-round:first-child { order: 4; }
+  .elr-reading-space[data-tools-side="right"] > .elr-reading-tools > .elr-find { order: 3; justify-self: end; }
+  .elr-reading-space[data-tools-side="right"] > .elr-reading-tools > .elr-find ~ .elr-reading-round { order: 1; translate: 0 0; }
+  .elr-reading-space[data-tools-side="right"] > .elr-reading-tools > .elr-find.is-open ~ .elr-reading-round {
+    translate: calc(var(--elr-tool-size) - var(--elr-search-width)) 0;
+  }
   .elr-reading-tools .elr-find.use-motion ~ .elr-reading-round {
     transition: translate var(--duration-sm) var(--ease-in-out), scale var(--duration-feedback) var(--ease-out),
       color var(--duration-feedback) var(--ease-out), box-shadow var(--duration-feedback) var(--ease-out);
@@ -197,6 +255,7 @@
   .elr-find.use-motion, .elr-find.use-motion ~ .elr-reading-round { transition: none; }
   .elr-find.use-motion .elr-find-content { transition: opacity var(--duration-reduced) var(--ease-in); }
   .elr-find.is-open.use-motion .elr-find-content { transition: opacity var(--duration-reduced) var(--ease-out); }
+  .elr-pdf-outline, .elr-pdf-outline.is-closed { translate: none; transition: opacity var(--duration-reduced) linear, visibility 0s linear 0s; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .elr-reading-round, .elr-find, .elr-pdf-outline, .elr-reader-options {
@@ -227,10 +286,15 @@
   transform: translateX(-50%); cursor: col-resize; touch-action: none;
 }
 .elr-pdf-parallel-divider::after {
-  content: ''; position: absolute; inset-inline-start: 50%; top: calc(50% - 16px); width: 2px; height: 32px;
-  border-radius: var(--radius-xs); background: var(--dsw-alias-label-secondary);
+  content: ''; position: absolute; inset-inline-start: 50%; top: calc(50% - 16px); width: 2.5px; height: 32px;
+  transform: translateX(-50%);
+  border-radius: 999px; background: var(--dsw-alias-label-secondary); opacity: .7;
+  transition: height var(--duration-feedback) var(--ease-out), background var(--duration-feedback) var(--ease-out), opacity var(--duration-feedback) var(--ease-out), box-shadow var(--duration-feedback) var(--ease-out);
 }
-.elr-pdf-parallel-divider:is(:hover, :focus-visible)::after { background: var(--dsw-alias-brand-primary); }
+.elr-pdf-parallel-divider:is(:hover, :active, :focus-visible)::after {
+  height: 48px; opacity: 1; background: var(--dsw-alias-brand-primary);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent);
+}
 .elr-pdf-translations {
   container: elr-translation / inline-size;
   position: absolute; inset: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden;

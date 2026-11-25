@@ -637,7 +637,7 @@ export function OriginalPdfMediaAction({ hit, container, label, onExplain }) {
   </div>, hit.node);
 }
 
-export function PdfOutline({ id, nodes, current, status, onJump, onRetry }) {
+export function PdfOutline({ id, open = true, nodes, current, status, onJump, onRetry }) {
   const [collapsed, setCollapsed] = useState(() => new Set());
   function toggle(id) {
     setCollapsed((old) => {
@@ -662,7 +662,8 @@ export function PdfOutline({ id, nodes, current, status, onJump, onRetry }) {
       {!collapsed.has(entry.id) && entry.children.length > 0 && render(entry.children)}
     </li>)}</ul>;
   }
-  return <aside id={id} className="elr-pdf-outline" aria-label="文献目录">
+  return <aside id={id} className={'elr-pdf-outline' + (open ? ' is-open' : ' is-closed')}
+    aria-label="文献目录" aria-hidden={!open || undefined} inert={!open}>
     <header><h2>目录</h2></header>
     <nav aria-label="章节导航">
       {status === 'loading' && <EmptySkeleton variant="outline" rows={6} label="正在读取目录…" />}
@@ -722,7 +723,7 @@ function savedTranslation(page, block) {
   return record?.source === source ? record : page.bySource.get(source);
 }
 
-export function PdfTranslations({ paper, page, pageCount, mode, target, selectedParagraph, surfaceRef, loadBlocks, getChapter, getModel,
+export function PdfTranslations({ paper, page, pageCount, mode, autoTranslatePaper = false, target, selectedParagraph, surfaceRef, loadBlocks, getChapter, getModel,
   onRead, onUserInput, onOriginal, onPage, getAssets, hover, onHover }) {
   const scroll = useRef(null);
   const actions = useRef(null);
@@ -731,6 +732,7 @@ export function PdfTranslations({ paper, page, pageCount, mode, target, selected
   const cache = useRef(new Map());
   const operation = useRef(null);
   const mounted = useRef(false);
+  const autoStarted = useRef(false);
   const lastTarget = useRef(null);
   const sheetHeights = useRef(new Map());
   const centeredLayout = useRef(null);
@@ -898,7 +900,7 @@ export function PdfTranslations({ paper, page, pageCount, mode, target, selected
     return { text: text.trim(), model };
   }
 
-  async function translate(scope, only, startPage = page) {
+  async function translate(scope, only, startPage = page, { auto = false } = {}) {
     if (operation.current) return;
     const controller = new AbortController();
     const { signal } = controller;
@@ -936,7 +938,9 @@ export function PdfTranslations({ paper, page, pageCount, mode, target, selected
           if (mounted.current) { total++; setRevision((previous) => previous + 1); }
         }
       }
-      if (mounted.current) setProblem(total ? '已保存 ' + total + ' 段译文。' : '所选范围没有待翻译的段落。');
+      if (mounted.current && (total || !auto)) {
+        setProblem(total ? '已保存 ' + total + ' 段译文。' : '所选范围没有待翻译的段落。');
+      }
     } catch (error) {
       if (mounted.current) {
         if (signal.aborted) setProblem('已暂停，可以继续翻译剩余段落。');
@@ -950,6 +954,16 @@ export function PdfTranslations({ paper, page, pageCount, mode, target, selected
       if (mounted.current) setTask(null);
     }
   }
+
+  useEffect(() => {
+    if (!autoTranslatePaper) {
+      autoStarted.current = false;
+      return;
+    }
+    if (autoStarted.current || !pageCount || operation.current) return;
+    autoStarted.current = true;
+    void translate('paper', null, page, { auto: true });
+  }, [autoTranslatePaper, pageCount]);
 
   if (mode === 'pdf') return null;
   const loading = !results[page];

@@ -4,7 +4,7 @@ import { Reader, installCss, setHostScheme, translate, readReaderSettings, subsc
 import { installLiquidGlass } from './liquid-glass.mjs';
 import { loadLibrary } from './desktop-runtime.js';
 import { ModelCenter } from './model-center.jsx';
-import { OnboardingTour, shouldStartOnboarding } from './onboarding-tour.jsx';
+import { OnboardingTour, WelcomeDialog, shouldStartOnboarding } from './onboarding-tour.jsx';
 import './reader.css';
 import './liquid-glass.css';
 import { motionTiming, reduceMotion } from './surface-motion.js';
@@ -16,7 +16,7 @@ const fonts = import.meta.glob('../../assets/fonts/MiSansVF.ttf', { eager: true,
 const miSans = fonts['../../assets/fonts/MiSansVF.ttf'];
 if (miSans) document.fonts.add(new FontFace('MiSans', 'url("' + miSans + '")', { weight: '100 900', display: 'swap' }));
 
-const STARTUP_HOLD_MS = 2000;
+const STARTUP_HOLD_MS = 1400;
 
 async function finishStartup() {
   const splash = document.getElementById('startup-screen');
@@ -28,7 +28,14 @@ async function finishStartup() {
   };
   try {
     if (!reduceMotion() && !document.hidden) {
-      await Promise.allSettled(splash.getAnimations({ subtree: true }).map((animation) => animation.finished));
+      await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+      if (splash.isConnected && !document.hidden) {
+        splash.classList.add('is-animating');
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
+        await Promise.allSettled(splash.getAnimations({ subtree: true }).map((animation) => animation.finished));
+      }
+    } else {
+      splash.classList.add('is-animating');
     }
     if (splash.isConnected && !document.hidden) {
       await new Promise((resolve) => window.setTimeout(resolve, STARTUP_HOLD_MS));
@@ -69,7 +76,7 @@ function PdfPassword({ request, onClose }) {
 
 function App({ issue: startupIssue }) {
   const [showModelCenter, setShowModelCenter] = useState(false);
-  const [showTour, setShowTour] = useState(false);
+  const [tourStage, setTourStage] = useState(''); // '' | 'welcome' | 'tour'
   const [password, setPassword] = useState(null);
   const [revision, setRevision] = useState(0);
   const [issue, setIssue] = useState(startupIssue);
@@ -90,7 +97,7 @@ function App({ issue: startupIssue }) {
     let active = true;
     api.windowReady().catch(() => {});
     finishStartup().catch(() => {}).finally(() => {
-      if (active && shouldStartOnboarding()) setShowTour(true);
+      if (active && shouldStartOnboarding()) setTourStage('welcome');
     });
     api.appVersion().then((value) => { if (active) setVersion(value); }).catch(() => {});
     api.checkForUpdate().then((value) => { if (active) setUpdate(value); }).catch(() => {});
@@ -122,13 +129,20 @@ function App({ issue: startupIssue }) {
     </aside>}
     <Reader t={translate} version={version} nativeFullscreen={nativeFullscreen} modelRevision={revision} onModelSettings={() => setShowModelCenter(true)} onPdfPassword={setPassword} />
     {password && <PdfPassword request={password} onClose={() => setPassword(null)} />}
-    {showModelCenter && <ModelCenter version={version} availableUpdate={update} onClose={() => setShowModelCenter(false)}
-      onReplayTour={() => { setShowModelCenter(false); setShowTour(true); }}
+    {showModelCenter && <ModelCenter version={version} availableUpdate={update}
+      onUpdateFound={(next) => { setUpdate(next); if (next) setDismissed(false); }}
+      onClose={() => setShowModelCenter(false)}
+      onReplayTour={() => { setShowModelCenter(false); setTourStage('tour'); }}
       onConnectionsChange={() => setRevision((previous) => previous + 1)} onSave={() => {
       setShowModelCenter(false);
       setRevision((previous) => previous + 1);
     }} />}
-    <OnboardingTour active={showTour} onFinish={() => setShowTour(false)} />
+    <WelcomeDialog
+      active={tourStage === 'welcome'}
+      onStart={() => setTourStage('tour')}
+      onSkip={() => setTourStage('')}
+    />
+    <OnboardingTour active={tourStage === 'tour'} onFinish={() => setTourStage('')} />
   </div>;
 }
 

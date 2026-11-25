@@ -7,7 +7,7 @@ import { readReaderSettings, writeReaderSettings } from './reader-view.js';
 
 const api = window.reader;
 
-export function ModelCenter({ version, availableUpdate, onClose, onSave, onConnectionsChange, onReplayTour }) {
+export function ModelCenter({ version, availableUpdate, onUpdateFound, onClose, onSave, onConnectionsChange, onReplayTour }) {
   const dialog = useRef(null);
   const mounted = useRef(false);
   const connectionUpdates = useRef({});
@@ -20,6 +20,24 @@ export function ModelCenter({ version, availableUpdate, onClose, onSave, onConne
   const [updating, setUpdating] = useState(0);
   const [tab, setTab] = useState('models');
   const [display, setDisplay] = useState(() => readReaderSettings());
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState('');
+
+  async function checkUpdateNow() {
+    if (checkingUpdate) return;
+    setCheckingUpdate(true);
+    setUpdateMessage('');
+    try {
+      const next = await api.checkForUpdate(true);
+      if (!mounted.current) return;
+      onUpdateFound?.(next);
+      setUpdateMessage(next ? '' : '已是最新版本');
+    } catch (error) {
+      if (mounted.current) setUpdateMessage(error?.message || '检查更新失败');
+    } finally {
+      if (mounted.current) setCheckingUpdate(false);
+    }
+  }
 
   function updateDisplay(patch) {
     writeReaderSettings(patch);
@@ -130,7 +148,16 @@ export function ModelCenter({ version, availableUpdate, onClose, onSave, onConne
         <h2 id="model-center-title">模型设置</h2>
         <div className="model-center-version">
           {version && <span>CoReader {version}</span>}
-          {availableUpdate && <a href={availableUpdate.url}>查看新版 {availableUpdate.version}</a>}
+          {availableUpdate ? (
+            <a href={availableUpdate.url}>查看新版 {availableUpdate.version}</a>
+          ) : (
+            <button type="button" className="model-center-update-check" disabled={checkingUpdate} onClick={checkUpdateNow}>
+              {checkingUpdate ? '检查中…' : '检查更新'}
+            </button>
+          )}
+          {!availableUpdate && updateMessage && (
+            <span className="model-center-update-status" role="status">{updateMessage}</span>
+          )}
           <button type="button" className="quiet" aria-label="关闭设置" onClick={close}>×</button>
         </div>
       </header>
@@ -166,9 +193,11 @@ export function ModelCenter({ version, availableUpdate, onClose, onSave, onConne
 
 function DisplaySettings({ value, onChange }) {
   const glassEnabled = value.glassEnabled !== false;
+  const rawAlbumInterval = Number(value.albumInterval);
+  const albumInterval = Number.isFinite(rawAlbumInterval) ? Math.min(60, Math.max(1, Math.round(rawAlbumInterval))) : 5;
   const tones = {
     light: [['blue', '雨后天青'], ['green', '山间松雾'], ['amber', '秋日麦穗'], ['pink', '蔷薇薄雾'], ['prism-light', '晴光流彩']],
-    dark: [['default', '深色主题'], ['navy', '深海子夜'], ['ink', '墨池听雨'], ['forest', '松林入夜'], ['plum', '暮紫星河'], ['ember', '炉边夜话'], ['prism-dark', '极夜流光']],
+    dark: [['default', '玄灰夜幕'], ['navy', '深海子夜'], ['ink', '墨池听雨'], ['forest', '松林入夜'], ['plum', '暮紫星河'], ['ember', '炉边夜话'], ['prism-dark', '极夜流光']],
     duo: [['duo-blue', '白蓝'], ['duo-orange', '灰橘'], ['duo-green', '米绿'], ['duo-purple', '雾紫']],
   };
   return <div className="display-settings">
@@ -183,8 +212,14 @@ function DisplaySettings({ value, onChange }) {
       </label>
       <label>PDF 页面配色
         <select value={value.theme || 'default'} onChange={(event) => onChange({ theme: event.target.value })}>
-          <option value="default">默认</option><option value="paper">纸张纹理</option><option value="eye">护眼黄</option>
-          <option value="ivory">柔白</option><option value="mist">雾蓝</option><option value="sage">浅青绿</option><option value="linen">细麻纹</option>
+          <optgroup label="浅色纸张">
+            <option value="default">默认</option><option value="paper">纸张纹理</option><option value="eye">护眼黄</option>
+            <option value="ivory">柔白</option><option value="mist">雾蓝</option><option value="sage">浅青绿</option><option value="linen">细麻纹</option>
+          </optgroup>
+          <optgroup label="深色纸张">
+            <option value="dark-slate">玄夜深灰</option><option value="dark-midnight">深夜靛蓝</option>
+            <option value="dark-sepia">暖墨褐纸</option><option value="dark-forest">墨绿夜读</option><option value="dark-oled">极夜纯黑</option>
+          </optgroup>
         </select>
       </label>
     </div>
@@ -211,17 +246,34 @@ function DisplaySettings({ value, onChange }) {
       <div className="display-setting-row">
         <span id="setting-dock-label">停靠位置</span>
         <div className="elr-segmented-control" role="group" aria-labelledby="setting-dock-label">
-          <button type="button" aria-pressed={(value.dock || 'right') === 'right'} onClick={() => onChange({ dock: 'right' })}>右侧</button>
+          <button type="button" aria-pressed={(value.dock || 'right') !== 'bottom'} onClick={() => onChange({ dock: 'right' })}>侧边</button>
           <button type="button" aria-pressed={value.dock === 'bottom'} onClick={() => onChange({ dock: 'bottom' })}>下方</button>
         </div>
       </div>
+      <div className="display-setting-row">
+        <span id="setting-side-dock-label">常驻位置（含目录与工具按钮）</span>
+        <div className="elr-segmented-control" role="group" aria-labelledby="setting-side-dock-label">
+          <button type="button" aria-pressed={value.sideDock === 'left'} onClick={() => onChange({ sideDock: 'left', ...(value.dock === 'bottom' ? { dock: 'right' } : {}) })}>常驻左侧</button>
+          <button type="button" aria-pressed={(value.sideDock || 'right') !== 'left'} onClick={() => onChange({ sideDock: 'right', ...(value.dock === 'bottom' ? { dock: 'right' } : {}) })}>常驻右侧</button>
+        </div>
+      </div>
       {(value.dock || 'right') === 'right' ? <div className="display-setting-row">
-        <span id="setting-columns-label">右侧功能栏列数</span>
+        <span id="setting-columns-label">侧边功能栏列数</span>
         <div className="elr-segmented-control" role="group" aria-labelledby="setting-columns-label">
           <button type="button" aria-pressed={Number(value.featureColumns) !== 2} onClick={() => onChange({ featureColumns: 1 })}>一列</button>
           <button type="button" aria-pressed={Number(value.featureColumns) === 2} onClick={() => onChange({ featureColumns: 2 })}>两列</button>
         </div>
       </div> : null}
+    </div>
+    <div className="display-setting-group">
+      <h3>相册卡片</h3>
+      <label>相册轮播时长
+        <span className="elr-glass-slider">
+          <input type="range" min="1" max="60" step="1" value={albumInterval} aria-label="相册轮播时长" aria-valuetext={albumInterval + ' 秒'}
+            onChange={(event) => onChange({ albumInterval: event.target.valueAsNumber })} />
+          <output aria-hidden="true">{albumInterval} 秒</output>
+        </span>
+      </label>
     </div>
   </div>;
 }
@@ -237,6 +289,13 @@ function ReadingSettings({ value, onChange, onReplayTour }) {
       <label>选中文本时自动打开翻译浮窗
         <input className="elr-glass-switch" type="checkbox" role="switch" checked={Boolean(value.popupOn)}
           onChange={(event) => onChange({ popupOn: event.target.checked })} />
+      </label>
+    </div>
+    <div className="display-setting-group">
+      <h3>对照阅读</h3>
+      <label>打开文章后自动翻译全文
+        <input className="elr-glass-switch" type="checkbox" role="switch" checked={Boolean(value.autoTranslatePaper)}
+          onChange={(event) => onChange({ autoTranslatePaper: event.target.checked })} />
       </label>
     </div>
     <div className="display-setting-group">

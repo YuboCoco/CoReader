@@ -15,9 +15,17 @@ export async function findAppUpdate(currentVersion, fetcher, signal) {
   const response = await fetcher(releaseBase + 'latest', {
     method: 'HEAD', cache: 'no-cache', redirect: 'manual', credentials: 'omit', signal,
   });
-  if (response.status < 300 || response.status >= 400) return null;
-
-  const url = response.headers.get('location');
+  let url = null;
+  if (response.status >= 300 && response.status < 400) {
+    url = response.headers.get('location');
+  } else if (response.type === 'opaqueredirect') {
+    const followed = await fetcher(releaseBase + 'latest', {
+      method: 'HEAD', cache: 'no-cache', redirect: 'follow', credentials: 'omit', signal,
+    });
+    if (followed.ok) url = followed.url;
+  } else {
+    return null;
+  }
   if (!url?.startsWith(tagBase)) return null;
 
   const latest = versionParts(url.slice(tagBase.length));
