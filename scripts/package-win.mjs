@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { join, resolve } from 'node:path';
 import { packager } from '@electron/packager';
 import { layoutWeights } from '../src/layout-spec.mjs';
-import { copyLayoutBundle, stageDesktopApp, translationFiles } from './desktop-bundle.mjs';
+import { copyAlbumPhotos, copyLayoutBundle, stageDesktopApp, translationFiles } from './desktop-bundle.mjs';
 
 const manifest = JSON.parse(readFileSync('package.json', 'utf8'));
 const productName = manifest.productName;
@@ -42,6 +42,7 @@ try {
     }
   }
   copyLayoutBundle(join(folder, 'resources', 'layout'), layoutModel, 'win32', 'x64');
+  copyAlbumPhotos(join(folder, 'resources'));
   cpSync('USAGE.zh.txt', join(folder, 'README-zh.txt'));
   // Keep a stable, already-extracted copy beside the versioned archive so an
   // update can be tested directly without manually unpacking the ZIP again.

@@ -75,7 +75,7 @@ function PdfPassword({ request, onClose }) {
 }
 
 function App({ issue: startupIssue }) {
-  const [showModelCenter, setShowModelCenter] = useState(false);
+  const [modelCenter, setModelCenter] = useState(null);
   const [tourStage, setTourStage] = useState(''); // '' | 'welcome' | 'tour'
   const [password, setPassword] = useState(null);
   const [revision, setRevision] = useState(0);
@@ -84,6 +84,11 @@ function App({ issue: startupIssue }) {
   const [update, setUpdate] = useState(null);
   const [dismissed, setDismissed] = useState(false);
   const [nativeFullscreen, setNativeFullscreen] = useState(false);
+
+  const openModelCenter = (target) => {
+    const opts = target && typeof target === 'object' && ('tab' in target || 'section' in target) ? target : {};
+    setModelCenter({ tab: opts.tab || 'models', section: opts.section || '', nonce: Date.now() });
+  };
 
   useEffect(() => {
     if (!isMac) return;
@@ -127,14 +132,15 @@ function App({ issue: startupIssue }) {
       <a href={update.url}>查看发布</a>
       <button type="button" aria-label="关闭更新提示" onClick={() => setDismissed(true)}>×</button>
     </aside>}
-    <Reader t={translate} version={version} nativeFullscreen={nativeFullscreen} modelRevision={revision} onModelSettings={() => setShowModelCenter(true)} onPdfPassword={setPassword} />
+    <Reader t={translate} version={version} nativeFullscreen={nativeFullscreen} modelRevision={revision} onModelSettings={openModelCenter} onPdfPassword={setPassword} />
     {password && <PdfPassword request={password} onClose={() => setPassword(null)} />}
-    {showModelCenter && <ModelCenter version={version} availableUpdate={update}
+    {modelCenter && <ModelCenter version={version} availableUpdate={update}
+      initialTab={modelCenter.tab} initialSection={modelCenter.section} navigationKey={modelCenter.nonce}
       onUpdateFound={(next) => { setUpdate(next); if (next) setDismissed(false); }}
-      onClose={() => setShowModelCenter(false)}
-      onReplayTour={() => { setShowModelCenter(false); setTourStage('tour'); }}
+      onClose={() => setModelCenter(null)}
+      onReplayTour={() => { setModelCenter(null); setTourStage('tour'); }}
       onConnectionsChange={() => setRevision((previous) => previous + 1)} onSave={() => {
-      setShowModelCenter(false);
+      setModelCenter(null);
       setRevision((previous) => previous + 1);
     }} />}
     <WelcomeDialog

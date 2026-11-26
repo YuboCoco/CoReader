@@ -1,0 +1,127 @@
+name: Release CoReader 0.1.5
+
+on:
+  push:
+    tags: [v0.1.5]
+
+permissions:
+  contents: read
+
+env:
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+  ONNXRUNTIME_NODE_INSTALL: skip
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci --registry=https://registry.npmjs.org --replace-registry-host=always --no-audit --no-fund
+      - run: node --test --test-concurrency=1
+      - run: npm run prepare:translation:win
+      - run: npm run prepare:layout:win
+      - name: Build Windows installer and portable ZIP
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (Test-Path -LiteralPath $compiler) { $env:COREADER_ISCC = $compiler }
+          npm run installer:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = Get-Item -LiteralPath 'release/CoReader-win32-x64/CoReader.exe'
+          if ($exe.VersionInfo.ProductVersion -ne '0.1.5') { throw 'Unexpected Windows version' }
+          tar.exe -tf release/CoReader-0.1.5-win-x64.zip > $null
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-x64
+          path: |
+            release/CoReader-0.1.5-Setup-win-x64.exe
+            release/CoReader-0.1.5-win-x64.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci --registry=https://registry.npmjs.org --replace-registry-host=always --no-audit --no-fund
+      - run: npm run prepare:translation:mac -- ${{ matrix.arch }}
+      - run: npm run prepare:layout:mac
+      - run: npm run package:mac -- ${{ matrix.arch }}
+      - run: unzip -tq release/CoReader-0.1.5-mac-${{ matrix.arch }}.zip
+      - uses: actions/upload-artifact@v6
+        with:
+          name: mac-${{ matrix.arch }}
+          path: release/CoReader-0.1.5-mac-${{ matrix.arch }}.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Publish the verified downloads
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag=v0.1.5
+          cd packages
+          files=(
+            CoReader-0.1.5-Setup-win-x64.exe
+            CoReader-0.1.5-win-x64.zip
+            CoReader-0.1.5-mac-arm64.zip
+            CoReader-0.1.5-mac-x64.zip
+          )
+          for file in "${files[@]}"; do test -s "$file"; done
+          cat > "$RUNNER_TEMP/coreader-015-notes.md" <<'EOF'
+          ## CoReader 0.1.5
+
+          - 默认功能栏升级为右侧双列布局（左列：时钟、论文分析、相册；右列：阅读助手、白噪音），开机即用。
+          - 相册卡片内置默认风景照片并随安装包一起打包；右键菜单新增「设置」直达显示设置中的相册配置区块。
+          - 相册设置新增自定义轮播时长（单位：秒）、顺序/随机轮播切换，以及 6 种照片过渡动效（柔和淡入、电影推镜、景深虚化、视差滑入、光圈展开、斜切幕布）。
+          - 优化设置弹窗与下拉菜单的细滚动条样式，并更新 README 与最新界面实拍截图。
+
+          ## 下载
+
+          - Windows x64：安装版 EXE（`CoReader-0.1.5-Setup-win-x64.exe`）或便携 ZIP（`CoReader-0.1.5-win-x64.zip`）。
+          - macOS 13.3 及以上：Apple Silicon 下载 `CoReader-0.1.5-mac-arm64.zip`，Intel 下载 `CoReader-0.1.5-mac-x64.zip`。两个 ZIP 均使用临时签名，未进行 Apple 公证。
+          EOF
+          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            test "$draft" = true
+          else
+            gh release create "$tag" --draft --verify-tag --title 'CoReader 0.1.5' --notes-file "$RUNNER_TEMP/coreader-015-notes.md"
+          fi
+          gh release upload "$tag" "${files[@]}" --clobber
+          gh release edit "$tag" --draft=false --latest

@@ -343,6 +343,8 @@ const saveMarks = (id, list) => { if (id) writeStore(marksKey(id), list); };
 // the window (or switching tabs) keeps the paper and all results.
 // ------------------------------------------------------------------
 const ALBUM_DEFAULT_INTERVAL_SEC = 30;
+const ALBUM_INTERVAL_MIN = 1;
+const ALBUM_INTERVAL_MAX = 86400;
 const ALBUM_INTERVAL_OPTIONS = [
   { value: 15, label: '15 秒' },
   { value: 30, label: '30 秒' },
@@ -350,12 +352,57 @@ const ALBUM_INTERVAL_OPTIONS = [
   { value: 300, label: '5 分钟' },
   { value: 600, label: '10 分钟' },
 ];
+const ALBUM_ORDER_OPTIONS = [
+  { value: 'sequential', label: '顺序轮播' },
+  { value: 'random', label: '随机轮播' },
+];
+const ALBUM_TRANSITION_OPTIONS = [
+  { value: 'fade', label: '柔和淡入' },
+  { value: 'ken-burns', label: '电影推镜' },
+  { value: 'blur-dissolve', label: '景深虚化' },
+  { value: 'slide-depth', label: '视差滑入' },
+  { value: 'iris-reveal', label: '光圈展开' },
+  { value: 'curtain-wipe', label: '斜切幕布' },
+];
 const ALBUM_HEAD_HIDE_MS = 2600;
-const ALBUM_FADE_MS = 480;
+const ALBUM_TRANSITION_MS = 820;
 
 function normalizeAlbumInterval(raw) {
-  const sec = Number(raw);
-  return ALBUM_INTERVAL_OPTIONS.some((item) => item.value === sec) ? sec : ALBUM_DEFAULT_INTERVAL_SEC;
+  const sec = Math.round(Number(raw));
+  if (!Number.isFinite(sec) || sec < ALBUM_INTERVAL_MIN) return ALBUM_DEFAULT_INTERVAL_SEC;
+  return Math.min(ALBUM_INTERVAL_MAX, sec);
+}
+
+function normalizeAlbumOrder(raw) {
+  return raw === 'random' ? 'random' : 'sequential';
+}
+
+function normalizeAlbumTransition(raw) {
+  return ALBUM_TRANSITION_OPTIONS.some((item) => item.value === raw) ? raw : 'fade';
+}
+
+function buildAlbumPlayOrder(length, random, pinnedFirst = -1, avoidFirst = -1) {
+  if (length <= 0) return [];
+  const order = Array.from({ length }, (_, idx) => idx);
+  if (!random || length === 1) return order;
+  const start = pinnedFirst >= 0 && pinnedFirst < length ? 1 : 0;
+  if (start === 1 && pinnedFirst !== 0) {
+    order[0] = pinnedFirst;
+    order[pinnedFirst] = 0;
+  }
+  for (let i = length - 1; i > start; i -= 1) {
+    const j = start + Math.floor(Math.random() * (i - start + 1));
+    const tmp = order[i];
+    order[i] = order[j];
+    order[j] = tmp;
+  }
+  if (start === 0 && avoidFirst >= 0 && order[0] === avoidFirst) {
+    const swapIdx = 1 + Math.floor(Math.random() * (length - 1));
+    const tmp = order[0];
+    order[0] = order[swapIdx];
+    order[swapIdx] = tmp;
+  }
+  return order;
 }
 
 const DEFAULT_SHARED = {
@@ -403,17 +450,19 @@ const DEFAULT_SHARED = {
   figureSort: 'time-desc',
   // (v8 #6) Height of the upper half of the side pane (selection card plus the
   // movable sections), and (v8 #7) their order.
-  sideTopHeight: 220, sectionOrder: ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS, 'album', 'ambient', 'clock'],
-  // (v27) Which of the three function cards are ENABLED. Closing a card removes
-  // it from this list; the card manager (the ⚙ in the card column's header) adds
-  // it back. A separate list from `sectionOrder` on purpose: order must survive a
-  // card being closed and reopened, otherwise reopening would silently move it to
+  sideTopHeight: 220, sectionOrder: ['clock', 'summary', 'album', 'agent', 'ambient', 'selection', 'recent', 'terms', 'marks', 'references', 'figure'],
+  // (v27) Which function cards are ENABLED. Closing a card removes it from this
+  // list; the card manager (the ⚙ in the card column's header) adds it back. A
+  // separate list from `sectionOrder` on purpose: order must survive a card
+  // being closed and reopened, otherwise reopening would silently move it to
   // the end of the column.
-  cards: ['selection', 'recent', 'terms', 'marks', ...ANALYSIS_CARD_KEYS, 'album', 'ambient', 'clock'],
+  cards: ['clock', 'summary', 'album', 'agent', 'ambient'],
   albumOpen: true,
   albumFolder: '',
   albumImages: [],
   albumInterval: 30,
+  albumOrder: 'sequential',
+  albumTransition: 'fade',
   ambientOpen: true,
   ambientFolder: '',
   ambientTrack: 'nature/campfire.mp3',
@@ -433,12 +482,12 @@ const DEFAULT_SHARED = {
   // function cards sit side by side. A missing key means "share the row evenly",
   // which is the old behaviour, so an untouched column looks exactly as before.
   cardWidths: {},
-  // The feature workspace can use one or two columns when docked on the right.
-  // A single column remains the compact default for existing installations.
-  featureColumns: 1,
+  // The feature workspace defaults to two columns on the right:
+  // left column: clock, summary, album; right column: agent, ambient.
+  featureColumns: 2,
   // When two columns are enabled, this records the user's chosen column for
   // each card. Missing entries use the stable alternating layout.
-  featureCardColumns: {},
+  featureCardColumns: { clock: 0, summary: 0, album: 0, agent: 1, ambient: 1 },
   // (v38) Per-card heights, only meaningful in the RIGHT dock, where the cards
   // are stacked and share the column's height (v37). A missing key means "take an
   // even share", which is the v37 behaviour, so an untouched column looks exactly
@@ -530,18 +579,9 @@ delete shared.tab;
 // missing/ malformed value falls back to "all three enabled".
 {
   const known = CARD_KEYS;
-  const saved = Array.isArray(shared.cards) ? shared.cards : null;
-  const hasAlbumState = 'albumOpen' in savedView || 'albumFolder' in savedView;
-  const hasAmbientState = 'ambientOpen' in savedView || 'ambientFolder' in savedView;
-  const hasClockState = 'clockOpen' in savedView || 'clockStyle' in savedView;
-  if (!saved) shared.cards = known.slice();
-  else {
-    const kept = [...new Set([...known.filter((k) => saved.indexOf(k) !== -1), ...ANALYSIS_CARD_KEYS])];
-    if (!hasAlbumState && !kept.includes('album')) kept.push('album');
-    if (!hasAmbientState && !kept.includes('ambient')) kept.push('ambient');
-    if (!hasClockState && !kept.includes('clock')) kept.push('clock');
-    shared.cards = kept;
-  }
+  const saved = Array.isArray(savedView.cards) ? savedView.cards : null;
+  if (!saved) shared.cards = DEFAULT_SHARED.cards.slice();
+  else shared.cards = [...new Set(saved.filter((k) => known.indexOf(k) !== -1))];
   shared.clockOpen = shared.clockOpen !== false;
   shared.clockStyle = shared.clockStyle === 'analog' ? 'analog' : 'digital';
   shared.clock24h = shared.clock24h !== false;
@@ -553,6 +593,8 @@ delete shared.tab;
     : [];
   {
     shared.albumInterval = normalizeAlbumInterval(shared.albumInterval);
+    shared.albumOrder = normalizeAlbumOrder(shared.albumOrder);
+    shared.albumTransition = normalizeAlbumTransition(shared.albumTransition);
   }
   shared.ambientOpen = shared.ambientOpen !== false;
   shared.ambientFolder = typeof shared.ambientFolder === 'string' ? shared.ambientFolder : '';
@@ -1701,15 +1743,45 @@ const CSS = [
   '.elr-album-empty { margin: 0 var(--elr-card-inset) var(--elr-card-inset) var(--elr-card-leading); padding: var(--elr-card-content-gap); border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--elr-card-content-radius); background: var(--elr-card-content-bg); flex: 1 1 auto; min-height: 0; display: grid; place-items: center; }',
   '.elr-album-stage { position: relative; flex: 1 1 auto; min-height: 0; margin: 0 var(--elr-card-inset) var(--elr-card-inset) var(--elr-card-leading); border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--elr-card-content-radius); background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 72%, transparent); overflow: hidden; cursor: pointer; contain: layout paint; }',
   '.elr-album-card.has-photos .elr-album-stage { margin: 0; border: 0; border-radius: 0; }',
-  '.elr-album-photo { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; user-select: none; will-change: opacity; transition: opacity 480ms var(--ease-in-out); }',
-  '.elr-album-photo.is-entering { opacity: 0; }',
-  '.elr-album-photo.is-visible { opacity: 1; }',
+  '.elr-album-photo { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; user-select: none; }',
+  '.elr-album-photo.is-entering { opacity: 0; pointer-events: none; z-index: 2; }',
+  '.elr-album-photo.is-visible { opacity: 1; z-index: 1; }',
+  '.elr-album-photo.is-leaving { z-index: 1; pointer-events: none; will-change: opacity, transform, filter; animation-fill-mode: both; }',
+  '.elr-album-photo.is-entering-active { z-index: 2; will-change: opacity, transform, filter, clip-path; animation-fill-mode: both; }',
+  '.elr-album-stage[data-transition="fade"] .elr-album-photo.is-entering-active { animation: elr-album-fade-in 520ms cubic-bezier(.4, 0, .2, 1) both; }',
+  '.elr-album-stage[data-transition="fade"] .elr-album-photo.is-leaving { animation: elr-album-fade-out 520ms cubic-bezier(.4, 0, .2, 1) both; }',
+  '.elr-album-stage[data-transition="ken-burns"] .elr-album-photo.is-entering-active { animation: elr-album-kb-in 780ms cubic-bezier(.22, 1, .36, 1) both; }',
+  '.elr-album-stage[data-transition="ken-burns"] .elr-album-photo.is-leaving { animation: elr-album-kb-out 780ms cubic-bezier(.4, 0, .2, 1) both; }',
+  '.elr-album-stage[data-transition="blur-dissolve"] .elr-album-photo.is-entering-active { animation: elr-album-blur-in 720ms cubic-bezier(.22, 1, .36, 1) both; }',
+  '.elr-album-stage[data-transition="blur-dissolve"] .elr-album-photo.is-leaving { animation: elr-album-blur-out 720ms cubic-bezier(.4, 0, .2, 1) both; }',
+  '.elr-album-stage[data-transition="slide-depth"] .elr-album-photo.is-entering-active { box-shadow: -14px 0 32px rgb(0 0 0 / .35); animation: elr-album-slide-in-next 640ms cubic-bezier(.22, 1, .36, 1) both; }',
+  '.elr-album-stage[data-transition="slide-depth"] .elr-album-photo.is-leaving { animation: elr-album-slide-out-next 640ms cubic-bezier(.22, 1, .36, 1) both; }',
+  '.elr-album-stage[data-transition="slide-depth"][data-dir="prev"] .elr-album-photo.is-entering-active { box-shadow: 14px 0 32px rgb(0 0 0 / .35); animation: elr-album-slide-in-prev 640ms cubic-bezier(.22, 1, .36, 1) both; }',
+  '.elr-album-stage[data-transition="slide-depth"][data-dir="prev"] .elr-album-photo.is-leaving { animation: elr-album-slide-out-prev 640ms cubic-bezier(.22, 1, .36, 1) both; }',
+  '.elr-album-stage[data-transition="iris-reveal"] .elr-album-photo.is-entering-active { animation: elr-album-iris-in 760ms cubic-bezier(.22, 1, .36, 1) both; }',
+  '.elr-album-stage[data-transition="iris-reveal"] .elr-album-photo.is-leaving { animation: elr-album-iris-out 760ms cubic-bezier(.4, 0, .2, 1) both; }',
+  '.elr-album-stage[data-transition="curtain-wipe"] .elr-album-photo.is-entering-active { animation: elr-album-curtain-in 720ms cubic-bezier(.22, 1, .36, 1) both; }',
+  '.elr-album-stage[data-transition="curtain-wipe"] .elr-album-photo.is-leaving { animation: elr-album-curtain-out 720ms cubic-bezier(.4, 0, .2, 1) both; }',
+  '@keyframes elr-album-fade-in { from { opacity: 0; } to { opacity: 1; } }',
+  '@keyframes elr-album-fade-out { from { opacity: 1; } to { opacity: 0; } }',
+  '@keyframes elr-album-kb-in { from { opacity: 0; transform: scale(1.09) translate3d(1.5%, -1%, 0); } to { opacity: 1; transform: scale(1) translate3d(0, 0, 0); } }',
+  '@keyframes elr-album-kb-out { from { opacity: 1; transform: scale(1) translate3d(0, 0, 0); } to { opacity: 0; transform: scale(1.05) translate3d(-1.5%, 1%, 0); } }',
+  '@keyframes elr-album-blur-in { from { opacity: 0; filter: blur(12px) saturate(1.1); transform: scale(1.06); } to { opacity: 1; filter: blur(0) saturate(1); transform: scale(1); } }',
+  '@keyframes elr-album-blur-out { from { opacity: 1; filter: blur(0); transform: scale(1); } to { opacity: 0; filter: blur(10px); transform: scale(1.04); } }',
+  '@keyframes elr-album-slide-in-next { from { transform: translate3d(100%, 0, 0); opacity: .92; } to { transform: translate3d(0, 0, 0); opacity: 1; } }',
+  '@keyframes elr-album-slide-out-next { from { transform: translate3d(0, 0, 0) scale(1); filter: brightness(1); } to { transform: translate3d(-24%, 0, 0) scale(.94); filter: brightness(.72); } }',
+  '@keyframes elr-album-slide-in-prev { from { transform: translate3d(-100%, 0, 0); opacity: .92; } to { transform: translate3d(0, 0, 0); opacity: 1; } }',
+  '@keyframes elr-album-slide-out-prev { from { transform: translate3d(0, 0, 0) scale(1); filter: brightness(1); } to { transform: translate3d(24%, 0, 0) scale(.94); filter: brightness(.72); } }',
+  '@keyframes elr-album-iris-in { from { clip-path: circle(0% at 50% 50%); transform: scale(1.06); opacity: .88; } to { clip-path: circle(82% at 50% 50%); transform: scale(1); opacity: 1; } }',
+  '@keyframes elr-album-iris-out { from { opacity: 1; transform: scale(1); } to { opacity: .6; transform: scale(.97); } }',
+  '@keyframes elr-album-curtain-in { from { clip-path: polygon(0 0, 0 0, -24% 100%, -24% 100%); transform: scale(1.04); } to { clip-path: polygon(0 0, 124% 0, 100% 100%, 0 100%); transform: scale(1); } }',
+  '@keyframes elr-album-curtain-out { from { opacity: 1; transform: scale(1); } to { opacity: .75; transform: scale(.98); } }',
   '.elr-album-hud { position: absolute; inset: auto 8px 8px 8px; z-index: 4; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; border: 1px solid rgb(255 255 255 / .18); background: rgb(16 20 28 / .72); color: #fff; font-size: 11.5px; transition: transform 220ms var(--ease-out), opacity 180ms var(--ease-out); }',
   '.elr-album-card.is-head-hidden .elr-album-hud { transform: translateY(120%); opacity: 0; pointer-events: none; transition-timing-function: var(--ease-in); }',
   '.elr-album-hud-count { margin-inline-end: auto; font-variant-numeric: tabular-nums; padding-inline: 4px; opacity: .92; }',
   '.elr-album-hud-btn { height: 24px; min-width: 24px; padding: 0 7px; border: 0; border-radius: 999px; background: rgb(255 255 255 / .14); color: #fff; font: inherit; font-size: 11.5px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer; }',
   '.elr-album-hud-btn:hover { background: rgb(255 255 255 / .26); }',
-  '@media (prefers-reduced-motion: reduce) { .elr-album-photo { transition: none; } .elr-album-card .elr-function-head, .elr-album-hud { transition: none; } }',
+  '@media (prefers-reduced-motion: reduce) { .elr-album-photo { transition: none; animation: none !important; } .elr-album-card .elr-function-head, .elr-album-hud { transition: none; } }',
   ':is([data-elr-docked-card],[data-elr-floating-card]) { font-size: calc(13px + var(--elr-card-font-adjust, 0px)); }',
   '.elr-feature-grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: ' + CARD_GRID_GAP + 'px; padding: 52px ' + CARD_GRID_PADDING + 'px 10px; scroll-padding-top: 52px; overflow: hidden auto; align-items: stretch; }',
   '.elr-body:not(.dock-bottom) .elr-feature-grid { scrollbar-gutter: stable; }',
@@ -2830,13 +2902,15 @@ function albumFileUrl(folderPath, fileName, maxWidth = 0) {
   return maxWidth > 0 ? base + '&w=' + maxWidth : base;
 }
 
-const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, intervalSec, open, floatingHost, toneCls, header, onSaveAlbum }) {
+const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, intervalSec, order = 'sequential', transition = 'fade', open, floatingHost, toneCls, header, onSaveAlbum, onContextMenu }) {
   const [state, setState] = React.useState({ folder: '', images: [], status: 'idle' });
-  const [index, setIndex] = React.useState(0);
+  const [playState, setPlayState] = React.useState({ order: [], pos: 0, dir: 'next' });
   const [headVisible, setHeadVisible] = React.useState(false);
   const [picker, setPicker] = React.useState(null);
   const hideTimerRef = React.useRef(null);
   const pressingRef = React.useRef(false);
+  const orderMode = normalizeAlbumOrder(order);
+  const transitionMode = normalizeAlbumTransition(transition);
 
   const clearHideTimer = React.useCallback(() => {
     if (hideTimerRef.current) {
@@ -2891,7 +2965,6 @@ const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, interv
       const images = Array.isArray(result?.images) ? result.images : [];
       const actualFolder = result?.path || folder || '';
       setState({ folder: actualFolder, images, status: actualFolder ? 'ready' : 'idle' });
-      setIndex(0);
     }).catch(() => {
       if (!cancelled) setState({ folder: folder || '', images: [], status: folder ? 'missing' : 'idle' });
     });
@@ -2899,8 +2972,33 @@ const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, interv
   }, [folder]);
 
   React.useEffect(() => {
-    setIndex(0);
-  }, [activeImages]);
+    const n = activeImages.length;
+    setPlayState((prev) => {
+      if (n <= 0) return { order: [], pos: 0, dir: 'next' };
+      const currentIdx = prev.order.length === n ? prev.order[prev.pos % n] : -1;
+      if (orderMode === 'random') {
+        return { order: buildAlbumPlayOrder(n, true, currentIdx), pos: 0, dir: 'next' };
+      }
+      const seq = buildAlbumPlayOrder(n, false);
+      return { order: seq, pos: currentIdx >= 0 && currentIdx < n ? currentIdx : 0, dir: 'next' };
+    });
+  }, [activeImages, orderMode]);
+
+  const advancePlayState = React.useCallback((delta) => {
+    const n = activeImages.length;
+    if (n <= 1) return;
+    setPlayState((prev) => {
+      const currentOrder = prev.order.length === n ? prev.order : buildAlbumPlayOrder(n, orderMode === 'random');
+      const currentPos = Math.max(0, Math.min(n - 1, prev.pos));
+      const nextPos = currentPos + delta;
+      const dir = delta < 0 ? 'prev' : 'next';
+      if (orderMode === 'random' && nextPos >= n) {
+        const lastIdx = currentOrder[currentPos];
+        return { order: buildAlbumPlayOrder(n, true, -1, lastIdx), pos: 0, dir };
+      }
+      return { order: currentOrder, pos: (nextPos + n) % n, dir };
+    });
+  }, [activeImages.length, orderMode]);
 
   React.useEffect(() => {
     clearHideTimer();
@@ -2921,7 +3019,7 @@ const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, interv
     const start = () => {
       if (id || document.hidden) return;
       id = setInterval(() => {
-        setIndex((prev) => (prev + 1) % activeImages.length);
+        advancePlayState(1);
       }, delayMs);
     };
     const stop = () => {
@@ -2937,7 +3035,7 @@ const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, interv
       stop();
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [activeImages.length, hasPhotos, intervalSec]);
+  }, [activeImages.length, advancePlayState, hasPhotos, intervalSec]);
 
   React.useEffect(() => {
     if (!picker) return undefined;
@@ -2966,7 +3064,7 @@ const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, interv
       return;
     }
     setState({ folder: chosen.path, images: [], status: chosen.missing ? 'missing' : 'ready' });
-    setIndex(0);
+    setPlayState({ order: [], pos: 0, dir: 'next' });
     onSaveAlbum(chosen.path, []);
   };
 
@@ -2999,7 +3097,7 @@ const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, interv
     const images = picker.images;
     const selected = picker.selected.filter((name) => images.includes(name));
     setState({ folder: targetFolder, images, status: 'ready' });
-    setIndex(0);
+    setPlayState({ order: [], pos: 0, dir: 'next' });
     setPicker(null);
     onSaveAlbum(targetFolder, selected);
   };
@@ -3008,7 +3106,7 @@ const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, interv
     event?.stopPropagation?.();
     if (!activeImages.length) return;
     revealHead();
-    setIndex((prev) => (prev + delta + activeImages.length) % activeImages.length);
+    advancePlayState(delta);
   };
 
   const handlePointerDownCapture = () => {
@@ -3026,28 +3124,70 @@ const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, interv
     window.addEventListener('pointercancel', release);
   };
 
-  const activeName = hasPhotos ? activeImages[index % activeImages.length] : '';
+  const effectiveOrder = playState.order.length === activeImages.length ? playState.order : null;
+  const activePos = activeImages.length > 0 ? playState.pos % activeImages.length : 0;
+  const activeIdx = effectiveOrder ? effectiveOrder[activePos] : activePos;
+  const nextIdx = activeImages.length > 1
+    ? (effectiveOrder ? effectiveOrder[(activePos + 1) % activeImages.length] : (activePos + 1) % activeImages.length)
+    : -1;
+  const activeName = hasPhotos ? activeImages[activeIdx] : '';
   const photoUrl = activeName ? albumFileUrl(resolvedFolder, activeName, 1200) : '';
-  const nextName = hasPhotos && activeImages.length > 1 ? activeImages[(index + 1) % activeImages.length] : '';
+  const nextName = hasPhotos && nextIdx >= 0 ? activeImages[nextIdx] : '';
   const nextPhotoUrl = nextName ? albumFileUrl(resolvedFolder, nextName, 1200) : '';
-  const [photoLayer, setPhotoLayer] = React.useState({ current: '', prev: '', ready: false });
+  const [photoLayer, setPhotoLayer] = React.useState({ current: '', prev: '', ready: false, animating: false, dir: 'next', seq: 0 });
   const fadeCleanupRef = React.useRef(null);
+  const transitionRafRef = React.useRef(null);
+  const currentImgRef = React.useRef(null);
+
+  if (photoUrl !== photoLayer.current) {
+    const hasPrev = Boolean(photoLayer.current && photoUrl);
+    setPhotoLayer({
+      current: photoUrl,
+      prev: hasPrev ? photoLayer.current : '',
+      ready: !hasPrev,
+      animating: false,
+      dir: playState.dir || 'next',
+      seq: photoLayer.seq + 1,
+    });
+  }
+
+  const triggerPhotoReveal = React.useCallback((targetUrl, targetSeq) => {
+    if (transitionRafRef.current) cancelAnimationFrame(transitionRafRef.current);
+    transitionRafRef.current = requestAnimationFrame(() => {
+      transitionRafRef.current = null;
+      setPhotoLayer((prevState) => {
+        if (prevState.current !== targetUrl || prevState.seq !== targetSeq || prevState.ready) return prevState;
+        const shouldAnimate = Boolean(prevState.prev && prevState.prev !== targetUrl);
+        return { ...prevState, ready: true, animating: shouldAnimate };
+      });
+      if (fadeCleanupRef.current) clearTimeout(fadeCleanupRef.current);
+      fadeCleanupRef.current = setTimeout(() => {
+        fadeCleanupRef.current = null;
+        setPhotoLayer((prevState) => (
+          prevState.current === targetUrl && prevState.seq === targetSeq
+            ? { ...prevState, prev: '', animating: false }
+            : prevState
+        ));
+      }, ALBUM_TRANSITION_MS + 80);
+    });
+  }, []);
 
   React.useEffect(() => {
     if (fadeCleanupRef.current) {
       clearTimeout(fadeCleanupRef.current);
       fadeCleanupRef.current = null;
     }
-    if (!photoUrl) {
-      setPhotoLayer({ current: '', prev: '', ready: false });
-      return undefined;
+    if (transitionRafRef.current) {
+      cancelAnimationFrame(transitionRafRef.current);
+      transitionRafRef.current = null;
     }
-    setPhotoLayer((prevState) => {
-      if (prevState.current === photoUrl) return prevState;
-      return { current: photoUrl, prev: prevState.current || '', ready: !prevState.current };
-    });
+    if (!photoLayer.current || !photoLayer.prev) return undefined;
+    const img = currentImgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      triggerPhotoReveal(photoLayer.current, photoLayer.seq);
+    }
     return undefined;
-  }, [photoUrl]);
+  }, [photoLayer.current, photoLayer.seq, triggerPhotoReveal]);
 
   React.useEffect(() => {
     if (!nextPhotoUrl) return undefined;
@@ -3058,16 +3198,12 @@ const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, interv
   }, [nextPhotoUrl]);
 
   const handleCurrentPhotoLoad = React.useCallback(() => {
-    setPhotoLayer((prevState) => (prevState.current === photoUrl ? { ...prevState, ready: true } : prevState));
-    if (fadeCleanupRef.current) clearTimeout(fadeCleanupRef.current);
-    fadeCleanupRef.current = setTimeout(() => {
-      fadeCleanupRef.current = null;
-      setPhotoLayer((prevState) => (prevState.current === photoUrl ? { ...prevState, prev: '' } : prevState));
-    }, ALBUM_FADE_MS + 40);
-  }, [photoUrl]);
+    triggerPhotoReveal(photoLayer.current, photoLayer.seq);
+  }, [photoLayer.current, photoLayer.seq, triggerPhotoReveal]);
 
   React.useEffect(() => () => {
     if (fadeCleanupRef.current) clearTimeout(fadeCleanupRef.current);
+    if (transitionRafRef.current) cancelAnimationFrame(transitionRafRef.current);
   }, []);
 
   let emptyTitle = '选择照片文件夹';
@@ -3157,30 +3293,37 @@ const AlbumCard = React.memo(function AlbumCard({ folder, selectedImages, interv
     onPointerDownCapture: handlePointerDownCapture,
     onClickCapture: revealHead,
     onFocusCapture: revealHead,
+    onContextMenu,
   },
     header,
-    hasPhotos ? h('div', { className: 'elr-album-stage elr-card-fold-content', inert: !open },
-      photoLayer.prev && photoLayer.prev !== photoUrl ? h('img', {
-        key: 'prev-' + photoLayer.prev,
+    hasPhotos ? h('div', {
+      className: 'elr-album-stage elr-card-fold-content',
+      'data-transition': transitionMode,
+      'data-dir': photoLayer.dir || 'next',
+      inert: !open,
+    },
+      photoLayer.prev && photoLayer.prev !== photoLayer.current ? h('img', {
+        key: 'prev-' + photoLayer.seq + '-' + photoLayer.prev,
         src: photoLayer.prev,
         alt: '',
         'aria-hidden': true,
-        className: 'elr-album-photo is-visible',
+        className: 'elr-album-photo ' + (photoLayer.animating ? 'is-leaving' : 'is-visible'),
         decoding: 'async',
         draggable: false,
       }) : null,
-      h('img', {
-        key: photoUrl,
-        src: photoUrl,
+      photoLayer.current ? h('img', {
+        ref: currentImgRef,
+        key: 'cur-' + photoLayer.seq + '-' + photoLayer.current,
+        src: photoLayer.current,
         alt: activeName,
-        className: 'elr-album-photo ' + (photoLayer.ready ? 'is-visible' : 'is-entering'),
+        className: 'elr-album-photo ' + (!photoLayer.ready ? 'is-entering' : (photoLayer.animating ? 'is-entering-active' : 'is-visible')),
         decoding: 'async',
         draggable: false,
         onLoad: handleCurrentPhotoLoad,
         onError: handleCurrentPhotoLoad,
-      }),
+      }) : null,
       h('div', { className: 'elr-album-hud', onClick: (e) => e.stopPropagation() },
-        h('span', { className: 'elr-album-hud-count' }, ((index % activeImages.length) + 1) + ' / ' + activeImages.length),
+        h('span', { className: 'elr-album-hud-count' }, (activePos + 1) + ' / ' + activeImages.length),
         activeImages.length > 1 ? h('button', {
           type: 'button', className: 'elr-album-hud-btn', title: '上一张', 'aria-label': '上一张',
           onClick: (e) => stepPhoto(-1, e),
@@ -3942,7 +4085,11 @@ function Reader(props) {
   const [albumFolder] = useShared('albumFolder');
   const [albumImages] = useShared('albumImages');
   const [albumInterval, setAlbumInterval] = useShared('albumInterval');
+  const [albumOrder] = useShared('albumOrder');
+  const [albumTransition] = useShared('albumTransition');
   const albumIntervalSec = normalizeAlbumInterval(albumInterval);
+  const albumOrderMode = normalizeAlbumOrder(albumOrder);
+  const albumTransitionMode = normalizeAlbumTransition(albumTransition);
   const [ambientOpen] = useShared('ambientOpen');
   const [ambientFolder] = useShared('ambientFolder');
   const [ambientTrack] = useShared('ambientTrack');
@@ -8833,8 +8980,13 @@ function Reader(props) {
       className: 'elr-settings-select',
       'aria-label': '相册轮播时长',
       value: albumIntervalSec,
-      onChange: (e) => setAlbumInterval(Number(e.target.value)),
-    }, ALBUM_INTERVAL_OPTIONS.map((item) => h('option', { key: item.value, value: item.value }, item.label))))
+      onChange: (e) => setAlbumInterval(normalizeAlbumInterval(e.target.value)),
+    }, [
+      ...ALBUM_INTERVAL_OPTIONS.map((item) => h('option', { key: item.value, value: item.value }, item.label)),
+      ...(!ALBUM_INTERVAL_OPTIONS.some((item) => item.value === albumIntervalSec)
+        ? [h('option', { key: 'custom-' + albumIntervalSec, value: albumIntervalSec }, '自定义（' + albumIntervalSec + ' 秒）')]
+        : []),
+    ]))
   );
   // (v46) The single "appearance" entry point: one button plus, while open,
   // the panel directly beneath it. The panel lives INSIDE the button's span
@@ -9255,6 +9407,7 @@ function Reader(props) {
     };
     const openContext = (event, keyboard = false) => {
       event.preventDefault();
+      event.stopPropagation();
       const anchor = event.currentTarget;
       const rect = anchor.getBoundingClientRect();
       setCardContext({ key, open, anchor, x: keyboard ? rect.left : event.clientX,
@@ -9901,11 +10054,17 @@ function Reader(props) {
     folder: albumFolder,
     selectedImages: albumImages,
     intervalSec: albumIntervalSec,
+    order: albumOrderMode,
+    transition: albumTransitionMode,
     open: albumOpen,
     floatingHost,
     toneCls,
     header: cardHeader('album', albumOpen),
     onSaveAlbum: saveAlbumConfig,
+    onContextMenu: (event) => {
+      event.preventDefault();
+      setCardContext({ key: 'album', open: albumOpen, anchor: event.currentTarget, x: event.clientX, y: event.clientY });
+    },
   });
   const ambientCard = h(AmbientCard, {
     folder: ambientFolder,
@@ -10843,6 +11002,10 @@ function Reader(props) {
         setCardContext(null);
         toggleFunctionCardFloat(cardContext.key, cardContext.open, cardContext.anchor);
       } }, t(floatingCards[cardContext.key] ? 'card.dock' : 'card.float')),
+      cardContext.key === 'album' && openModelSettings ? h('button', { type: 'button', className: 'elr-menu-item', onClick: () => {
+        setCardContext(null);
+        openModelSettings({ tab: 'display', section: 'album' });
+      } }, t('card.settings')) : null,
       h('button', { type: 'button', className: 'elr-menu-item is-destructive', onClick: () => {
         setCardContext(null);
         setCardEnabled(cardContext.key, false);
@@ -11012,6 +11175,7 @@ const dictionaries = {
     'card.dockEmpty': 'Drag a floating card here to dock it.',
     'card.float': 'Float card', 'card.dock': 'Dock card', 'card.floatingDrag': 'Drag to move or dock the card',
     'card.remove': 'Remove card',
+    'card.settings': 'Settings',
   'card.resize': 'Drag to resize this card',
   'card.floatResize': 'Drag to resize the floating card',
   'card.resizeH': 'Drag the bottom edge to change this card\'s height',
@@ -11190,6 +11354,7 @@ const dictionaries = {
     'card.dockEmpty': '把浮动卡片拖回这里即可停靠。',
     'card.float': '浮动卡片', 'card.dock': '停靠到功能栏', 'card.floatingDrag': '拖动移动或停靠卡片',
     'card.remove': '移除卡片',
+    'card.settings': '设置',
   'card.resize': '拖动可调整这张卡片的宽度',
   'card.floatResize': '拖动以调整浮动卡片大小',
   'card.resizeH': '拖动下边界可调整这张卡片的高度',
@@ -11225,4 +11390,8 @@ function translate(key, values) {
   return String(raw).replace(/\{(\w+)\}/g, (match, name) => values?.[name] ?? match);
 }
 window.addEventListener('pagehide', flushSnapshot);
-export { Reader, installCss, setHostScheme, translate, readReaderSettings, writeReaderSettings, subscribeReaderSettings };
+export {
+  Reader, installCss, setHostScheme, translate, readReaderSettings, writeReaderSettings, subscribeReaderSettings,
+  ALBUM_INTERVAL_MIN, ALBUM_INTERVAL_MAX, ALBUM_INTERVAL_OPTIONS, ALBUM_ORDER_OPTIONS, ALBUM_TRANSITION_OPTIONS,
+  normalizeAlbumInterval, normalizeAlbumOrder, normalizeAlbumTransition,
+};

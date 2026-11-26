@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symli
 import { join, resolve } from 'node:path';
 import { packager } from '@electron/packager';
 import { layoutWeights } from '../src/layout-spec.mjs';
-import { copyLayoutBundle, stageDesktopApp, translationFiles, writeMacIcon } from './desktop-bundle.mjs';
+import { copyAlbumPhotos, copyLayoutBundle, stageDesktopApp, translationFiles, writeMacIcon } from './desktop-bundle.mjs';
 
 const arch = process.argv[2] || process.arch;
 const native = process.platform === 'darwin';
@@ -49,6 +49,7 @@ try {
   for (const file of translationFiles) cpSync(join(translation, file), join(bundledTranslation, file));
   cpSync(engine, join(bundledTranslation, 'engine'), { recursive: true, verbatimSymlinks: true });
   copyLayoutBundle(join(resources, 'layout'), layout, 'darwin', arch);
+  copyAlbumPhotos(resources);
   const usage = readFileSync('USAGE.zh.txt', 'utf8').split(/\r?\n/);
   const notes = [
     productName + ' ' + version + ' · macOS',

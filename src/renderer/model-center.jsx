@@ -3,11 +3,23 @@ import { connectionNames } from '../model-capabilities.mjs';
 import { AccountConnections } from './account-connections.jsx';
 import { ModelSettings } from './settings.jsx';
 import { glassTintPreference } from './liquid-glass.mjs';
-import { readReaderSettings, writeReaderSettings } from './reader-view.js';
+import {
+  ALBUM_INTERVAL_MAX,
+  ALBUM_INTERVAL_MIN,
+  ALBUM_INTERVAL_OPTIONS,
+  ALBUM_ORDER_OPTIONS,
+  ALBUM_TRANSITION_OPTIONS,
+  normalizeAlbumInterval,
+  normalizeAlbumOrder,
+  normalizeAlbumTransition,
+  readReaderSettings,
+  writeReaderSettings,
+} from './reader-view.js';
+import { reduceMotion } from './surface-motion.js';
 
 const api = window.reader;
 
-export function ModelCenter({ version, availableUpdate, onUpdateFound, onClose, onSave, onConnectionsChange, onReplayTour }) {
+export function ModelCenter({ version, availableUpdate, initialTab = 'models', initialSection = '', navigationKey = 0, onUpdateFound, onClose, onSave, onConnectionsChange, onReplayTour }) {
   const dialog = useRef(null);
   const mounted = useRef(false);
   const connectionUpdates = useRef({});
@@ -18,7 +30,8 @@ export function ModelCenter({ version, availableUpdate, onUpdateFound, onClose, 
   const [accountPending, setAccountPending] = useState('');
   const [accountProblem, setAccountProblem] = useState(null);
   const [updating, setUpdating] = useState(0);
-  const [tab, setTab] = useState('models');
+  const [tab, setTab] = useState(() => (['models', 'display', 'reading'].includes(initialTab) ? initialTab : 'models'));
+  const [highlightedSection, setHighlightedSection] = useState('');
   const [display, setDisplay] = useState(() => readReaderSettings());
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateMessage, setUpdateMessage] = useState('');
@@ -70,6 +83,30 @@ export function ModelCenter({ version, availableUpdate, onUpdateFound, onClose, 
     }
     return () => { mounted.current = false; };
   }, []);
+
+  useEffect(() => {
+    const nextTab = ['models', 'display', 'reading'].includes(initialTab) ? initialTab : 'models';
+    setTab(nextTab);
+    if (!initialSection) {
+      setHighlightedSection('');
+      return undefined;
+    }
+    let timer = null;
+    const raf = window.requestAnimationFrame(() => {
+      const target = dialog.current?.querySelector(`[data-setting-section="${initialSection}"]`);
+      if (target) {
+        target.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'center' });
+        setHighlightedSection(initialSection);
+        timer = window.setTimeout(() => {
+          if (mounted.current) setHighlightedSection('');
+        }, 1600);
+      }
+    });
+    return () => {
+      window.cancelAnimationFrame(raf);
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [initialTab, initialSection, navigationKey]);
 
   async function refresh(provider, force = true) {
     connectionUpdates.current[provider] = true;
@@ -183,7 +220,7 @@ export function ModelCenter({ version, availableUpdate, onUpdateFound, onClose, 
         : !problem && <p className="model-center-loading" role="status">正在读取模型配置…</p>}
     </section>
     <section id="model-center-panel-display" role="tabpanel" aria-labelledby="model-center-tab-display" className="model-center-pane" hidden={tab !== 'display'}>
-      <DisplaySettings value={display} onChange={updateDisplay} />
+      <DisplaySettings value={display} onChange={updateDisplay} highlightedSection={highlightedSection} />
     </section>
     <section id="model-center-panel-reading" role="tabpanel" aria-labelledby="model-center-tab-reading" className="model-center-pane" hidden={tab !== 'reading'}>
       <ReadingSettings value={display} onChange={updateDisplay} onReplayTour={onReplayTour} />
@@ -191,22 +228,47 @@ export function ModelCenter({ version, availableUpdate, onUpdateFound, onClose, 
   </dialog>;
 }
 
-const ALBUM_INTERVAL_OPTIONS = [
-  [15, '15 秒'],
-  [30, '30 秒'],
-  [60, '1 分钟'],
-  [300, '5 分钟'],
-  [600, '10 分钟'],
-];
-
-function normalizeAlbumInterval(raw) {
-  const sec = Number(raw);
-  return ALBUM_INTERVAL_OPTIONS.some(([v]) => v === sec) ? sec : 30;
-}
-
-function DisplaySettings({ value, onChange }) {
+function DisplaySettings({ value, onChange, highlightedSection = '' }) {
   const glassEnabled = value.glassEnabled !== false;
   const albumInterval = normalizeAlbumInterval(value.albumInterval);
+  const isPresetInterval = ALBUM_INTERVAL_OPTIONS.some((item) => item.value === albumInterval);
+  const [customIntervalMode, setCustomIntervalMode] = useState(() => !isPresetInterval);
+  const [customDraft, setCustomDraft] = useState(() => String(albumInterval));
+  const customInputRef = useRef(null);
+  const albumOrder = normalizeAlbumOrder(value.albumOrder);
+  const albumTransition = normalizeAlbumTransition(value.albumTransition);
+
+  useEffect(() => {
+    if (!isPresetInterval) setCustomIntervalMode(true);
+    setCustomDraft(String(albumInterval));
+  }, [albumInterval, isPresetInterval]);
+
+  const handleIntervalSelect = (event) => {
+    const raw = event.target.value;
+    if (raw === 'custom') {
+      setCustomIntervalMode(true);
+      setCustomDraft(String(albumInterval));
+      window.requestAnimationFrame(() => {
+        customInputRef.current?.focus();
+        customInputRef.current?.select();
+      });
+      return;
+    }
+    setCustomIntervalMode(false);
+    onChange({ albumInterval: normalizeAlbumInterval(raw) });
+  };
+
+  const commitCustomInterval = (rawText) => {
+    const parsed = Math.round(Number(rawText));
+    if (Number.isFinite(parsed) && parsed >= ALBUM_INTERVAL_MIN) {
+      const clamped = Math.min(ALBUM_INTERVAL_MAX, parsed);
+      onChange({ albumInterval: clamped });
+      setCustomDraft(String(clamped));
+    } else {
+      setCustomDraft(String(albumInterval));
+    }
+  };
+
   const tones = {
     light: [['blue', '雨后天青'], ['green', '山间松雾'], ['amber', '秋日麦穗'], ['pink', '蔷薇薄雾'], ['prism-light', '晴光流彩']],
     dark: [['default', '玄灰夜幕'], ['navy', '深海子夜'], ['ink', '墨池听雨'], ['forest', '松林入夜'], ['plum', '暮紫星河'], ['ember', '炉边夜话'], ['prism-dark', '极夜流光']],
@@ -277,11 +339,55 @@ function DisplaySettings({ value, onChange }) {
         </div>
       </div> : null}
     </div>
-    <div className="display-setting-group">
+    <div className={'display-setting-group' + (highlightedSection === 'album' ? ' is-highlighted' : '')}
+      id="setting-section-album" data-setting-section="album">
       <h3>相册卡片</h3>
-      <label>相册轮播时长
-        <select aria-label="相册轮播时长" value={albumInterval} onChange={(event) => onChange({ albumInterval: Number(event.target.value) })}>
-          {ALBUM_INTERVAL_OPTIONS.map(([sec, label]) => <option key={sec} value={sec}>{label}</option>)}
+      <div className="display-setting-row">
+        <label htmlFor="setting-album-interval">相册轮播时长</label>
+        <div className="settings-album-interval">
+          <select id="setting-album-interval" aria-label="相册轮播时长"
+            value={customIntervalMode || !isPresetInterval ? 'custom' : String(albumInterval)}
+            onChange={handleIntervalSelect}>
+            {ALBUM_INTERVAL_OPTIONS.map((item) => <option key={item.value} value={String(item.value)}>{item.label}</option>)}
+            <option value="custom">自定义…</option>
+          </select>
+          {(customIntervalMode || !isPresetInterval) && (
+            <div className="settings-custom-interval">
+              <input ref={customInputRef} type="number" min={ALBUM_INTERVAL_MIN} max={ALBUM_INTERVAL_MAX} step="1"
+                aria-label="自定义轮播时长（秒）" value={customDraft}
+                onChange={(event) => {
+                  const nextText = event.target.value;
+                  setCustomDraft(nextText);
+                  const parsed = Math.round(Number(nextText));
+                  if (Number.isFinite(parsed) && parsed >= ALBUM_INTERVAL_MIN && parsed <= ALBUM_INTERVAL_MAX) {
+                    onChange({ albumInterval: parsed });
+                  }
+                }}
+                onBlur={(event) => commitCustomInterval(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    commitCustomInterval(event.currentTarget.value);
+                  }
+                }} />
+              <span className="settings-input-unit">秒</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="display-setting-row">
+        <span id="setting-album-order-label">轮播顺序</span>
+        <div className="elr-segmented-control" role="group" aria-labelledby="setting-album-order-label">
+          {ALBUM_ORDER_OPTIONS.map((item) => (
+            <button key={item.value} type="button" aria-pressed={albumOrder === item.value}
+              onClick={() => onChange({ albumOrder: item.value })}>{item.label}</button>
+          ))}
+        </div>
+      </div>
+      <label>照片切换方式
+        <select aria-label="照片切换方式" value={albumTransition}
+          onChange={(event) => onChange({ albumTransition: normalizeAlbumTransition(event.target.value) })}>
+          {ALBUM_TRANSITION_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
       </label>
     </div>

@@ -80,6 +80,28 @@ button, input, select, textarea { font: inherit; }
       background: color-mix(in srgb, var(--dsw-alias-label-secondary) 62%, transparent);
     }
   }
+  /* Refined translucent pill scrollbars for Settings modal, panels, and menus */
+  :is(.settings, .model-center-pane, .connection-detail-body, .elr-settings-panel, .elr-card-menu) {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+
+    &::-webkit-scrollbar, & ::-webkit-scrollbar { width: 8px; height: 8px; }
+    &::-webkit-scrollbar-track, & ::-webkit-scrollbar-track { margin: 6px 0; background: transparent; }
+    &::-webkit-scrollbar-button, & ::-webkit-scrollbar-button { display: none; }
+    &::-webkit-scrollbar-corner, & ::-webkit-scrollbar-corner { background: transparent; }
+    &::-webkit-scrollbar-thumb, & ::-webkit-scrollbar-thumb {
+      border: 2px solid transparent;
+      border-radius: 999px;
+      background-clip: padding-box;
+      background-color: color-mix(in srgb, var(--dsw-alias-label-secondary) 32%, transparent);
+    }
+    &::-webkit-scrollbar-thumb:hover, & ::-webkit-scrollbar-thumb:hover {
+      background-color: color-mix(in srgb, var(--dsw-alias-label-secondary) 58%, transparent);
+    }
+    &::-webkit-scrollbar-thumb:active, & ::-webkit-scrollbar-thumb:active {
+      background-color: color-mix(in srgb, var(--dsw-alias-label-secondary) 76%, transparent);
+    }
+  }
   [data-elr-docked-card] {
     --elr-card-scroll-thumb: transparent;
     & :is(.elr-scrolling, :focus-visible) {
@@ -217,14 +239,21 @@ button, input, select, textarea { font: inherit; }
   font-weight: 650;
 }
 .display-settings { padding: 16px var(--settings-gutter) 20px; display: grid; gap: 12px; }
-.display-setting-group { display: grid; gap: 8px; padding: 12px 16px; border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--radius-md); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 37%, transparent); }
+.display-setting-group { display: grid; gap: 8px; padding: 12px 16px; border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--radius-md); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 37%, transparent); transition: border-color .28s var(--ease-out), box-shadow .28s var(--ease-out); }
+.display-setting-group.is-highlighted { border-color: var(--dsw-alias-brand-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary) 22%, transparent); }
 .display-setting-group h3 { margin: 0; font-size: 14px; }
 .settings .display-setting-group .settings-note { margin: 0; }
 .settings .display-setting-group :is(label, .display-setting-row) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(125px, 48%); gap: 12px; align-items: center; font-weight: 500; }
+.settings .display-setting-group .display-setting-row > label { display: block; font-weight: 500; }
+.settings-album-interval { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.settings-album-interval > select { flex: 1 1 auto; min-width: 0; box-sizing: border-box; height: 32px; min-height: 32px; }
+.settings-custom-interval { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; }
+.settings .settings-custom-interval input[type="number"] { box-sizing: border-box; width: 76px; height: 32px; min-height: 32px; padding: 0 8px; line-height: 30px; text-align: end; font-variant-numeric: tabular-nums; }
+.settings-input-unit { font-size: 12.5px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .setting-field-group { display: grid; gap: 4px; margin-bottom: 6px; }
 .setting-field-label { font-weight: 600; }
 .display-setting-group label select { min-height: 32px; }
-.model-center-pane { flex: 1 1 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-gutter: stable both-edges; }
+.model-center-pane { flex: 1 1 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable both-edges; }
 .model-settings-form, .model-connections {
   box-sizing: border-box;
   padding: 16px var(--settings-gutter) 18px;
@@ -377,7 +406,7 @@ button, input, select, textarea { font: inherit; }
   padding: 16px 18px 18px;
   overflow: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
+  scrollbar-gutter: stable;
 }
 .kimi-connection-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .kimi-connection-panel:not([hidden]) { display: grid; gap: 12px; }

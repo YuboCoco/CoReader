@@ -30,6 +30,12 @@ export function stageDesktopApp(staging, distDir, manifest) {
   cpSync('assets/sounds', join(staging, 'assets', 'sounds'), { recursive: true });
 }
 
+// Default album photos are shipped beside app.asar (resources/photo) so the
+// album card can read and downscale them with nativeImage.
+export function copyAlbumPhotos(resources) {
+  cpSync('assets/photo', join(resources, 'photo'), { recursive: true });
+}
+
 export function copyLayoutBundle(output, model, platform, arch) {
   const modules = join(output, 'node_modules');
   mkdirSync(modules, { recursive: true });

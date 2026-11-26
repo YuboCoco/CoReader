@@ -29,7 +29,11 @@ const preload = fileURLToPath(new URL('./preload.cjs', import.meta.url));
 const appIcon = fileURLToPath(new URL('../assets/coreader-cr.png', import.meta.url));
 const samplePaperPath = fileURLToPath(new URL('../assets/samples/Attention Is All You Need.pdf', import.meta.url));
 const builtinSoundsDir = fileURLToPath(new URL('../assets/sounds/', import.meta.url));
-const defaultAlbumDir = 'C:\\Users\\58462\\Desktop\\photo';
+// Bundled starter photos live outside app.asar (resources/photo) so nativeImage
+// can read them directly for thumbnails; in development they come from assets/photo.
+const defaultAlbumDir = app.isPackaged
+  ? join(process.resourcesPath, 'photo')
+  : fileURLToPath(new URL('../assets/photo/', import.meta.url));
 const requestIdPattern = /^[a-f0-9-]{36}$/i;
 let mainWindow;
 let library;
