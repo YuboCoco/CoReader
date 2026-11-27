@@ -1083,7 +1083,9 @@ function attachActions() {
     }
     const exePath = app.getPath('exe');
     const exeDir = dirname(exePath);
-    const isInstaller = process.platform === 'win32' && existsSync(join(exeDir, 'unins000.exe'));
+    const isInstaller = process.platform === 'win32'
+      && (existsSync(join(exeDir, 'unins000.exe'))
+        || (await readdir(exeDir).catch(() => [])).some((name) => /^unins\d+\.exe$/i.test(name)));
     const asset = selectUpdateAsset(updateInfo?.assets, {
       platform: process.platform,
       arch: process.arch,

@@ -7,7 +7,7 @@ export const translationFiles = Object.values(localTranslationModels).flatMap(({
 
 export function stageDesktopApp(staging, distDir, manifest) {
   mkdirSync(join(staging, 'src'));
-  for (const file of ['main.mjs', 'preload.cjs', 'library.mjs', 'album.mjs', 'ambient.mjs', 'ambient-shared.mjs', 'model.mjs', 'model-capabilities.mjs', 'model-directory.mjs', 'chatgpt.mjs', 'kimi-code.mjs', 'codebuddy.mjs', 'provider-usage.mjs', 'local-translation.mjs', 'layout-model.mjs', 'layout-spec.mjs', 'reading-agent.mjs', 'research.mjs', 'paper-analysis.js', 'paper-planning.js', 'reader-requests.mjs', 'app-updates.mjs']) {
+  for (const file of ['main.mjs', 'preload.cjs', 'library.mjs', 'album.mjs', 'ambient.mjs', 'ambient-shared.mjs', 'bing-wallpaper.mjs', 'model.mjs', 'model-capabilities.mjs', 'model-directory.mjs', 'chatgpt.mjs', 'kimi-code.mjs', 'codebuddy.mjs', 'provider-usage.mjs', 'local-translation.mjs', 'layout-model.mjs', 'layout-spec.mjs', 'reading-agent.mjs', 'research.mjs', 'paper-analysis.js', 'paper-planning.js', 'reader-requests.mjs', 'app-updates.mjs']) {
     cpSync(join('src', file), join(staging, 'src', file));
   }
   cpSync(distDir, join(staging, 'dist'), { recursive: true });

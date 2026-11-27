@@ -34,7 +34,7 @@ Compression=lzma2/fast
 SolidCompression=no
 CloseApplications=yes
 CloseApplicationsFilter=CoReader.exe
-RestartApplications=no
+RestartApplications=yes
 
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"
