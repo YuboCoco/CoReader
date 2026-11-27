@@ -118,8 +118,8 @@ function sizePdfOverlay(canvas, { width, height }) {
     Math.sqrt(PDF_OVERLAY_MAX_PIXELS / (width * height)));
   canvas.width = Math.max(1, Math.floor(width * scale));
   canvas.height = Math.max(1, Math.floor(height * scale));
-  canvas.style.width = width + 'px';
-  canvas.style.height = height + 'px';
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
   return scale;
 }
 // (v20 #3) Presets offered by the zoom dropdown; the free-form number input
@@ -176,7 +176,7 @@ function sameHighlightLocation(first, second) {
 const SELECTION_TOOL_WIDTH = 274;
 const SELECTION_TOOL_HEIGHT = 42;
 const SELECTION_TOOL_GAP = 8;
-const { readStore, writeStore, reviveStoredFile, getStoredFile, deleteStoredFile, openPaper, fetchReader, postReader, savePosition } = desktop;
+const { readStore, writeStore, reviveStoredFile, getStoredFile, deleteStoredFile, openPaper, fetchReader, postReader, savePosition, markPagesRead } = desktop;
 const fileCache = new Map();
 
 const resultKey = (id) => RESULT_PREFIX + id;
@@ -430,6 +430,8 @@ const DEFAULT_SHARED = {
   pdfOffsetX: 0,
   capsulePosition: 'top',
   glassEnabled: true, glassTintLight: 1, glassTintDark: 1,
+  customCursor: true,
+  selectionPopupTransparent: true,
   theme: 'default',
   // (v40) Overall UI tone. `theme` above only recolours the PAPER (the page
   // itself), which is a reading preference; this one tints the reader's own
@@ -437,7 +439,7 @@ const DEFAULT_SHARED = {
   // surface reads as one blue / green interface. `default` keeps the host
   // tokens untouched, so an old snapshot looks exactly as before.
   uiTone: 'default',
-  popupOn: false, autoTranslateSelection: false, autoTranslatePaper: false, popupLayout: 'stacked', paperId: '',
+  popupOn: false, autoTranslateSelection: false, autoTranslatePaper: true, popupLayout: 'stacked', popupShowOriginal: true, paperId: '',
   // (v21 #1) The reference column. `references` holds the parsed bibliography
   // enriched with resolved addresses, so it survives a tab switch together with
   // the analysis it belongs to. `referencesBusy` is transient and only guards
@@ -465,8 +467,8 @@ const DEFAULT_SHARED = {
   albumTransition: 'fade',
   ambientOpen: true,
   ambientFolder: '',
-  ambientTrack: 'nature/campfire.mp3',
-  ambientMix: { 'nature/campfire.mp3': 0.65 },
+  ambientTrack: '',
+  ambientMix: {},
   ambientMode: 'single',
   ambientVolume: 0.8,
   ambientPresets: [],
@@ -603,9 +605,9 @@ delete shared.tab;
       if (name === 'campfire.wav') return 'nature/campfire.mp3';
       if (name === 'rain.wav') return 'rain/light-rain.mp3';
       if (name === 'ocean.wav') return 'nature/waves.mp3';
-      return typeof name === 'string' ? name : 'nature/campfire.mp3';
+      return typeof name === 'string' ? name : '';
     };
-    shared.ambientTrack = remapLegacyTrack(shared.ambientTrack || 'nature/campfire.mp3');
+    shared.ambientTrack = remapLegacyTrack(shared.ambientTrack || '');
     const rawMix = shared.ambientMix && typeof shared.ambientMix === 'object' ? shared.ambientMix : null;
     const cleanMix = {};
     if (rawMix) {
@@ -616,8 +618,6 @@ delete shared.tab;
           cleanMix[mappedKey] = Math.min(1, Math.max(0.05, vol));
         }
       }
-    } else if (shared.ambientTrack) {
-      cleanMix[shared.ambientTrack] = 0.65;
     }
     shared.ambientMix = cleanMix;
   }
@@ -895,7 +895,28 @@ const CSS = [
   '.elr-divider:focus-visible { outline: 1px solid var(--dsw-alias-brand-primary); outline-offset: -1px; }',
   '@media (prefers-reduced-motion: reduce) { .elr-divider::after { transition-property: opacity; } }',
   '.elr-body.is-resizing-panes { user-select: none; }',
+  '.elr-body.is-resizing-panes .elr-main, .elr-body.is-resizing-panes .elr-side { visibility: hidden; pointer-events: none !important; contain: strict; }',
+  '.elr-body.is-resizing-panes > .elr-resizer { opacity: 0; }',
   '.elr-body.is-resizing-panes .elr-feature-column > .elr-sec, .elr-body.is-resizing-panes .elr-pdf-container > .pdfViewer { transition: none; }',
+  '.elr-resize-curtain-clip { position: fixed; z-index: 140; box-sizing: border-box; display: flex; padding: 8px; overflow: hidden; pointer-events: none; contain: strict; background: var(--dsw-alias-bg-base); }',
+  '.elr-resize-curtain-clip.is-bottom { flex-direction: column; }',
+  '.elr-resize-curtain-clip.is-right { flex-direction: row; }',
+  '.elr-resize-curtain-clip.is-left { flex-direction: row-reverse; }',
+  '.elr-resize-pane { display: grid; place-items: center; box-sizing: border-box; overflow: hidden; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 55%, var(--dsw-alias-border-l1)); contain: layout style paint; animation: elr-resize-pane-in 150ms cubic-bezier(.22, 1, .36, 1) both; }',
+  '@keyframes elr-resize-pane-in { from { border-radius: 0; opacity: .76; } to { border-radius: 16px; opacity: 1; } }',
+  '.elr-resize-pane.is-reader { flex: 1 1 0; min-width: 0; min-height: 0; background: radial-gradient(circle at 28% 22%, color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent), transparent 58%), var(--dsw-alias-bg-layer-1); }',
+  '.elr-resize-pane.is-side { flex: 0 0 auto; background: radial-gradient(circle at 70% 26%, color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent), transparent 60%), color-mix(in srgb, var(--dsw-alias-bg-layer-2) 68%, var(--dsw-alias-bg-layer-1)); }',
+  '.elr-resize-pane-badge { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; min-width: 156px; max-width: calc(100% - 24px); max-height: calc(100% - 24px); padding: 16px 28px; box-sizing: border-box; border-radius: 18px; border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-overlay); box-shadow: 0 8px 24px rgb(15 23 42 / .07); text-align: center; }',
+  '.elr-resize-pane-icon { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; color: var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 11%, var(--dsw-alias-bg-layer-2)); border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 22%, transparent); }',
+  '.elr-resize-pane-icon svg { width: 26px; height: 26px; display: block; }',
+  '.elr-resize-pane-title { font-size: 15px; font-weight: 650; letter-spacing: .04em; color: var(--dsw-alias-label-primary); line-height: 1.25; white-space: nowrap; }',
+  '.elr-resize-pane-sub { font-size: 12px; font-weight: 500; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; line-height: 1.2; white-space: nowrap; }',
+  '.elr-resize-curtain-edge { flex: 0 0 auto; position: relative; display: grid; place-items: center; }',
+  '.elr-resize-curtain-edge::after { content: ""; border-radius: 999px; background: var(--dsw-alias-brand-primary); box-shadow: 0 0 8px color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent); }',
+  '.elr-resize-curtain-clip.is-bottom > .elr-resize-curtain-edge { width: 100%; }',
+  '.elr-resize-curtain-clip.is-bottom > .elr-resize-curtain-edge::after { width: 42px; height: 3px; }',
+  '.elr-resize-curtain-clip:is(.is-right, .is-left) > .elr-resize-curtain-edge { height: 100%; }',
+  '.elr-resize-curtain-clip:is(.is-right, .is-left) > .elr-resize-curtain-edge::after { width: 3px; height: 42px; }',
   '.elr-resizer { z-index: 6; }',
   // (v8 #7) Reorderable side sections (recent reading, notes, selection).
   // (v31 #1) Each section is a self-contained CARD now: its own border,
@@ -936,17 +957,17 @@ const CSS = [
   '.elr-body.dock-bottom .elr-sec.over-above::before, .elr-body.dock-bottom .elr-sec.over-below::after { top: 8px; bottom: 8px; left: auto; right: auto; width: 3px; height: auto; }',
   '.elr-body.dock-bottom .elr-sec.over-above::before { top: 8px; bottom: 8px; left: 0; }',
   '.elr-body.dock-bottom .elr-sec.over-below::after { top: 8px; bottom: 8px; right: 0; }',
-  '.elr-card-dock-target > .elr-card-head { box-shadow: inset 0 -2px var(--dsw-alias-brand-primary); color: var(--dsw-alias-brand-primary); }',
+  '.elr-card-dock-target > .elr-card-head { color: var(--dsw-alias-brand-primary); }',
   '.elr-card-dock-target > .elr-side-body { background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, transparent); }',
   // (v31 #2) The floating clone that follows the pointer while reordering.
   // It is portalled to <body>, positioned fixed, and never receives events.
-  '.elr-drag-ghost { position: fixed; inset: 0 auto auto 0; z-index: 200; pointer-events: none; box-sizing: border-box; display: grid; place-items: center; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--radius-lg, 16px); color: var(--dsw-alias-label-primary); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 94%, transparent); box-shadow: 0 10px 26px rgb(10 18 30 / .20), var(--elr-frosted-rim); overflow: hidden; will-change: transform; contain: layout style paint; transition: width 160ms var(--ease-out), height 160ms var(--ease-out); }',
-  '.elr-drag-ghost.is-lifting { animation: elr-drag-lift-pop 140ms cubic-bezier(.22, 1, .36, 1) both; }',
-  '@keyframes elr-drag-lift-pop { from { opacity: .84; scale: .96; } to { opacity: 1; scale: 1; } }',
+  '.elr-drag-ghost { position: fixed; inset: 0 auto auto 0; z-index: 200; pointer-events: none; box-sizing: border-box; display: grid; place-items: center; padding: 6px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--radius-lg, 15px); color: var(--dsw-alias-label-primary); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 82%, transparent); backdrop-filter: blur(16px) saturate(1.4); -webkit-backdrop-filter: blur(16px) saturate(1.4); box-shadow: 0 10px 26px rgb(10 18 30 / .20), var(--elr-frosted-rim); overflow: hidden; will-change: translate, transform; contain: layout style paint; transition: width 160ms var(--ease-out), height 160ms var(--ease-out); }',
+  '.elr-drag-ghost.is-lifting { animation: elr-drag-lift-pop 240ms cubic-bezier(.22, 1.25, .36, 1) both; }',
+  '@keyframes elr-drag-lift-pop { 0% { opacity: 0; scale: .92; } 45% { opacity: 1; scale: .95; } 100% { opacity: 1; scale: 1; } }',
   '.elr-drag-ghost-label { max-width: 100%; max-height: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(13px + var(--elr-card-font-adjust, 0px)); font-weight: 650; }',
   '.elr-drag-ghost.is-vertical .elr-drag-ghost-label { writing-mode: vertical-rl; }',
   'body.elr-card-dragging, body.elr-card-dragging * { cursor: grabbing !important; }',
-  'body.elr-card-dragging .elr-main, body.elr-card-dragging .elr-sec[data-elr-floating-card] { pointer-events: none !important; }',
+  'body.elr-card-dragging .elr-main, body.elr-card-dragging .elr-side, body.elr-card-dragging .elr-card-menu, body.elr-card-dragging .elr-sec[data-elr-floating-card] { pointer-events: none !important; }',
   // Faint 15% text-color drop hint line positioned directly inside the target gap.
   '.elr-drop-line { position: fixed; z-index: 195; pointer-events: none; border-radius: 999px; background: color-mix(in srgb, var(--dsw-alias-label-primary) 18%, transparent); animation: elr-drop-line-fade 120ms var(--ease-out) both; }',
   '@keyframes elr-drop-line-fade { from { opacity: 0; } to { opacity: 1; } }',
@@ -964,14 +985,33 @@ const CSS = [
   // The manager is portalled above the card column so it cannot shrink the scroll area.
   '.elr-card-head { position: relative; }',
   '.elr-card-head .elr-icon-btn.active { border-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-brand-primary); }',
-  '.elr-card-menu { position: fixed; z-index: 131; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-overlay); color: var(--dsw-alias-label-primary); box-shadow: 0 8px 24px rgba(0,0,0,.22); display: flex; flex-direction: column; gap: 4px; overflow: auto; overscroll-behavior: contain; }',
+  '.elr-card-menu { position: fixed; z-index: 131; box-sizing: border-box; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-overlay); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); color: var(--dsw-alias-label-primary); box-shadow: 0 12px 32px rgba(0,0,0,.22); display: flex; flex-direction: column; gap: 10px; overflow: auto; overscroll-behavior: contain; }',
   '.elr-card-menu > * { flex: 0 0 auto; }',
-  '.elr-card-menu-title { font-size: 11px; font-weight: 600; color: var(--dsw-alias-label-secondary); margin-bottom: 2px; }',
-  '.elr-card-menu-row { display: flex; align-items: center; gap: 7px; padding: 3px 2px; border-radius: 6px; cursor: pointer; font-size: 12px; color: var(--dsw-alias-label-primary); }',
-  '.elr-card-menu-row:hover { background: var(--dsw-alias-bg-layer-2); }',
-  '.elr-card-menu-row input { margin: 0; cursor: pointer; }',
-  '.elr-card-menu-row.on { color: var(--dsw-alias-label-primary); }',
-  '.elr-card-menu-actions { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--dsw-alias-border-l1); }',
+  '.elr-card-menu-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--dsw-alias-border-l1); }',
+  '.elr-card-menu-title-wrap { display: flex; align-items: center; gap: 7px; min-width: 0; }',
+  '.elr-card-menu-title { font-size: 12px; font-weight: 650; color: var(--dsw-alias-label-primary); }',
+  '.elr-card-menu-count { padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent); color: var(--dsw-alias-brand-primary); font-size: 11px; font-weight: 600; }',
+  '.elr-card-menu-reset { padding: 3px 8px; font-size: 11px; border-radius: 6px; }',
+  '.elr-card-menu-section { display: flex; flex-direction: column; gap: 6px; }',
+  '.elr-card-menu-section-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 600; color: var(--dsw-alias-label-secondary); }',
+  '.elr-card-menu-section-badge { font-size: 10px; padding: 0 6px; border-radius: 999px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); }',
+  '.elr-card-menu-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }',
+  '.elr-card-tile { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 8px 9px; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); text-align: start; font: inherit; cursor: pointer; transition: border-color .14s ease, background .14s ease, transform .14s ease; }',
+  '.elr-card-tile:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 50%, var(--dsw-alias-border-l2)); }',
+  '.elr-card-tile.is-on { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, var(--dsw-alias-border-l1)); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, var(--dsw-alias-bg-layer-1)); }',
+  '.elr-card-tile.is-off { border-style: dashed; background: var(--dsw-alias-bg-layer-2); opacity: .88; cursor: grab; touch-action: none; }',
+  '.elr-card-tile.is-off:hover { opacity: 1; background: var(--dsw-alias-bg-layer-1); }',
+  '.elr-card-tile.is-off:active { cursor: grabbing; }',
+  '.elr-menu-drag-ghost { position: fixed; left: 0; top: 0; z-index: 200; pointer-events: none; box-sizing: border-box; width: 220px; padding: 10px 12px; border: 1.5px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); box-shadow: 0 10px 24px rgb(10 18 30 / .20); display: flex; flex-direction: column; gap: 3px; will-change: transform; contain: layout style paint; }',
+  '.elr-menu-drag-ghost.is-outside { border-color: var(--dsw-alias-brand-primary); }',
+  '.elr-card-tile-top { display: flex; align-items: center; gap: 5px; min-width: 0; }',
+  '.elr-card-tile-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }',
+  '.elr-card-tile-float { flex: 0 0 auto; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent); color: var(--dsw-alias-brand-primary); font-size: 10px; line-height: 1.5; }',
+  '.elr-card-tile-state { flex: 0 0 auto; width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; }',
+  '.elr-card-tile.is-on .elr-card-tile-state { background: var(--dsw-alias-brand-primary); color: #fff; }',
+  '.elr-card-tile.is-off .elr-card-tile-state { background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-secondary); border: 1px solid var(--dsw-alias-border-l2); }',
+  '.elr-card-tile-desc { font-size: 10.5px; line-height: 1.35; color: var(--dsw-alias-label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+  '.elr-card-menu-empty { padding: 8px 10px; border-radius: 8px; border: 1px dashed var(--dsw-alias-border-l1); color: var(--dsw-alias-label-secondary); font-size: 11px; text-align: center; }',
   '.elr-card-none { padding: 14px 12px; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 1.6; text-align: center; }',
   // A closed card's × never inherits the card header's click-to-collapse.
   '.elr-card-control { flex: 0 0 auto; display: grid; place-items: center; position: relative; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }',
@@ -994,20 +1034,29 @@ const CSS = [
   '.elr-input, .elr-out { flex: 1 1 auto; min-height: 0; width: 100%; box-sizing: border-box; border: none; outline: none; resize: none; padding: 14px 16px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; line-height: 1.7; }',
   '.elr-out { white-space: pre-wrap; overflow: auto; overscroll-behavior: contain; }',
   '.elr-out-empty { color: var(--dsw-alias-label-secondary); }',
-  '.elr-notice { position: absolute; z-index: 20; inset: 10px 12px auto auto; box-sizing: border-box; max-width: min(380px, calc(100% - 24px)); pointer-events: none; }',
-  '.elr-notice:not(:empty) { padding: 8px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-overlay); color: var(--dsw-alias-label-primary); box-shadow: 0 6px 18px rgb(12 20 34 / .14); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }',
-  '.elr-notice.is-error { color: var(--dsw-alias-state-error-primary); }',
-  '.elr-notice.is-warn { color: var(--dsw-alias-state-warn-primary); }',
+  '.elr-notice { position: absolute; z-index: 40; inset: auto 16px 16px auto; box-sizing: border-box; max-width: min(380px, calc(100% - 32px)); pointer-events: none; }',
+  '.elr-notice-pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 13px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-overlay); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: var(--dsw-alias-label-primary); box-shadow: 0 8px 24px rgb(12 20 34 / .16); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; animation: elr-notice-in 220ms cubic-bezier(.22, 1, .36, 1) both; }',
+  '.elr-notice-pill::before { content: ""; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--dsw-alias-brand-primary); }',
+  '.elr-notice-pill.is-ok::before { background: #2fb36d; }',
+  '.elr-notice-pill.is-warn { color: var(--dsw-alias-state-warn-primary); border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 35%, var(--dsw-alias-border-l2)); }',
+  '.elr-notice-pill.is-warn::before { background: var(--dsw-alias-state-warn-primary); }',
+  '.elr-notice-pill.is-error { color: var(--dsw-alias-state-error-primary); border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 35%, var(--dsw-alias-border-l2)); }',
+  '.elr-notice-pill.is-error::before { background: var(--dsw-alias-state-error-primary); }',
+  '@keyframes elr-notice-in { 0% { opacity: 0; transform: translateY(8px) scale(.97); } 100% { opacity: 1; transform: translateY(0) scale(1); } }',
+  '@media (prefers-reduced-motion: reduce) { .elr-notice-pill { animation: none; } }',
   // (v31 #1) The card FRAME is `.elr-sec` now, so the inner roots drop their
   // own bottom rule and surface — otherwise a card would show a double border
   // and a slightly different shade from its frame.
   '.elr-sel-card { background: transparent; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }',
   // Let the card frame provide a single surface behind the title and content.
-  '.elr-function-head { flex: 0 0 54px; height: 54px; min-height: 54px; box-sizing: border-box; display: flex; color: var(--dsw-alias-label-primary); font-size: calc(13px + var(--elr-card-font-adjust, 0px)); font-weight: 650; }',
-  '.elr-card-toggle { flex: 1 1 auto; min-width: 0; min-height: 0; display: grid; place-items: center; padding: 4px; border: 0; border-radius: 14px; background: transparent; color: inherit; font: inherit; text-align: center; cursor: pointer; user-select: none; touch-action: none; }',
+  '.elr-function-head { flex: 0 0 52px; height: 52px; min-height: 52px; box-sizing: border-box; display: flex; align-items: stretch; padding: 6px; color: var(--dsw-alias-label-primary); font-size: calc(13px + var(--elr-card-font-adjust, 0px)); font-weight: 650; }',
+  '.elr-card-toggle { --elr-toggle-hover-bg: rgb(15 23 42 / .045); --elr-toggle-hover-border: rgb(15 23 42 / .08); --elr-toggle-hover-shadow: inset 0 1px 0 rgb(255 255 255 / .85), inset 0 -1px 0 rgb(0 0 0 / .05), 0 1px 2px rgb(15 23 42 / .06); --elr-toggle-press-bg: rgb(15 23 42 / .075); --elr-toggle-press-border: rgb(15 23 42 / .12); --elr-toggle-press-shadow: inset 0 1px 2px rgb(15 23 42 / .15), inset 0 0 0 transparent, 0 1px 0 rgb(255 255 255 / .9); flex: 1 1 auto; min-width: 0; min-height: 0; display: grid; place-items: center; padding: 5px 10px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: inherit; font: inherit; text-align: center; cursor: pointer; user-select: none; touch-action: none; box-shadow: inset 0 0 0 transparent, inset 0 0 0 transparent, 0 0 0 transparent; transition: transform 120ms ease, box-shadow 140ms ease, background-color 160ms ease, border-color 160ms ease, color 160ms ease; }',
+  ':is(:root[data-desktop-scheme="dark"], .elr-tone-navy, .elr-tone-ink, .elr-tone-forest, .elr-tone-plum, .elr-tone-ember, .elr-tone-prism-dark) .elr-card-toggle { --elr-toggle-hover-bg: rgb(255 255 255 / .06); --elr-toggle-hover-border: rgb(255 255 255 / .09); --elr-toggle-hover-shadow: inset 0 1px 0 rgb(255 255 255 / .1), inset 0 -1px 0 rgb(0 0 0 / .22), 0 1px 2px rgb(0 0 0 / .22); --elr-toggle-press-bg: rgb(0 0 0 / .24); --elr-toggle-press-border: rgb(255 255 255 / .07); --elr-toggle-press-shadow: inset 0 1px 2px rgb(0 0 0 / .42), inset 0 0 0 transparent, 0 1px 0 rgb(255 255 255 / .08); }',
+  '.elr-card-toggle:hover:not(:active, .is-pressed) { background: var(--elr-toggle-hover-bg); border-color: var(--elr-toggle-hover-border); box-shadow: var(--elr-toggle-hover-shadow); }',
+  '.elr-card-toggle:is(:active, .is-pressed) { transform: translateY(1px); background: var(--elr-toggle-press-bg); border-color: var(--elr-toggle-press-border); box-shadow: var(--elr-toggle-press-shadow); }',
   '.elr-card-toggle:focus-visible { outline: 1px solid var(--dsw-alias-brand-primary); outline-offset: -1px; }',
-  '.elr-card-label { max-width: 100%; max-height: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
-  '.elr-card-toggle:active { cursor: grabbing; }',
+  '.elr-card-label { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; max-height: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: .01em; }',
+  '.elr-card-label::before { content: ""; flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--dsw-alias-brand-primary); opacity: .82; }',
   '.elr-card-content { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; }',
   '.elr-selection-content { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; padding: var(--elr-card-content-gap) var(--elr-card-inset) var(--elr-card-inset) var(--elr-card-leading); overflow: hidden auto; }',
   '.elr-floating-card .elr-selection-content { overscroll-behavior: contain; }',
@@ -1098,7 +1147,7 @@ const CSS = [
   // It deliberately does NOT include SIZE containment (`strict` would imply it
   // and collapse this absolutely-positioned box to zero height).
   '.elr-pdf-container { position: absolute; inset: 0; overflow: auto; overscroll-behavior: contain; contain: layout paint style; }',
-  '.elr-pdf-container > .pdfViewer { transform: translate3d(calc(var(--elr-pdf-offset-x, 0) * 0.45cqw), 0, 0); transition: transform 60ms linear; }',
+  '.elr-pdf-container > .pdfViewer { transform: translate3d(calc(var(--elr-pdf-offset-x, 0) * 0.45cqw), 0, 0); transition: transform 110ms cubic-bezier(.22, 1, .36, 1); will-change: transform; }',
   '.elr-pdf-container .textLayer span { letter-spacing: normal; word-spacing: normal; }',
   '@media (prefers-reduced-motion: reduce) { .elr-pdf-container > .pdfViewer { transition: none; } }',
   '.elr-pdf-wrap.is-start { min-height: 0; background: var(--dsw-alias-bg-base); }',
@@ -1173,15 +1222,18 @@ const CSS = [
   // drive the colour: light schemes give dark-on-light, dark schemes give
   // light-on-dark, and the result block keeps its brand accent either way.
   '.elr-popup-dark .elr-popup-block-result { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, var(--dsw-alias-bg-layer-1)); border-left-color: var(--dsw-alias-brand-primary); }',
-  '.elr-popup-dark .elr-popup-result-box { background: transparent; color: var(--dsw-alias-label-primary); }',
+  '.elr-popup-dark .elr-popup-result-box, .elr-popup-dark .elr-popup-textarea { background: transparent; color: var(--dsw-alias-label-primary); }',
   '.elr-popup-dark .elr-popup-block-result .elr-popup-label { color: var(--dsw-alias-label-secondary); }',
   '.elr-popup-dark .elr-popup-result-box.elr-out-empty { color: var(--dsw-alias-label-secondary); }',
   '.elr-popup-actions { display: flex; align-items: center; justify-content: flex-end; margin-top: 7px; }',
   // The title bar doubles as the drag handle.
-  '.elr-popup-head { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-secondary); font-size: 11px; cursor: move; user-select: none; touch-action: none; }',
+  '.elr-popup-head { display: flex; flex: 0 0 auto; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-secondary); font-size: 11px; white-space: nowrap; cursor: move; user-select: none; touch-action: none; }',
   '.elr-popup[data-selection-anchored] .elr-popup-head { cursor: default; }',
   '.elr-popup-head .elr-icon-btn { padding: 2px 6px; white-space: nowrap; }',
   '.elr-popup-head .elr-popup-translate { min-width: 0; overflow: hidden; text-overflow: ellipsis; border-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-brand-primary); font-weight: 600; }',
+  '.elr-floating-card.is-compare-hidden { display: none !important; }',
+  '.elr-popup-head .elr-popup-original-toggle, .elr-popup-head .elr-popup-translate-btn { width: auto; min-width: 24px; padding: 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .01em; }',
+  '.elr-popup-head .elr-popup-original-toggle[aria-pressed="true"] { color: var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent); }',
   '.elr-popup-head .elr-popup-translate:hover:not(:disabled) { background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-bg-base); }',
   '.elr-popup-head .elr-popup-translate:disabled { opacity: .5; cursor: default; border-color: var(--dsw-alias-border-l1); color: var(--dsw-alias-label-secondary); }',
   // (v17 #1) The body no longer scrolls as a whole: each of the two cards owns
@@ -1261,7 +1313,7 @@ const CSS = [
   // misalignment reported in v7. `.canvasWrapper` is now the positioning
   // context and its rect is also the measuring origin.
   '.elr-pdf-container .pdfViewer .page .canvasWrapper { position: relative; }',
-  '.elr-hl-overlay { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; mix-blend-mode: multiply; }',
+  '.elr-hl-overlay { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; mix-blend-mode: multiply; }',
   '.elr-hl-note { cursor: help; }',
   // ---- (v44 #3) 纸张纹理 / 护眼黄: repaint ONLY the white paper ----
   // WHAT WAS WRONG (v8 and earlier): the tint was a `::after` on `.page`, i.e.
@@ -1435,7 +1487,8 @@ const CSS = [
   // laid out side by side.
   '.elr-body.dock-bottom .elr-side-top > .elr-col-head.elr-card-head { display: flex; flex: 0 0 auto; box-sizing: border-box; padding: 4px 10px 6px; border-bottom: none; }',
   '.elr-body.dock-bottom [data-elr-docked-card] > :first-child { flex-direction: row; min-width: 0; }',
-  '.elr-body.dock-bottom [data-elr-docked-card] .elr-function-head { flex: 0 0 ' + (CARD_HEADER_HEIGHT - 2) + 'px; height: auto; min-height: 0; }',
+  '.elr-body.dock-bottom [data-elr-docked-card] .elr-function-head { flex: 0 0 ' + (CARD_HEADER_HEIGHT - 2) + 'px; height: auto; min-height: 0; padding: 6px; }',
+  '.elr-body.dock-bottom [data-elr-docked-card] .elr-card-toggle { width: 100%; height: 100%; padding: 6px; }',
   '.elr-body.dock-bottom [data-elr-docked-card] .elr-card-label { writing-mode: vertical-rl; }',
   // (v32b #2) The per-card width handles. They exist in BOTH docks — the right
   // dock treats them as "resize the card column", the bottom dock as "resize
@@ -1554,7 +1607,7 @@ const CSS = [
   '.elr-find-btn.is-next::before { transform: translateY(-1px) rotate(225deg); }',
   // (v39 #1) The hit overlay sits above the page canvas next to the
   // highlight layer, but with `multiply` it tints text without hiding it.
-  '.elr-find-overlay { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 4; mix-blend-mode: multiply; }',
+  '.elr-find-overlay { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; mix-blend-mode: multiply; }',
   // ---- v21 #1 / v28 #2: bibliography column ----
   '.elr-refs-list { display: grid; gap: 9px; }',
   '.elr-ref { min-width: 0; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent); font-size: calc(12px + var(--elr-card-font-adjust, 0px)); line-height: 1.6; }',
@@ -1631,8 +1684,12 @@ const CSS = [
   '.settings:is(.model-center,.connection-detail)[open] { --elr-frosted-fill: var(--elr-glass-dialog-fill); --elr-frosted-blur: var(--elr-glass-floating-blur); border-color: transparent; border-radius: 16px; background: var(--elr-frosted-background); backdrop-filter: var(--elr-frosted-filter); box-shadow: var(--elr-frosted-rim), 0 16px 44px rgb(12 20 34 / .23); }',
   '.settings.connection-detail[open] { --elr-frosted-fill: var(--elr-glass-floating-fill); }',
   '.elr-settings-panel, .elr-card-menu, .elr-note-bubble { --elr-frosted-fill: var(--elr-glass-floating-fill); --elr-frosted-blur: var(--elr-glass-floating-blur); background: var(--elr-frosted-background); border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 58%, transparent); border-radius: 16px; backdrop-filter: var(--elr-frosted-filter); box-shadow: var(--elr-frosted-rim), 0 12px 34px rgb(12 20 34 / .20); }',
-  '.elr-popup .elr-popup-block-original { background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 24%, transparent); }',
-  '.elr-popup .elr-popup-block-result { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, transparent); }',
+  '.elr-popup .elr-popup-block-original { background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 22%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-border-l1) 70%, transparent); transition: background-color .18s var(--ease-out), border-color .18s var(--ease-out); }',
+  '.elr-popup .elr-popup-block-original:focus-within { background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 30%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 52%, var(--dsw-alias-border-l2)); }',
+  '.elr-popup .elr-popup-block-result { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-border-l1) 70%, transparent); }',
+  '.elr-popup.is-frosted-blocks .elr-popup-block-original { background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent); backdrop-filter: blur(18px) saturate(1.35); -webkit-backdrop-filter: blur(18px) saturate(1.35); border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 55%, transparent); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent); }',
+  '.elr-popup.is-frosted-blocks .elr-popup-block-original:focus-within { background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 92%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 58%, var(--dsw-alias-border-l2)); }',
+  '.elr-popup.is-frosted-blocks .elr-popup-block-result { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent)); backdrop-filter: blur(18px) saturate(1.35); -webkit-backdrop-filter: blur(18px) saturate(1.35); border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 55%, transparent); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent); }',
   '.elr-selection-tools { position: fixed; z-index: 124; box-sizing: border-box; height: ' + SELECTION_TOOL_HEIGHT + 'px; display: flex; align-items: center; justify-content: center; gap: 3px; padding-inline: 7px; border-radius: 999px; color: var(--dsw-alias-label-primary); user-select: none; }',
   '.elr-selection-tools button { flex: 0 1 30px; display: grid; place-items: center; min-width: 0; height: 30px; padding: 0; border: 0; border-radius: 50%; color: inherit; background: transparent; cursor: pointer; }',
   '.elr-selection-tools button:hover, .elr-selection-tools button[aria-pressed="true"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent); }',
@@ -1795,13 +1852,13 @@ const CSS = [
   '.elr-feature-column > .elr-analysis-card { flex: 1.35 1 300px; min-height: 270px; }',
   '.elr-analysis-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }',
   '.elr-analysis-card-inner { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }',
-  '.elr-analysis-card-body { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }',
-  '.elr-analysis-card-body:has(> .elr-analysis-actions) { flex-direction: column; }',
+  '.elr-analysis-card-body { position: relative; display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }',
   '.elr-analysis-card-body > .elr-col { flex: 1 1 auto; min-height: 0; overflow: hidden; }',
   '.elr-analysis-card-body > .elr-col > .elr-toolbar { border-bottom: 0; padding-block-start: 0; }',
   '.elr-analysis-card-body .elr-tabs { flex: 0 0 auto; }',
   '.elr-analysis-card-body .elr-out, .elr-analysis-card-body .elr-analysis-body, .elr-analysis-card-body .elr-figure-list { min-height: 0; overflow: auto; }',
-  '.elr-analysis-actions { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; gap: 3px; padding-inline-end: 9px; }',
+  '.elr-analysis-actions { position: absolute; top: calc(var(--elr-card-content-gap) + 6px); right: calc(var(--elr-card-inset) + 8px); z-index: 4; display: flex; align-items: center; justify-content: flex-end; gap: 3px; }',
+  '.elr-analysis-card-body:has(> .elr-analysis-actions) > .elr-col > .elr-out, .elr-analysis-card-body:has(> .elr-analysis-actions) > .elr-out { padding-top: 34px; }',
   '.elr-analysis-actions .elr-analysis-icon { color: var(--dsw-alias-label-primary); }',
   '.elr-analysis-icon:disabled { opacity: .45; cursor: default; }',
   '.elr-analysis-actions .elr-analysis-run { color: var(--dsw-alias-brand-primary); }',
@@ -1938,7 +1995,7 @@ const CSS = [
   // merge at the rounded corners and follow the same light across every card.
   '.elr-sec[data-elr-docked-card]::after, .elr-sec[data-elr-floating-card]::after { content: ""; position: absolute; inset: 0; border-radius: calc(var(--elr-sec-radius) - 1px); pointer-events: none; z-index: 2; box-shadow: var(--elr-frosted-rim); }',
   '.elr-sec[data-elr-floating-card][data-elr-folding] { contain: layout; }',
-  '.elr-gesturing .elr-feature-grid .elr-sec[data-elr-docked-card] { backdrop-filter: none; }',
+  '.elr-gesturing .elr-feature-grid .elr-sec[data-elr-docked-card], .elr-gesturing .elr-sec[data-elr-floating-card], .elr-gesturing .elr-card-menu, .elr-gesturing .elr-capsule-popover, .elr-gesturing .elr-reader-capsule, .elr-gesturing .elr-toolbar { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }',
   '@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .elr-sec[data-elr-docked-card], .elr-sec[data-elr-floating-card], .elr-drag-ghost { background: var(--dsw-alias-bg-layer-1); backdrop-filter: none; } }',
   '.elr-card-drop-placeholder { --elr-drop-accent: var(--dsw-alias-brand-primary, #2467ab); flex: 0 0 ' + CARD_HEADER_HEIGHT + 'px; min-height: ' + CARD_HEADER_HEIGHT + 'px; box-sizing: border-box; border: 2px solid var(--elr-drop-accent); border-radius: 15px; background: color-mix(in srgb, var(--elr-drop-accent) 24%, var(--dsw-alias-bg-layer-1)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--elr-drop-accent) 42%, transparent), 0 0 0 3px color-mix(in srgb, var(--elr-drop-accent) 24%, transparent), 0 5px 18px rgba(20,28,45,.16); }',
   '.elr-feature-column > .elr-sec.dragging { position: absolute; inset: 0 auto auto 0; visibility: hidden; pointer-events: none; }',
@@ -2388,26 +2445,33 @@ function fitPopupBox(box, viewport) {
   };
 }
 
-function translationPopupMinimum(font, horizontal) {
-  if (horizontal) return { w: Math.max(510, font * 24), h: Math.max(184, 126 + font * 3) };
-  return { w: Math.max(344, font * 16), h: Math.max(244, 185 + font * 4) };
+function translationPopupMinimum(font, horizontal, showOriginal = true) {
+  if (!showOriginal) return { w: Math.max(320, font * 16), h: Math.max(164, 114 + Math.ceil(font * 3.5)) };
+  if (horizontal) return { w: Math.max(510, font * 24), h: Math.max(192, 132 + Math.ceil(font * 3.2)) };
+  return { w: Math.max(352, font * 16), h: Math.max(252, 190 + font * 4) };
 }
 
-function translationPopupSize(original, result, font, horizontal) {
-  const min = translationPopupMinimum(font, horizontal);
+function translationPopupSize(original, result, font, horizontal, showOriginal = true) {
+  const effectiveHorizontal = showOriginal && horizontal;
+  const min = translationPopupMinimum(font, effectiveHorizontal, showOriginal);
   const source = String(original || '');
   const translated = String(result || '');
-  const w = Math.min(horizontal ? 790 : 640, min.w + Math.round(Math.sqrt(Math.max(0, source.length - 24)) * 9));
-  const paneWidth = (horizontal ? (w - 78) / 2 : w - 58);
+  const maxWidth = !showOriginal ? 540 : (effectiveHorizontal ? 790 : 640);
+  const measureLen = !showOriginal ? Math.max(source.length, Math.round(translated.length * 1.4)) : source.length;
+  const w = Math.min(maxWidth, min.w + Math.round(Math.sqrt(Math.max(0, measureLen - 20)) * 9.5));
+  const paneWidth = Math.max(120, effectiveHorizontal ? (w - 78) / 2 : w - 58);
   const lines = (text) => text.split(/\r?\n/).reduce((count, line) => {
     const wide = (line.match(/[^\u0000-\u024f]/g) || []).length;
     const ems = wide + (line.length - wide) * .56;
     return count + Math.max(1, Math.ceil(ems * font / paneWidth));
   }, 0);
   const originalLines = lines(source);
-  const resultLines = translated ? lines(translated) : Math.max(2, Math.ceil(originalLines * .8));
-  const textLines = horizontal ? Math.max(originalLines, resultLines) : Math.max(2, originalLines) + resultLines;
-  const h = Math.min(550, Math.max(min.h, Math.ceil((horizontal ? 106 : 156) + textLines * font * 1.7)));
+  const resultLines = translated ? lines(translated) : Math.max(showOriginal ? 2 : 1, Math.ceil(originalLines * .8));
+  const textLines = !showOriginal
+    ? resultLines
+    : (effectiveHorizontal ? Math.max(originalLines, resultLines) : Math.max(2, originalLines) + resultLines);
+  const chromeH = !showOriginal ? 114 : (effectiveHorizontal ? 112 : 162);
+  const h = Math.min(550, Math.max(min.h, Math.ceil(chromeH + textLines * font * 1.75)));
   return { w, h };
 }
 
@@ -3464,12 +3528,13 @@ const AmbientCard = React.memo(function AmbientCard({ folder, track, mix, playMo
 
   const resetBuiltin = (event) => {
     event?.stopPropagation?.();
+    setPlaying(false);
     setCategory('all');
     setQuery('');
     onUpdate({
       ambientFolder: '',
-      ambientTrack: 'nature/campfire.mp3',
-      ambientMix: { 'nature/campfire.mp3': 0.65 },
+      ambientTrack: '',
+      ambientMix: {},
     });
   };
 
@@ -4040,6 +4105,38 @@ function Reader(props) {
   const [panMode, setPanMode] = useShared('panMode');
   const [spreadMode, setSpreadMode] = useShared('spreadMode');
   const [pdfOffsetX, setPdfOffsetX] = useShared('pdfOffsetX');
+  const pdfOffsetInputRef = React.useRef(null);
+  const pdfOffsetOutputRef = React.useRef(null);
+  const pdfOffsetResetRef = React.useRef(null);
+  const pdfOffsetDraggingRef = React.useRef(false);
+  const pdfOffsetWidthRef = React.useRef(0);
+  const applyOffsetPreview = (rawVal, liveDrag = false) => {
+    const val = Number(rawVal) || 0;
+    const pct = (val + 100) / 2;
+    const start = Math.min(50, pct) + '%';
+    const end = Math.max(50, pct) + '%';
+    const text = !val ? '居中' : ((val < 0 ? '左移 ' : '右移 ') + Math.abs(val) + '%');
+    if (liveDrag && viewerElRef.current) {
+      const width = pdfOffsetWidthRef.current || containerRef.current?.clientWidth || 0;
+      viewerElRef.current.style.transform = 'translate3d(' + (val * width * 0.0045).toFixed(2) + 'px, 0, 0)';
+    } else {
+      containerRef.current?.style.setProperty('--elr-pdf-offset-x', String(val));
+      if (viewerElRef.current) viewerElRef.current.style.transform = '';
+    }
+    if (pdfOffsetInputRef.current) {
+      pdfOffsetInputRef.current.style.setProperty('--elr-fill-start', start);
+      pdfOffsetInputRef.current.style.setProperty('--elr-fill-end', end);
+      pdfOffsetInputRef.current.setAttribute('aria-valuetext', text);
+    }
+    if (pdfOffsetOutputRef.current) pdfOffsetOutputRef.current.textContent = text;
+    if (pdfOffsetResetRef.current) pdfOffsetResetRef.current.disabled = !val;
+  };
+  React.useEffect(() => {
+    if (pdfOffsetDraggingRef.current) return;
+    const val = pdfOffsetX || 0;
+    if (pdfOffsetInputRef.current) pdfOffsetInputRef.current.value = String(val);
+    applyOffsetPreview(val, false);
+  }, [pdfOffsetX]);
   const [capsulePosition] = useShared('capsulePosition');
   const [theme, setTheme] = useShared('theme');
   // (v40) Reader chrome tint (淡蓝 / 淡绿), independent from `theme` above.
@@ -4079,6 +4176,9 @@ function Reader(props) {
   const [selectionSplit, setSelectionSplit] = useShared('selectionSplit');
   const [selectionWidthSplit, setSelectionWidthSplit] = useShared('selectionWidthSplit');
   const [selectionCardOpen] = useShared('selectionCardOpen');
+  const [selectionPopupTransparent] = useShared('selectionPopupTransparent');
+  const [popupShowOriginal, setPopupShowOriginal] = useShared('popupShowOriginal');
+  const popupOriginalVisible = popupShowOriginal !== false;
   // (v32 #1) Per-card widths for the side-by-side bottom dock only. `{}` means
   // "no override", which falls back to an even split of the row.
   const [albumOpen] = useShared('albumOpen');
@@ -4170,6 +4270,7 @@ function Reader(props) {
   const [cardMenuOpen, setCardMenuOpen] = React.useState(false);
   const cardMenuButtonRef = React.useRef(null);
   const cardMenuRef = React.useRef(null);
+  const menuDragJustEndedRef = React.useRef(false);
   const [cardContext, setCardContext] = React.useState(null);
   const cardContextRef = React.useRef(null);
   const [marks, setMarks] = React.useState([]);
@@ -4303,75 +4404,15 @@ function Reader(props) {
   const rememberCardFold = () => {
     const grid = !workspaceStowed ? sideTopElRef.current?.querySelector('.elr-feature-grid') : null;
     const scroll = grid && { top: grid.scrollTop, left: grid.scrollLeft };
-    const frames = reduceMotion() ? [] : [
-      ...(grid?.querySelectorAll('[data-elr-docked-card]:not(.dragging)') || []),
-      ...floatingHost.querySelectorAll('[data-elr-floating-card]:not(.dragging)'),
-    ].map((card) => {
-      const content = card.querySelector(':scope > :first-child > .elr-card-fold-content');
-      return { card, from: card.getBoundingClientRect(), contentWidth: content?.offsetWidth, contentHeight: content?.offsetHeight };
-    });
-
     cancelCardFolds();
-    // Disable automatic scroll anchoring before React changes the card sizes.
-    grid?.classList.add('is-folding-cards');
-    cardsBeforeFold.current = { grid, scroll, frames };
+    cardsBeforeFold.current = grid ? { grid, scroll } : null;
   };
 
   React.useLayoutEffect(() => {
     const before = cardsBeforeFold.current;
     if (!before) return;
     cardsBeforeFold.current = null;
-    const running = cardFoldAnimations.current;
-    const { grid, scroll } = before;
-    const sizes = before.frames.filter(({ card }) => card.isConnected).map((frame) => ({
-      ...frame, to: frame.card.getBoundingClientRect(), floating: frame.card.hasAttribute('data-elr-floating-card'),
-    })).filter(({ from, to }) => from.width && from.height && to.width && to.height);
-    const horizontal = dock === 'bottom';
-    const dockAxis = horizontal ? 'width' : 'height';
-    const dockEdge = horizontal ? 'Width' : 'Height';
-    const dockedResize = sizes.some(({ from, to, floating }) => !floating && Math.abs(to[dockAxis] - from[dockAxis]) >= 1);
-    const timing = motionTiming('md', 'move');
-
-    for (const { card, from, to, floating, contentWidth, contentHeight } of sizes) {
-      const axis = floating ? 'height' : dockAxis;
-      const resized = Math.abs(to[axis] - from[axis]) >= 1;
-      const x = from.left - to.left;
-      const y = from.top - to.top;
-      if (floating ? !resized && !x && !y : !dockedResize) continue;
-      const contentSize = axis === 'height' ? contentHeight : contentWidth;
-      const preserveContent = contentSize > 0 && card.classList.contains('is-collapsed') && from[axis] > to[axis];
-      const foldingContent = preserveContent ? { '--elr-fold-content-size': contentSize + 'px' } : {};
-      if (resized) card.setAttribute('data-elr-folding', preserveContent ? 'closing-' + axis : '');
-
-      const dockFrame = (rect) => {
-        const size = rect[axis] + 'px';
-        return {
-          [axis]: size, ['min' + dockEdge]: size, ['max' + dockEdge]: size,
-          flexBasis: size, flexShrink: 0, flexGrow: 0, ...foldingContent,
-        };
-      };
-      // Resize in the card layer so the corners, glass and shadows are drawn
-      // at their normal scale. Docked siblings follow the flex layout.
-      const frames = floating ? [
-        { height: from.height + 'px', transform: x || y ? 'translate(' + x + 'px,' + y + 'px)' : 'none', ...foldingContent },
-        { height: to.height + 'px', transform: 'none', ...foldingContent },
-      ] : [dockFrame(from), dockFrame(to)];
-      const animation = card.animate(frames, { ...timing, fill: 'both' });
-      animation.id = 'elr-card-fold';
-      running.set(card, animation);
-    }
-
-    // Measuring the final layout can temporarily clamp the scroll range.
-    // Restore it once the starting sizes are installed, before the next paint.
-    if (grid) grid.scrollTo({ ...scroll, behavior: 'instant' });
-    if (!running.size) {
-      grid?.classList.remove('is-folding-cards');
-      return;
-    }
-    const batch = [...running];
-    Promise.all(batch.map(([, animation]) => animation.finished)).then(() => {
-      if (batch.every(([card, animation]) => running.get(card) === animation)) cancelCardFolds();
-    }, () => {});
+    before.grid?.scrollTo({ ...before.scroll, behavior: 'instant' });
   }, [selectionCardOpen, recentOpen, termsOpen, marksOpen, analysisOpen]);
 
   React.useEffect(() => () => cancelCardFolds(), [dock, paperId]);
@@ -4381,16 +4422,16 @@ function Reader(props) {
     (workspaceStowed ? workspaceTabRef : workspaceCloseRef).current?.focus({ preventScroll: true });
   }, [workspaceStowed]);
 
-  const rememberCardPositions = (draggedKey, settling = false, ghostBox = null) => {
+  const rememberCardPositions = (draggedKey, settling = false, ghostBox = null, ghostScale = 1) => {
     if (reduceMotion() && !settling) return;
     const cards = sideTopElRef.current?.querySelectorAll('[data-elr-docked-card]') || [];
     const boxes = new Map([...cards]
       .filter((card) => card.dataset.elrDockedCard !== draggedKey)
       .map((card) => [card.dataset.elrDockedCard, card.getBoundingClientRect()]));
     if (settling && draggedKey && ghostBox) {
-      boxes.set(draggedKey, { left: ghostBox.x, top: ghostBox.y, width: ghostBox.w, height: ghostBox.h });
+      boxes.set(draggedKey, { left: ghostBox.x, top: ghostBox.y, width: ghostBox.w, height: ghostBox.h, scale: ghostScale });
     }
-    cardPositionsBeforeMove.current = { settling, boxes };
+    cardPositionsBeforeMove.current = { settling, draggedKey: settling ? draggedKey : null, boxes };
   };
 
   React.useLayoutEffect(() => {
@@ -4403,12 +4444,23 @@ function Reader(props) {
 
     const cards = sideTopElRef.current?.querySelectorAll('[data-elr-docked-card]:not(.dragging)') || [];
     const offsets = [...cards].flatMap((card) => {
-      const previous = before.boxes.get(card.dataset.elrDockedCard);
+      const key = card.dataset.elrDockedCard;
+      const previous = before.boxes.get(key);
       if (!previous) return [];
       const current = card.getBoundingClientRect();
-      const x = previous.left - current.left;
-      const y = previous.top - current.top;
-      return Math.hypot(x, y) >= 1 ? [{ card, x, y }] : [];
+      const scale = previous.scale ?? 1;
+      const prevLeft = previous.left + (previous.width * (1 - scale)) / 2;
+      const prevTop = previous.top + (previous.height * (1 - scale)) / 2;
+      const x = prevLeft - current.left;
+      const y = prevTop - current.top;
+      const sx = before.settling && key === before.draggedKey
+        ? (previous.width * scale) / Math.max(1, current.width)
+        : 1;
+      const sy = before.settling && key === before.draggedKey
+        ? (previous.height * scale) / Math.max(1, current.height)
+        : 1;
+      const scaled = Math.abs(sx - 1) >= 0.02 || Math.abs(sy - 1) >= 0.02;
+      return Math.hypot(x, y) >= 1 || scaled ? [{ card, x, y, sx, sy, scaled }] : [];
     });
     const reduced = reduceMotion();
     const springEase = getComputedStyle(document.documentElement).getPropertyValue('--elr-reorder-spring').trim()
@@ -4416,11 +4468,14 @@ function Reader(props) {
     const timing = reduced
       ? { duration: 0, easing: 'linear' }
       : before.settling
-        ? { duration: 260, easing: springEase }
+        ? { duration: 240, easing: springEase }
         : motionTiming('sm', 'move');
     if (reduced) return;
-    for (const { card, x, y } of offsets) {
-      const frames = [{ transform: 'translate3d(' + x + 'px,' + y + 'px,0)' }, { transform: 'translate3d(0,0,0)' }];
+    for (const { card, x, y, sx, sy, scaled } of offsets) {
+      const frames = scaled ? [
+        { transformOrigin: 'top left', transform: 'translate3d(' + x + 'px,' + y + 'px,0) scale(' + sx + ',' + sy + ')' },
+        { transformOrigin: 'top left', transform: 'translate3d(0,0,0) scale(1, 1)' },
+      ] : [{ transform: 'translate3d(' + x + 'px,' + y + 'px,0)' }, { transform: 'translate3d(0,0,0)' }];
       const animation = card.animate(frames, timing);
       animation.id = 'elr-card-avoidance';
       running.set(card, animation);
@@ -4589,11 +4644,13 @@ function Reader(props) {
   const scheduleDecorateRef = React.useRef(() => {});
   scheduleDecorateRef.current = scheduleDecorate;
 
-  const notify = (message, kind = '') => setNotice(message ? { message, kind } : null);
+  const noticeSeqRef = React.useRef(0);
+  const notify = (message, kind = '') => setNotice(message ? { id: ++noticeSeqRef.current, message, kind } : null);
 
   React.useEffect(() => {
     if (!notice) return;
-    const timeout = window.setTimeout(() => setNotice(null), notice.kind === 'error' || notice.kind === 'warn' ? 7000 : 3500);
+    const delay = notice.kind === 'error' || notice.kind === 'warn' ? 7000 : notice.kind === 'ok' ? 2400 : 3500;
+    const timeout = window.setTimeout(() => setNotice(null), delay);
     return () => window.clearTimeout(timeout);
   }, [notice]);
 
@@ -4999,7 +5056,7 @@ function Reader(props) {
 
   const placeTranslationPopup = (value, rect, previous) => {
     const viewport = popupViewport();
-    const { w, h } = translationPopupSize(value, readShared().selectionResult, popupFont, popupHorizontal);
+    const { w, h } = translationPopupSize(value, readShared().selectionResult, popupFont, popupHorizontal, popupOriginalVisible);
     let x = previous ? previous.x : viewport.left;
     let y = previous ? previous.y : viewport.top;
     if (rect) {
@@ -5010,13 +5067,13 @@ function Reader(props) {
       const spaceAbove = above - viewport.top;
       y = spaceBelow >= h || (spaceAbove < h && spaceBelow >= spaceAbove) ? below : above - h;
     }
-    return { ...previous, ...fitPopupBox({ x, y, w, h }, viewport), horizontal: popupHorizontal };
+    return { ...previous, ...fitPopupBox({ x, y, w, h }, viewport), horizontal: popupHorizontal, showOriginal: popupOriginalVisible };
   };
 
-  const popupMinimum = translationPopupMinimum(popupFont, popupHorizontal);
+  const popupMinimum = translationPopupMinimum(popupFont, popupHorizontal, popupOriginalVisible);
   const openSelectionTranslation = (rect, value, result) => {
-    const layout = selectionTranslationLayout(rect, translationPopupSize(value, result, popupFont, popupHorizontal), popupMinimum.h);
-    setPopup({ ...layout.box, followsSelection: true, horizontal: popupHorizontal });
+    const layout = selectionTranslationLayout(rect, translationPopupSize(value, result, popupFont, popupHorizontal, popupOriginalVisible), popupMinimum.h);
+    setPopup({ ...layout.box, followsSelection: true, horizontal: popupHorizontal, showOriginal: popupOriginalVisible });
     return layout.position;
   };
 
@@ -5040,10 +5097,12 @@ function Reader(props) {
   React.useLayoutEffect(() => {
     const previous = inlinePopupRef.current;
     if (!previous || popupDragCancelRef.current) return;
-    const switching = previous.horizontal !== popupHorizontal;
-    const desired = previous.manualSize && !switching ? popupMinimum : translationPopupSize(readShared().selectionEdit, selectionResult, popupFont, popupHorizontal);
+    const switching = previous.horizontal !== popupHorizontal || previous.showOriginal !== popupOriginalVisible;
+    const desired = previous.manualSize && !switching
+      ? popupMinimum
+      : translationPopupSize(readShared().selectionEdit, selectionResult, popupFont, popupHorizontal, popupOriginalVisible);
     const size = switching ? { ...previous, ...desired } : { ...previous, w: Math.max(previous.w, desired.w), h: Math.max(previous.h, desired.h) };
-    const state = { ...previous, horizontal: popupHorizontal, manualSize: !switching && previous.manualSize };
+    const state = { ...previous, horizontal: popupHorizontal, showOriginal: popupOriginalVisible, manualSize: !switching && previous.manualSize };
     const tools = selectionToolsRef.current;
     if (previous.followsSelection && tools) {
       const { box, position } = selectionTranslationLayout(tools.rect, size, popupMinimum.h);
@@ -5054,7 +5113,7 @@ function Reader(props) {
       const box = fitPopupBox(size, popupViewport());
       if (switching || box.w !== previous.w || box.h !== previous.h) setPopup({ ...state, ...box });
     }
-  }, [popupFont, selectionResult, popupHorizontal]);
+  }, [popupFont, selectionResult, popupHorizontal, popupOriginalVisible]);
 
   stageRef.current = (value, rect, intent, ranges) => {
     if (!value) return;
@@ -5106,6 +5165,7 @@ function Reader(props) {
       if (seq !== selectionSeq.current) return;
       if (data && data.ok && data.text) {
         setSelectionResult(data.text);
+        recordReadPages([readShared().pageNum]);
       } else {
         notify((data && data.error) || 'translation failed', 'error');
       }
@@ -5322,6 +5382,9 @@ function Reader(props) {
     container: containerRef, readText: readPdfPageText, formatLines: (items) => referenceReadingOrder(readingLines(items)) });
   const pdfReadingRef = React.useRef(pdfReading);
   pdfReadingRef.current = pdfReading;
+  const comparison = pdfReading.mode === 'compare';
+  const effectiveSpreadMode = comparison ? 0 : (Number(spreadMode) || 0);
+  spreadModeRef.current = effectiveSpreadMode;
   const showOriginalPdf = pdfReading.mode === 'pdf' || pdfReading.mode === 'compare';
   const originalMediaEnabled = mode === 'pdf' && pdfReading.mode === 'pdf' && pdfAnalysisReady
     && previewMode !== 'native' && !figurePicking;
@@ -5686,8 +5749,11 @@ function Reader(props) {
       if (!r || !r.width || !r.height) continue;
       const x = (r.left - rect.left) * sx;
       const y = (r.top - rect.top) * sy;
+      const w = r.width * sx;
+      const h = r.height * sy;
+      ctx.clearRect(x, y, w, h);
       ctx.fillStyle = ink;
-      ctx.fillRect(x, y, r.width * sx, r.height * sy);
+      ctx.fillRect(x, y, w, h);
       drew += 1;
     }
     // (#4) Annotated sentences also get a blue dotted underline, drawn here
@@ -5876,7 +5942,8 @@ function Reader(props) {
     }
     // Position-less highlights stay in the list until the passage is selected again.
     const highlightsByPage = new Map();
-    for (const mark of list) {
+    for (let idx = list.length - 1; idx >= 0; idx--) {
+      const mark = list[idx];
       if (!mark.hl) continue;
       const ink = HIGHLIGHT_COLORS[mark.color]?.ink || HIGHLIGHT_COLORS.yellow.ink;
       for (const { page, rects, legacy } of highlightAnchors(mark)) {
@@ -6037,7 +6104,7 @@ function Reader(props) {
     if (!page || !container.clientWidth || !container.clientHeight) return;
     const box = page.getBoundingClientRect();
     if (!box.width || !box.height) return;
-    const across = Math.min(viewer.pagesCount, 1 + readShared().spreadMode);
+    const across = Math.min(viewer.pagesCount, 1 + (Number(spreadModeRef.current) || 0));
     const width = Math.max(1, container.clientWidth - 36) / across;
     const height = Math.max(1, container.clientHeight - 24);
     const scale = Math.min(ZOOM_MAX, viewer.currentScale * Math.min(width / box.width, height / box.height));
@@ -6062,6 +6129,7 @@ function Reader(props) {
       const container = containerRef.current;
       const viewerEl = viewerElRef.current;
       if (!container || !viewerEl) throw new Error('PDF viewer container is not ready');
+      viewerEl.lang = 'en';
       const eventBus = new V.EventBus();
       const linkService = new V.PDFLinkService({ eventBus, externalLinkTarget: V.LinkTarget?.BLANK || 2 });
       const viewer = new V.PDFViewer({
@@ -6094,9 +6162,67 @@ function Reader(props) {
         if (state.pendingResize) applyContainerResize();
       };
       document.addEventListener('reader-gesture-end', onGestureEnd);
-      state.dispose = () => document.removeEventListener('reader-gesture-end', onGestureEnd);
+      let compareSnapTimer = null;
+      let comparePendingPage = 0;
+      let compareAutoScrollingUntil = 0;
+      const clearCompareSnap = () => {
+        if (compareSnapTimer) {
+          clearTimeout(compareSnapTimer);
+          compareSnapTimer = null;
+        }
+      };
+      const centerComparePage = (targetPage) => {
+        if (pdfReadingRef.current.mode !== 'compare') return;
+        const pageEl = viewer.getPageView(targetPage - 1)?.div;
+        if (!pageEl || !container.clientWidth || !container.clientHeight) return;
+        const pageRect = pageEl.getBoundingClientRect();
+        const boxRect = container.getBoundingClientRect();
+        if (!pageRect.width || !pageRect.height) return;
+        const targetLeft = Math.max(0, Math.round(
+          container.scrollLeft + (pageRect.left - boxRect.left) - (container.clientWidth - pageRect.width) / 2
+        ));
+        const verticalMargin = pageRect.height <= container.clientHeight
+          ? (container.clientHeight - pageRect.height) / 2
+          : 8;
+        const targetTop = Math.max(0, Math.round(
+          container.scrollTop + (pageRect.top - boxRect.top) - verticalMargin
+        ));
+        if (Math.abs(targetLeft - container.scrollLeft) <= 4 && Math.abs(targetTop - container.scrollTop) <= 4) return;
+        compareAutoScrollingUntil = performance.now() + 450;
+        container.scrollTo({
+          left: targetLeft,
+          top: targetTop,
+          behavior: reduceMotion() ? 'auto' : 'smooth',
+        });
+      };
+      const scheduleCompareSnap = (pageNumber) => {
+        comparePendingPage = pageNumber;
+        clearCompareSnap();
+        compareSnapTimer = setTimeout(() => {
+          compareSnapTimer = null;
+          const target = comparePendingPage;
+          comparePendingPage = 0;
+          if (target) centerComparePage(target);
+        }, 180);
+      };
+      const onCompareScroll = () => {
+        if (!comparePendingPage || pdfReadingRef.current.mode !== 'compare') return;
+        if (performance.now() < compareAutoScrollingUntil) return;
+        scheduleCompareSnap(comparePendingPage);
+      };
+      container.addEventListener('scroll', onCompareScroll, { passive: true });
+      state.dispose = () => {
+        clearCompareSnap();
+        container.removeEventListener('scroll', onCompareScroll);
+        document.removeEventListener('reader-gesture-end', onGestureEnd);
+      };
       eventBus.on('pagechanging', (e) => {
-        if (e?.pageNumber) pdfReading.onOriginalPage(e.pageNumber);
+        if (e?.pageNumber) {
+          pdfReading.onOriginalPage(e.pageNumber);
+          if (pdfReadingRef.current.mode === 'compare' && e.previous && e.previous !== e.pageNumber) {
+            scheduleCompareSnap(e.pageNumber);
+          }
+        }
       });
       // (v20 #3) Keep the toolbar percentage in sync with whatever changed the
       // scale: our +/- buttons, the preset list, Ctrl+wheel, or pdf.js itself.
@@ -6247,7 +6373,7 @@ function Reader(props) {
     const s = pdfStateRef.current;
     if (s && s.viewer && s.V) applySpread(s.viewer, s.V);
     scheduleDecorateRef.current();
-  }, [spreadMode, dropSeq, hasPdf]);
+  }, [effectiveSpreadMode, dropSeq, hasPdf]);
 
   React.useEffect(() => {
     scheduleDecorateRef.current();
@@ -7560,13 +7686,14 @@ function Reader(props) {
       if (needsLocation || (color && color !== (existing.color || 'yellow'))) {
         const updated = { ...existing, color: color || existing.color || 'yellow' };
         if (needsLocation) updated.anchors = location;
-        writeMarks(list.map((mark) => mark.id === existing.id ? updated : mark));
+        writeMarks([updated, ...list.filter((mark) => mark.id !== existing.id)]);
       }
       notify(t('mark.saved'), 'ok');
       return;
     }
     writeMarks([{ id: newMarkId(), text: value, kind: 'hl', note: '', hl: true, color: color || 'yellow', anchors: location }]
       .concat(list).slice(0, 120));
+    recordReadPages([readShared().pageNum]);
     notify(t('mark.saved'), 'ok');
   };
   // Annotation only. It never adds a highlight.
@@ -7602,6 +7729,7 @@ function Reader(props) {
     const list = marksRef.current || [];
     if (list.some((mark) => mark.id === draft.id)) updateNote(draft.id, value);
     else writeMarks([{ id: draft.id, text: draft.text, kind: 'note', note: value, hl: false, anchors: draft.anchors }, ...list].slice(0, 120));
+    recordReadPages([readShared().pageNum]);
     closeNoteBubble();
     notify(t('mark.noteSaved'), 'ok');
   };
@@ -7727,15 +7855,42 @@ function Reader(props) {
         return [{ node, rects }];
       });
     };
+    const mergeLineRects = (rects) => {
+      const sorted = rects
+        .filter((r) => r && r.width > 0 && r.height > 0)
+        .map((r) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom }))
+        .sort((a, b) => a.top - b.top || a.left - b.left);
+      const merged = [];
+      for (const cur of sorted) {
+        const prev = merged.find((item) => {
+          const ah = item.bottom - item.top;
+          const bh = cur.bottom - cur.top;
+          const maxH = Math.max(ah, bh);
+          const sameLine = Math.abs((item.top + item.bottom) / 2 - (cur.top + cur.bottom) / 2) <= maxH * 0.6
+            && Math.min(item.bottom, cur.bottom) > Math.max(item.top, cur.top);
+          return sameLine && cur.left <= item.right + maxH * 1.25;
+        });
+        if (prev) {
+          prev.left = Math.min(prev.left, cur.left);
+          prev.top = Math.min(prev.top, cur.top);
+          prev.right = Math.max(prev.right, cur.right);
+          prev.bottom = Math.max(prev.bottom, cur.bottom);
+        } else {
+          merged.push({ ...cur });
+        }
+      }
+      return merged.map((r) => new DOMRect(r.left, r.top, r.right - r.left, r.bottom - r.top));
+    };
     const flash = (targets) => {
       container.querySelectorAll('.elr-mark-location').forEach((layer) => layer.remove());
       for (const { node, rects } of targets) {
         const box = node.getBoundingClientRect();
-        if (!rects.length || !box.width || !box.height) continue;
+        const lineRects = mergeLineRects(rects);
+        if (!lineRects.length || !box.width || !box.height) continue;
         const layer = document.createElement('div');
         layer.className = 'elr-mark-location';
         layer.setAttribute('aria-hidden', 'true');
-        for (const rect of rects) {
+        for (const rect of lineRects) {
           const frame = document.createElement('span');
           Object.assign(frame.style, {
             left: (rect.left - box.left - node.clientLeft) / node.clientWidth * 100 + '%',
@@ -7746,7 +7901,7 @@ function Reader(props) {
           layer.append(frame);
         }
         node.append(layer);
-        setTimeout(() => layer.remove(), 1500);
+        setTimeout(() => layer.remove(), 1850);
       }
     };
     const targets = areas();
@@ -7960,6 +8115,12 @@ function Reader(props) {
       };
     };
 
+    const LONG_PRESS_MS = 260;
+    let dragArmed = false;
+    let holdCancelled = false;
+    let lastPointerX = startX;
+    let lastPointerY = startY;
+    let holdTimer = 0;
     let started = false;
     let hover = null;
     let previewVertical;
@@ -7975,6 +8136,75 @@ function Reader(props) {
       shrinkClone?.remove();
       shrinkClone = null;
     };
+    const startDrag = (x, y) => {
+      if (started) return;
+      started = true;
+      document.body.classList.add('elr-card-dragging');
+      gestureStart();
+      setTermBubble(null);
+      const location = dragLocation(x, y);
+      lastBox = location.box;
+      lastScale = location.scale;
+      if (!reduceMotion() && (initial.height > CARD_HEADER_HEIGHT + 8 || initial.width > CARD_HEADER_HEIGHT + 8)) {
+        const clone = card.cloneNode(true);
+        clone.classList.remove('dragging', 'is-resizing-edge');
+        clone.setAttribute('aria-hidden', 'true');
+        clone.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
+        Object.assign(clone.style, {
+          position: 'fixed',
+          left: initial.left + 'px',
+          top: initial.top + 'px',
+          width: initial.width + 'px',
+          height: initial.height + 'px',
+          margin: '0',
+          zIndex: '199',
+          pointerEvents: 'none',
+          overflow: 'hidden',
+          contain: 'layout style paint',
+          backdropFilter: 'none',
+          transformOrigin: 'top left',
+          willChange: 'transform, opacity',
+        });
+        floatingHost.appendChild(clone);
+        shrinkClone = clone;
+        const destX = location.box.x + (location.box.w * (1 - location.scale)) / 2;
+        const destY = location.box.y + (location.box.h * (1 - location.scale)) / 2;
+        const dx = destX - initial.left;
+        const dy = destY - initial.top;
+        const sx = (location.box.w * location.scale) / Math.max(1, initial.width);
+        const sy = (location.box.h * location.scale) / Math.max(1, initial.height);
+        shrinkAnim = clone.animate([
+          {
+            opacity: 1,
+            transform: 'translate3d(0,0,0) scale(1, 1)',
+          },
+          {
+            opacity: 0,
+            transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(' + sx + ',' + sy + ')',
+          },
+        ], { duration: 200, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'forwards' });
+        shrinkAnim.onfinish = stopShrink;
+      }
+      dragCache = null;
+      hover = null;
+      rememberCardPositions(key);
+      setGhost({
+        key,
+        vertical: location.vertical,
+        scale: location.scale,
+        liquid: card.dataset.elrLiquid || '',
+        liquidInk: card.dataset.elrLiquidInk || '',
+        ...location.box,
+      });
+    };
+    handle.classList.add('is-pressed');
+    holdTimer = setTimeout(() => {
+      holdTimer = 0;
+      if (holdCancelled) return;
+      dragArmed = true;
+      handle.classList.remove('is-pressed');
+      startDrag(lastPointerX, lastPointerY);
+    }, LONG_PRESS_MS);
     const painter = frameWriter(({ x, y }) => {
       const location = dragLocation(x, y);
       const { vertical, scale, box } = location;
@@ -7998,11 +8228,15 @@ function Reader(props) {
         preview.style.width = box.w + 'px';
         preview.style.height = box.h + 'px';
       }
-      preview.style.transform = 'translate3d(' + box.x + 'px,' + box.y + 'px,0) scale(' + scale + ')';
+      preview.style.translate = box.x + 'px ' + box.y + 'px 0';
+      preview.style.transform = 'scale(' + scale + ')';
     });
     const cleanup = (settledBox = null, docked = false) => {
       if (cardGestureCancelRef.current !== cleanup) return;
       cardGestureCancelRef.current = null;
+      clearTimeout(holdTimer);
+      holdTimer = 0;
+      handle.classList.remove('is-pressed');
       painter.cancel();
       stopShrink();
       document.body.classList.remove('elr-card-dragging');
@@ -8018,7 +8252,7 @@ function Reader(props) {
         if (!docked && isFloating && settleSource) {
           floatingSettleRef.current = { key, from: { ...settleSource, scale: lastScale } };
         }
-        rememberCardPositions(key, true, settleSource);
+        rememberCardPositions(key, true, settleSource, lastScale);
         gestureEnd();
         setGhost(null);
         setCardDrop(null);
@@ -8027,60 +8261,18 @@ function Reader(props) {
     const move = (e) => {
       if (e.pointerId !== pointer) return;
       const { clientX: x, clientY: y } = e;
-      if (!started) {
-        if (Math.hypot(x - startX, y - startY) < 5) return;
-        started = true;
-        document.body.classList.add('elr-card-dragging');
-        gestureStart();
-        setTermBubble(null);
-        const location = dragLocation(x, y);
-        lastBox = location.box;
-        lastScale = location.scale;
-        if (isFloating && !reduceMotion() && initial.height > CARD_HEADER_HEIGHT + 8) {
-          const clone = card.cloneNode(true);
-          clone.classList.remove('dragging', 'is-resizing-edge');
-          clone.setAttribute('aria-hidden', 'true');
-          clone.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
-          Object.assign(clone.style, {
-            position: 'fixed',
-            left: initial.left + 'px',
-            top: initial.top + 'px',
-            width: initial.width + 'px',
-            height: initial.height + 'px',
-            margin: '0',
-            zIndex: '199',
-            pointerEvents: 'none',
-            overflow: 'hidden',
-            contain: 'layout style paint',
-            backdropFilter: 'none',
-            transformOrigin: 'top left',
-            willChange: 'transform, opacity',
-          });
-          floatingHost.appendChild(clone);
-          shrinkClone = clone;
-          const destX = location.box.x + (location.box.w * (1 - location.scale)) / 2;
-          const destY = location.box.y + (location.box.h * (1 - location.scale)) / 2;
-          const dx = destX - initial.left;
-          const dy = destY - initial.top;
-          const sx = (location.box.w * location.scale) / Math.max(1, initial.width);
-          const sy = (location.box.h * location.scale) / Math.max(1, initial.height);
-          shrinkAnim = clone.animate([
-            {
-              opacity: 1,
-              transform: 'translate3d(0,0,0) scale(1, 1)',
-            },
-            {
-              opacity: 0,
-              transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(' + sx + ',' + sy + ')',
-            },
-          ], { duration: 170, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'forwards' });
-          shrinkAnim.onfinish = stopShrink;
+      lastPointerX = x;
+      lastPointerY = y;
+      if (!dragArmed) {
+        if (Math.hypot(x - startX, y - startY) > 8) {
+          clearTimeout(holdTimer);
+          holdTimer = 0;
+          holdCancelled = true;
+          handle.classList.remove('is-pressed');
         }
-        dragCache = null;
-        hover = null;
-        rememberCardPositions(key);
-        setGhost({ key, vertical: location.vertical, scale: location.scale, ...location.box });
+        return;
       }
+      if (!started) startDrag(x, y);
       painter.push({ x, y });
     };
     const finish = (e) => {
@@ -8106,7 +8298,7 @@ function Reader(props) {
         }
       }
       cleanup(settledBox, docked);
-      if (!started && onTap && handle.isConnected) {
+      if (!started && !dragArmed && !holdCancelled && onTap && handle.isConnected) {
         const target = handle.getBoundingClientRect();
         if (x >= target.left && x <= target.right && y >= target.top && y <= target.bottom) onTap();
       }
@@ -8332,6 +8524,19 @@ function Reader(props) {
                       : key === 'clock' ? '时钟'
                         : '阅读助手'
   );
+  const cardDesc = (key) => (
+    key === 'selection' ? '划词即时译文与编辑'
+      : key === 'recent' ? '快速切换最近打开的文献'
+        : key === 'terms' ? '文内专业术语解释记录'
+          : key === 'marks' ? '管理高亮重点与批注笔记'
+            : key === 'summary' ? '全文结构化摘要与要点'
+              : key === 'references' ? '提取并跳转参考文献'
+                : key === 'figure' ? '截取图表并生成解读'
+                  : key === 'album' ? '自定义灵感图片相册'
+                    : key === 'ambient' ? '沉浸式阅读白噪音'
+                      : key === 'clock' ? '专注计时与时间显示'
+                        : '结合原文上下文对话问答'
+  );
   const enabledCards = CARD_KEYS.filter((key) => Array.isArray(cards) && cards.indexOf(key) !== -1);
   const setCardEnabled = (key, on) => {
     if (CARD_KEYS.indexOf(key) === -1) return;
@@ -8348,6 +8553,157 @@ function Reader(props) {
   const closeCardMenu = (restoreFocus = false) => {
     setCardMenuOpen(false);
     if (restoreFocus) cardMenuButtonRef.current?.focus({ preventScroll: true });
+  };
+  const beginMenuCardDrag = (key) => (event) => {
+    if (event.button !== 0 || event.isPrimary === false) return;
+    const tile = event.currentTarget;
+    const capture = readerRef.current || tile;
+    const pointer = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const tileRect = tile.getBoundingClientRect();
+    const menuRect = cardMenuRef.current?.getBoundingClientRect();
+    const clampedOffsetX = Math.min(startX - tileRect.left, 180);
+    const clampedOffsetY = Math.min(startY - tileRect.top, 28);
+    let dragging = false;
+    let ended = false;
+    let ghostEl = null;
+    let badgeEl = null;
+    let lastOutside = null;
+    let rafId = 0;
+    let latestX = startX;
+    let latestY = startY;
+
+    const isOutsideMenu = (clientX, clientY) => {
+      if (!menuRect) return true;
+      return clientX < menuRect.left - 8 || clientX > menuRect.right + 8
+        || clientY < menuRect.top - 8 || clientY > menuRect.bottom + 8;
+    };
+
+    const ensureGhost = () => {
+      if (ghostEl) return;
+      const el = document.createElement('div');
+      const outside = isOutsideMenu(latestX, latestY);
+      lastOutside = outside;
+      el.className = 'elr-menu-drag-ghost' + (outside ? ' is-outside' : '') + toneCls;
+      el.setAttribute('aria-hidden', 'true');
+      el.style.transform = 'translate3d(' + (latestX - clampedOffsetX) + 'px,' + (latestY - clampedOffsetY) + 'px,0)';
+
+      const top = document.createElement('div');
+      top.className = 'elr-card-tile-top';
+
+      const name = document.createElement('span');
+      name.className = 'elr-card-tile-name';
+      name.textContent = cardLabel(key);
+
+      const badge = document.createElement('span');
+      badge.className = 'elr-card-tile-float';
+      badge.textContent = outside ? '松开悬浮' : '拖出面板';
+
+      const desc = document.createElement('span');
+      desc.className = 'elr-card-tile-desc';
+      desc.textContent = cardDesc(key);
+
+      top.append(name, badge);
+      el.append(top, desc);
+      (floatingHost || document.body).appendChild(el);
+      ghostEl = el;
+      badgeEl = badge;
+    };
+
+    const paintGhost = () => {
+      rafId = 0;
+      if (!ghostEl) return;
+      const x = latestX - clampedOffsetX;
+      const y = latestY - clampedOffsetY;
+      ghostEl.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
+      const outside = isOutsideMenu(latestX, latestY);
+      if (outside !== lastOutside) {
+        lastOutside = outside;
+        ghostEl.classList.toggle('is-outside', outside);
+        badgeEl.textContent = outside ? '松开悬浮' : '拖出面板';
+      }
+    };
+
+    const onMove = (ev) => {
+      if (ev.pointerId !== pointer || ended) return;
+      latestX = ev.clientX;
+      latestY = ev.clientY;
+      if (!dragging) {
+        const dx = latestX - startX;
+        const dy = latestY - startY;
+        if (dx * dx + dy * dy < 36) return;
+        dragging = true;
+        document.body.classList.add('elr-card-dragging');
+        try { document.body.style.userSelect = 'none'; } catch (_) {}
+        gestureStart();
+        try { capture.setPointerCapture(pointer); } catch (_) {}
+        ensureGhost();
+        return;
+      }
+      if (!rafId) rafId = requestAnimationFrame(paintGhost);
+    };
+
+    const finish = (ev, cancelled) => {
+      if (ended) return;
+      if (ev && ev.type !== 'blur' && ev.pointerId !== pointer) return;
+      ended = true;
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointercancel', onCancel, true);
+      window.removeEventListener('blur', onCancel);
+      capture.removeEventListener('lostpointercapture', onCancel);
+      try { if (capture.hasPointerCapture?.(pointer)) capture.releasePointerCapture(pointer); } catch (_) {}
+      try { document.body.style.userSelect = ''; } catch (_) {}
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      ghostEl?.remove();
+      ghostEl = null;
+      badgeEl = null;
+      if (!dragging) return;
+      document.body.classList.remove('elr-card-dragging');
+      gestureEnd();
+      menuDragJustEndedRef.current = true;
+      setTimeout(() => { menuDragJustEndedRef.current = false; }, 0);
+      const dropX = ev?.clientX ?? latestX;
+      const dropY = ev?.clientY ?? latestY;
+      if (cancelled || !isOutsideMenu(dropX, dropY)) return;
+
+      const bounds = popupViewport();
+      const size = cardWindowBox(key, { left: dropX - 150, top: dropY - 24, width: 320, height: 260 });
+      const box = placeFunctionCard({
+        ...size,
+        x: dropX - Math.round(size.w / 2),
+        y: dropY - 24,
+      }, true, bounds);
+
+      const state = readShared();
+      const currentCards = Array.isArray(state.cards) ? state.cards : [];
+      const nextCards = currentCards.indexOf(key) !== -1
+        ? currentCards
+        : CARD_KEYS.filter((k) => k === key || currentCards.indexOf(k) !== -1);
+      setFloatingBounds(bounds);
+      setFrontCard(key);
+      const previous = state.floatingCards || {};
+      const savedOpen = previous[key]?.dockedOpen;
+      const dockedOpen = typeof savedOpen === 'boolean' ? savedOpen : true;
+      writeShared({
+        cards: nextCards,
+        floatingCards: { ...previous, [key]: { ...box, dockedOpen } },
+        ...cardOpenPatch(state, [key], true),
+      });
+      closeCardMenu();
+    };
+
+    const onUp = (ev) => finish(ev, false);
+    const onCancel = (ev) => finish(ev, true);
+    window.addEventListener('pointermove', onMove, { passive: true, capture: true });
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onCancel, true);
+    window.addEventListener('blur', onCancel);
+    capture.addEventListener('lostpointercapture', onCancel);
   };
   const applyCardLayout = (preset) => {
     cardGestureCancelRef.current?.();
@@ -8649,7 +9005,7 @@ function Reader(props) {
     const updatePosition = () => {
       const bounds = popupViewport();
       const anchor = trigger.getBoundingClientRect();
-      const width = Math.min(232, bounds.right - bounds.left);
+      const width = Math.min(412, bounds.right - bounds.left);
       const belowY = clampPopup(anchor.bottom + 6, bounds.top, bounds.bottom);
       const aboveY = clampPopup(anchor.top - 6, bounds.top, bounds.bottom);
       menu.style.width = width + 'px';
@@ -8735,17 +9091,88 @@ function Reader(props) {
       else if (dualColumns) setDualSideWidth(size);
       else setSideWidth(size);
     };
+    const buildResizeBadge = (kind, titleText) => {
+      const badge = document.createElement('div');
+      badge.className = 'elr-resize-pane-badge';
+      const iconBox = document.createElement('div');
+      iconBox.className = 'elr-resize-pane-icon';
+      const svgNs = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(svgNs, 'svg');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('fill', 'none');
+      svg.setAttribute('aria-hidden', 'true');
+      const addNode = (tag, attrs) => {
+        const node = document.createElementNS(svgNs, tag);
+        for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+        svg.appendChild(node);
+      };
+      if (kind === 'reader') {
+        addNode('rect', { x: '4', y: '3', width: '16', height: '18', rx: '2.5', stroke: 'currentColor', 'stroke-width': '1.7' });
+        addNode('path', { d: 'M8 8h8M8 12h8M8 16h5', stroke: 'currentColor', 'stroke-width': '1.7', 'stroke-linecap': 'round' });
+      } else {
+        addNode('rect', { x: '3', y: '4', width: '8', height: '7', rx: '2', fill: 'currentColor', 'fill-opacity': '.18', stroke: 'currentColor', 'stroke-width': '1.6' });
+        addNode('rect', { x: '13', y: '4', width: '8', height: '7', rx: '2', stroke: 'currentColor', 'stroke-width': '1.6' });
+        addNode('rect', { x: '3', y: '13', width: '18', height: '7', rx: '2', stroke: 'currentColor', 'stroke-width': '1.6' });
+      }
+      iconBox.appendChild(svg);
+      const title = document.createElement('span');
+      title.className = 'elr-resize-pane-title';
+      title.textContent = titleText;
+      const sub = document.createElement('span');
+      sub.className = 'elr-resize-pane-sub';
+      badge.append(iconBox, title, sub);
+      return { badge, sub };
+    };
+    const updateShare = (state, size) => {
+      const sidePct = Math.round((size / state.totalSpan) * 100);
+      const readerPct = Math.max(0, 100 - sidePct);
+      state.readerSub.textContent = '文献正文 · ' + readerPct + '%';
+      state.sideSub.textContent = '工具卡片 · ' + sidePct + '%';
+    };
     const painter = frameWriter((size) => {
       if (size === drag.size) return;
       drag.size = size;
-      side.style[dimension] = size + 'px';
+      drag.sidePane.style[dimension] = Math.max(24, size - 8) + 'px';
+      updateShare(drag, size);
       handle.setAttribute('aria-valuenow', String(size));
     });
     const down = (event) => {
       if (event.button !== 0 || event.isPrimary === false || drag) return;
       const limits = readLimits();
       if (!limits) return;
-      drag = { id: event.pointerId, origin: coordinate(event), limits, size: limits.start, initialStyle: side.style[dimension] };
+      const bodyRect = body.getBoundingClientRect();
+      const divider = (bottom ? handle.offsetHeight : handle.offsetWidth) || PANE_DIVIDER_SIZE;
+      const totalSpan = Math.max(1, (bottom ? bodyRect.height : bodyRect.width) - divider);
+      const clipEl = document.createElement('div');
+      clipEl.className = 'elr-resize-curtain-clip ' + (bottom ? 'is-bottom' : (isLeftSide ? 'is-left' : 'is-right')) + toneCls;
+      clipEl.style.left = bodyRect.left + 'px';
+      clipEl.style.top = bodyRect.top + 'px';
+      clipEl.style.width = bodyRect.width + 'px';
+      clipEl.style.height = bodyRect.height + 'px';
+
+      const readerPane = document.createElement('div');
+      readerPane.className = 'elr-resize-pane is-reader';
+      const readerBadge = buildResizeBadge('reader', '阅读区域');
+      readerPane.appendChild(readerBadge.badge);
+
+      const edgeEl = document.createElement('div');
+      edgeEl.className = 'elr-resize-curtain-edge';
+      if (bottom) edgeEl.style.height = divider + 'px';
+      else edgeEl.style.width = divider + 'px';
+
+      const sidePane = document.createElement('div');
+      sidePane.className = 'elr-resize-pane is-side';
+      sidePane.style[dimension] = Math.max(24, limits.start - 8) + 'px';
+      const sideBadge = buildResizeBadge('side', '功能栏');
+      sidePane.appendChild(sideBadge.badge);
+
+      clipEl.append(readerPane, edgeEl, sidePane);
+      (floatingHost || document.body).appendChild(clipEl);
+      drag = {
+        id: event.pointerId, origin: coordinate(event), limits, size: limits.start, initialStyle: side.style[dimension],
+        clipEl, sidePane, totalSpan, readerSub: readerBadge.sub, sideSub: sideBadge.sub,
+      };
+      updateShare(drag, limits.start);
       handle.focus({ preventScroll: true });
       handle.classList.add('active');
       body.classList.add('is-resizing-panes');
@@ -8762,9 +9189,10 @@ function Reader(props) {
     };
     const finish = (size) => {
       if (!drag) return;
-      const { id, limits, initialStyle } = drag;
+      const { id, limits, initialStyle, clipEl } = drag;
       drag = null;
       painter.cancel();
+      clipEl?.remove();
       if (size === undefined || size === limits.start) {
         side.style[dimension] = initialStyle;
         syncCurrent();
@@ -8825,7 +9253,7 @@ function Reader(props) {
       window.removeEventListener('blur', cancel);
       window.removeEventListener('resize', onViewportResize);
     };
-  }, [dock, sideDock, dualColumns, hasPaper, workspaceStowed]);
+  }, [dock, sideDock, dualColumns, hasPaper, workspaceStowed, toneCls]);
 
   // (v8 #6) Splitter between the upper side block (selection card + movable
   // sections) and the translation/analysis area. Without it the two halves
@@ -9007,6 +9435,21 @@ function Reader(props) {
     settingsOpen ? settingsPanel(withTheme) : null
   );
 
+  const readPagesRef = React.useRef({ paperId: '', pages: new Set() });
+  const recordReadPages = (pages) => {
+    const id = paperIdRef.current;
+    if (!id) return;
+    if (readPagesRef.current.paperId !== id) {
+      readPagesRef.current = { paperId: id, pages: new Set() };
+    }
+    const maxPage = pageCountRef.current || Infinity;
+    const fresh = (Array.isArray(pages) ? pages : [pages])
+      .filter((p) => Number.isSafeInteger(p) && p >= 1 && p <= maxPage && !readPagesRef.current.pages.has(p));
+    if (!fresh.length) return;
+    for (const p of fresh) readPagesRef.current.pages.add(p);
+    markPagesRead(id, fresh);
+  };
+
   React.useEffect(() => {
     const file = lastFileRef.current;
     if (!pdfAnalysisReady || positionReady !== file || !file || file.desktopId !== paperId || !pageNum || !zoomPct) return;
@@ -9014,6 +9457,48 @@ function Reader(props) {
     file.desktopZoom = pdfReading.originalScale || zoomPct / 100;
     savePosition(paperId, file.desktopPage, file.desktopZoom, pageCount);
   }, [paperId, pageNum, pageCount, zoomPct, pdfAnalysisReady, positionReady, pdfReading.mode]);
+
+  React.useEffect(() => {
+    const file = lastFileRef.current;
+    if (!pdfAnalysisReady || positionReady !== file || !file || file.desktopId !== paperId || !pageNum) return;
+    if (readPagesRef.current.paperId !== paperId) {
+      readPagesRef.current = { paperId, pages: new Set() };
+    }
+    const spread = Number(spreadMode) || 0;
+    const total = pageCount || Infinity;
+    const visiblePages = [pageNum];
+    if (spread >= 1 && pageNum + 1 <= total) visiblePages.push(pageNum + 1);
+    if (spread >= 2 && pageNum + 2 <= total) visiblePages.push(pageNum + 2);
+    if (visiblePages.every((p) => readPagesRef.current.pages.has(p))) return;
+
+    let elapsed = 0;
+    let startedAt = document.hidden ? 0 : Date.now();
+    let timer = 0;
+    const schedule = () => {
+      if (timer) { window.clearTimeout(timer); timer = 0; }
+      if (document.hidden) return;
+      const remaining = Math.max(0, 10000 - elapsed);
+      startedAt = Date.now();
+      timer = window.setTimeout(() => {
+        timer = 0;
+        recordReadPages(visiblePages);
+      }, remaining);
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (startedAt) { elapsed += Date.now() - startedAt; startedAt = 0; }
+        if (timer) { window.clearTimeout(timer); timer = 0; }
+      } else {
+        schedule();
+      }
+    };
+    schedule();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      if (timer) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [paperId, pageNum, pageCount, spreadMode, pdfAnalysisReady, positionReady]);
   const openPdfPicker = () => openPaper(null).then((file) => { if (file) handleFile(file, file.desktopId); }).catch((error) => notify(error.message, 'error'));
   const goHome = () => { closePaper(); changeMode('pdf'); };
   const headGroup = (...children) => h('div', { className: 'elr-head-group' }, ...children);
@@ -9081,7 +9566,6 @@ function Reader(props) {
 
   const fullscreenActive = isFullscreen || props.nativeFullscreen;
   const fullscreenLabel = t(fullscreenActive ? 'fullscreen.exit' : 'fullscreen.enter');
-  const comparison = pdfReading.mode === 'compare';
   React.useLayoutEffect(() => {
     const capsule = readingCapsuleRef.current;
     const space = readingSpaceRef.current;
@@ -9169,25 +9653,59 @@ function Reader(props) {
           'aria-label': '更多阅读选项', popover: 'auto',
           onBeforeToggle: (e) => { e.currentTarget.inert = e.newState === 'closed'; },
           onToggle: (e) => setCapsuleMenuOrigin(e, pdfOptionsButton.current) },
-          h('button', { type: 'button', className: 'elr-btn', disabled: !showOriginalPdf,
-            title: t('spread.label'), onClick: () => choosePdfOption(() => setSpreadMode((value) => (Number(value) + 1) % 3)),
-          }, t('spread.label') + ' · ' + t(['spread.one', 'spread.two', 'spread.three'][spreadMode])),
-          showOriginalPdf ? h('div', { className: 'elr-reader-offset' },
-            h('label', null,
-              h('span', null, '页面左右位置'),
-              h('output', null, !pdfOffsetX ? '居中' : ((pdfOffsetX < 0 ? '左移 ' : '右移 ') + Math.abs(pdfOffsetX) + '%')),
-              h('input', {
-                type: 'range', min: -100, max: 100, step: 2, value: pdfOffsetX || 0,
-                'aria-label': '页面左右位置',
-                'aria-valuetext': !pdfOffsetX ? '居中' : ((pdfOffsetX < 0 ? '左移 ' : '右移 ') + Math.abs(pdfOffsetX) + '%'),
-                onChange: (event) => setPdfOffsetX(Number(event.target.value)),
-              })
-            ),
-            h('button', {
-              type: 'button', className: 'elr-btn', disabled: !pdfOffsetX,
-              onClick: () => setPdfOffsetX(0),
-            }, '居中复位')
-          ) : null,
+          h('button', { type: 'button', className: 'elr-btn', disabled: !showOriginalPdf || comparison,
+            title: comparison ? '对照翻译模式下保持单栏显示' : t('spread.label'),
+            onClick: () => choosePdfOption(() => setSpreadMode((value) => (Number(value) + 1) % 3)),
+          }, t('spread.label') + ' · ' + t(['spread.one', 'spread.two', 'spread.three'][effectiveSpreadMode])),
+          showOriginalPdf ? (() => {
+            const offsetVal = pdfOffsetX || 0;
+            const offsetPct = (offsetVal + 100) / 2;
+            const offsetFillStart = Math.min(50, offsetPct) + '%';
+            const offsetFillEnd = Math.max(50, offsetPct) + '%';
+            return h('div', { className: 'elr-reader-offset' },
+              h('label', null,
+                h('span', null, '页面左右位置'),
+                h('output', { ref: pdfOffsetOutputRef }, !offsetVal ? '居中' : ((offsetVal < 0 ? '左移 ' : '右移 ') + Math.abs(offsetVal) + '%')),
+                h('input', {
+                  ref: pdfOffsetInputRef,
+                  type: 'range', min: -100, max: 100, step: 1, defaultValue: offsetVal,
+                  style: { '--elr-fill-start': offsetFillStart, '--elr-fill-end': offsetFillEnd },
+                  'aria-label': '页面左右位置',
+                  'aria-valuetext': !offsetVal ? '居中' : ((offsetVal < 0 ? '左移 ' : '右移 ') + Math.abs(offsetVal) + '%'),
+                  onPointerDown: () => {
+                    if (pdfOffsetDraggingRef.current) return;
+                    pdfOffsetDraggingRef.current = true;
+                    pdfOffsetWidthRef.current = containerRef.current?.clientWidth || 0;
+                    gestureStart();
+                    const endDrag = () => {
+                      window.removeEventListener('pointerup', endDrag, true);
+                      window.removeEventListener('pointercancel', endDrag, true);
+                      window.removeEventListener('blur', endDrag);
+                      if (!pdfOffsetDraggingRef.current) return;
+                      pdfOffsetDraggingRef.current = false;
+                      gestureEnd();
+                      const finalVal = Number(pdfOffsetInputRef.current?.value ?? (pdfOffsetX || 0));
+                      applyOffsetPreview(finalVal, false);
+                      setPdfOffsetX(finalVal);
+                    };
+                    window.addEventListener('pointerup', endDrag, true);
+                    window.addEventListener('pointercancel', endDrag, true);
+                    window.addEventListener('blur', endDrag);
+                  },
+                  onInput: (event) => {
+                    const val = Number(event.target.value);
+                    applyOffsetPreview(val, pdfOffsetDraggingRef.current);
+                    if (!pdfOffsetDraggingRef.current) setPdfOffsetX(val);
+                  },
+                })
+              ),
+              h('button', {
+                ref: pdfOffsetResetRef,
+                type: 'button', className: 'elr-btn', disabled: !offsetVal,
+                onClick: () => setPdfOffsetX(0),
+              }, '居中复位')
+            );
+          })() : null,
           h('button', { type: 'button', className: 'elr-btn', onClick: () => choosePdfOption(toggleFullscreen) }, fullscreenLabel)
         )
       )
@@ -9231,7 +9749,7 @@ function Reader(props) {
     const pdfjsLayer = h('div', {
       ref: containerRef,
       className: 'elr-pdf-container'
-        + (spreadMode === 2 ? ' elr-three' : '')
+        + (effectiveSpreadMode === 2 ? ' elr-three' : '')
         + (figurePicking ? ' elr-picking-figure' : ''),
       'data-elr-page-theme': theme === 'default' ? undefined : theme,
       'data-elr-page-dark': DARK_PAGE_THEMES.includes(theme) ? 'true' : undefined,
@@ -10006,29 +10524,56 @@ function Reader(props) {
   // manager that enables them again — a card closed years ago is always one
   // click away, which is the whole point of having a manager instead of only
   // the × on each card.
+  const activeCardKeys = CARD_KEYS.filter((key) => enabledCards.indexOf(key) !== -1);
+  const inactiveCardKeys = CARD_KEYS.filter((key) => enabledCards.indexOf(key) === -1);
+  const renderCardTile = (key, on) => h('button', {
+    key,
+    type: 'button',
+    className: 'elr-card-tile ' + (on ? 'is-on' : 'is-off'),
+    'aria-pressed': on,
+    onPointerDown: !on ? beginMenuCardDrag(key) : undefined,
+    onClick: (e) => {
+      e.stopPropagation();
+      if (menuDragJustEndedRef.current) return;
+      setCardEnabled(key, !on);
+    },
+  },
+    h('div', { className: 'elr-card-tile-top' },
+      h('span', { className: 'elr-card-tile-name' }, cardLabel(key)),
+      on && floatingCards[key] ? h('span', { className: 'elr-card-tile-float' }, '悬浮中') : null,
+      h('span', { className: 'elr-card-tile-state', 'aria-hidden': true }, on ? '✓' : '+')
+    ),
+    h('span', { className: 'elr-card-tile-desc' }, cardDesc(key))
+  );
   const cardMenu = cardMenuOpen && hasPaper
     ? createPortal(h('div', {
       ref: cardMenuRef, className: 'elr-card-menu' + toneCls,
       role: 'dialog', 'aria-label': t('card.manage'),
     },
-      h('div', { className: 'elr-card-menu-title' }, t('card.manage')),
-      CARD_KEYS.map((key) => {
-        const on = enabledCards.indexOf(key) !== -1;
-        return h('label', {
-          key,
-          className: 'elr-card-menu-row' + (on ? ' on' : ''),
-          onClick: (e) => e.stopPropagation(),
-        },
-          h('input', {
-            type: 'checkbox',
-            checked: on,
-            onChange: (e) => setCardEnabled(key, e.target.checked),
-          }),
-          h('span', null, cardLabel(key))
-        );
-      }),
-      h('div', { className: 'elr-card-menu-actions' },
-        h('button', { type: 'button', className: 'elr-btn', onClick: resetCardLayout }, t('card.resetLayout'))
+      h('div', { className: 'elr-card-menu-head' },
+        h('div', { className: 'elr-card-menu-title-wrap' },
+          h('span', { className: 'elr-card-menu-title' }, t('card.manage')),
+          h('span', { className: 'elr-card-menu-count' }, '已启用 ' + activeCardKeys.length + ' / ' + CARD_KEYS.length)
+        ),
+        h('button', { type: 'button', className: 'elr-btn elr-card-menu-reset', onClick: resetCardLayout }, t('card.resetLayout'))
+      ),
+      h('div', { className: 'elr-card-menu-section' },
+        h('div', { className: 'elr-card-menu-section-head' },
+          h('span', null, '已启用的卡片'),
+          h('span', { className: 'elr-card-menu-section-badge' }, String(activeCardKeys.length))
+        ),
+        activeCardKeys.length
+          ? h('div', { className: 'elr-card-menu-grid' }, activeCardKeys.map((key) => renderCardTile(key, true)))
+          : h('div', { className: 'elr-card-menu-empty' }, '暂无已启用的卡片，点击下方卡片即可添加。')
+      ),
+      h('div', { className: 'elr-card-menu-section' },
+        h('div', { className: 'elr-card-menu-section-head' },
+          h('span', null, '未启用的卡片'),
+          h('span', { className: 'elr-card-menu-section-badge' }, String(inactiveCardKeys.length))
+        ),
+        inactiveCardKeys.length
+          ? h('div', { className: 'elr-card-menu-grid' }, inactiveCardKeys.map((key) => renderCardTile(key, false)))
+          : h('div', { className: 'elr-card-menu-empty' }, '全部功能卡片均已启用。')
       )
     ), floatingHost)
     : null;
@@ -10146,8 +10691,11 @@ function Reader(props) {
     return createPortal(h('div', {
       className: 'elr-sec elr-floating-card' + toneCls + (frontCard === key ? ' is-front' : '')
         + (open ? ' is-open' : ' is-collapsed')
-        + (ghost?.key === key ? ' dragging' : ''),
+        + (ghost?.key === key ? ' dragging' : '')
+        + (comparison ? ' is-compare-hidden' : ''),
       'data-elr-floating-card': key,
+      'aria-hidden': comparison || undefined,
+      inert: comparison,
       style: { left: box.x, top: box.y, width: box.w, height: box.h, '--elr-card-font-adjust': cardFontAdjust },
       onPointerDownCapture: () => setFrontCard(key),
       onFocus: () => setFrontCard(key),
@@ -10553,6 +11101,7 @@ function Reader(props) {
   const popupNode = popup ? createPortal(
     h('div', {
       className: 'elr-popup elr-resizable' + (popupHorizontal ? ' is-side-by-side' : '')
+        + (selectionPopupTransparent === false ? ' is-frosted-blocks' : '')
         + (scheme === 'dark' ? ' elr-popup-dark' : '') + toneCls,
       ref: selectionPopupElement,
       'data-selection-anchored': popup.followsSelection || undefined,
@@ -10566,12 +11115,19 @@ function Reader(props) {
         h('span', { title: t('popup.dismissHint') }, t('popup.title')),
         h('span', { className: 'elr-spacer' }),
         h('button', {
-          type: 'button', className: 'elr-card-control elr-inline-control',
+          type: 'button', className: 'elr-card-control elr-inline-control elr-popup-original-toggle',
+          title: popupOriginalVisible ? '隐藏英文原文' : '显示英文原文',
+          'aria-label': popupOriginalVisible ? '隐藏英文原文' : '显示英文原文',
+          'aria-pressed': popupOriginalVisible,
+          onClick: () => setPopupShowOriginal(!popupOriginalVisible),
+        }, '原文'),
+        h('button', {
+          type: 'button', className: 'elr-card-control elr-inline-control elr-popup-translate-btn',
           title: t(selectionBusy ? 'selection.working' : selectionResult ? 'popup.retranslate' : 'popup.translate'),
           'aria-label': t(selectionResult ? 'popup.retranslate' : 'popup.translate'), 'aria-busy': selectionBusy,
           disabled: selectionBusy || !hasSelectionDraft,
           onClick: () => translateRef.current(),
-        }, readerIcon('translate')),
+        }, '译'),
         // (v14 #2) Explicit font-size controls. They must NOT start a drag.
         h('button', {
           type: 'button', className: 'elr-card-control elr-inline-control', title: t('popup.fontDec'), 'aria-label': t('popup.fontDec'),
@@ -10588,6 +11144,7 @@ function Reader(props) {
           title: t(popupHorizontal ? 'popup.stack' : 'popup.columns'),
           'aria-label': t(popupHorizontal ? 'popup.stack' : 'popup.columns'),
           'aria-pressed': popupHorizontal,
+          disabled: !popupOriginalVisible,
           onClick: () => setPopupLayout(popupHorizontal ? 'stacked' : 'side-by-side'),
         }, h(LayoutIcon, { name: popupHorizontal ? 'popupRows' : 'popupColumns' }))
       ),
@@ -10603,7 +11160,7 @@ function Reader(props) {
       // very same state, so typing in either place changes both, and a
       // translation started here also shows up in the side column.
       h('div', { className: 'elr-popup-body' },
-        h('div', {
+        popupOriginalVisible && h('div', {
           className: 'elr-popup-block elr-popup-block-original',
           style: { flexGrow: popupOW, flexShrink: 1, flexBasis: 0 },
         },
@@ -10621,16 +11178,16 @@ function Reader(props) {
           // (v19 #1) Drag DOWN to make the English box taller.
           !popupHorizontal && h('div', { className: 'elr-popup-grip', title: t('box.editHint'), onPointerDown: rebalance('ow', 'rw', 1) })
         ),
-        popupHorizontal && h('div', { className: 'elr-popup-column-grip', title: t('box.editHint'), onPointerDown: rebalance('ow', 'rw', 1, true) }),
+        popupOriginalVisible && popupHorizontal && h('div', { className: 'elr-popup-column-grip', title: t('box.editHint'), onPointerDown: rebalance('ow', 'rw', 1, true) }),
         h('div', {
           className: 'elr-popup-block elr-popup-block-result',
-          style: { flexGrow: popupRW, flexShrink: 1, flexBasis: 0 },
+          style: { flexGrow: popupOriginalVisible ? popupRW : 1, flexShrink: 1, flexBasis: 0, ...(popupOriginalVisible ? {} : { marginTop: 0 }) },
         },
           h('label', { className: 'elr-popup-label' }, t('popup.translation')),
           h('div', {
             className: 'elr-popup-result-box elr-popup-text' + (selectionResult ? '' : ' elr-out-empty'),
           }, selectionResult || (selectionBusy ? t('selection.working') : t('selection.pending'))),
-          !popupHorizontal && h('div', { className: 'elr-popup-grip', title: t('box.editHint'), onPointerDown: rebalance('rw', 'ow', 1) })
+          popupOriginalVisible && !popupHorizontal && h('div', { className: 'elr-popup-grip', title: t('box.editHint'), onPointerDown: rebalance('rw', 'ow', 1) })
         )
       ),
       h('span', { className: 'elr-grip-corner' }),
@@ -10940,8 +11497,11 @@ function Reader(props) {
       ref: cardGhostRef,
       className: 'elr-drag-ghost is-lifting' + (ghost.vertical ? ' is-vertical' : '') + toneCls,
       'aria-hidden': true,
+      'data-elr-liquid': ghost.liquid || undefined,
+      'data-elr-liquid-ink': ghost.liquidInk || undefined,
       style: {
-        transform: 'translate3d(' + ghost.x + 'px,' + ghost.y + 'px,0) scale(' + (ghost.scale ?? 1) + ')',
+        translate: ghost.x + 'px ' + ghost.y + 'px 0',
+        transform: 'scale(' + (ghost.scale ?? 1) + ')',
         width: ghost.w,
         height: ghost.h,
         '--elr-card-font-adjust': cardFontAdjust,
@@ -10977,7 +11537,9 @@ function Reader(props) {
       hasPaper && workspaceStowed ? h('button', { ref: workspaceTabRef, type: 'button', className: 'elr-workspace-tab',
         title: t('cards.show'), 'aria-controls': workspaceId, 'aria-expanded': false, onClick: toggleWorkspace,
       }, t('cards.title')) : null,
-      h('div', { className: 'elr-notice' + (notice?.kind ? ' is-' + notice.kind : ''), role: 'status' }, notice?.message)
+      h('div', { className: 'elr-notice', role: 'status', 'aria-live': 'polite' },
+        notice ? h('div', { key: notice.id, className: 'elr-notice-pill' + (notice.kind ? ' is-' + notice.kind : '') }, notice.message) : null
+      )
     ),
     selectionToolNode,
     popupNode,

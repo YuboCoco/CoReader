@@ -198,7 +198,7 @@ export function PdfPage({ pdf, page, zoom, marks, onSelect, figurePicking, onFig
           }} />
         )))}
       </div>
-      <div className="textLayer" ref={textLayer} />
+      <div className="textLayer" lang="en" ref={textLayer} />
       {ready && figurePicking && <FigureSurface onFinish={(position) => {
         const image = cropFromPage(canvas.current, position);
         if (image.startsWith('data:image/jpeg;')) onFigure({ image, position, page, context: nearbyText(textLayer.current, position) });

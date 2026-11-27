@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('reader', {
   savePaperAbstractTranslation: (id, source, translated) => call('paper:abstract-translation', id, source, translated),
   reopen: (id) => call('paper:reopen', id),
   position: (id, page, zoom, pageCount) => call('paper:position', id, page, zoom, pageCount),
+  readPages: (id, pages) => call('paper:readPages', id, pages),
   savePaperPageCount: (id, count) => call('paper:page-count', id, count),
   indexPaper: (id, count, details) => call('paper:index', id, count, details),
   records: (id) => call('paper:records', id),

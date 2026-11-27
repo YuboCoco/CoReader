@@ -4,8 +4,8 @@
 .elr-startup {
   --elr-startup-wordmark-width: clamp(180px, 29vw, 290px);
   --elr-startup-split: 28.49%;
-  --elr-startup-scene: 800ms;
-  --elr-startup-delay: 80ms;
+  --elr-startup-scene: 2650ms;
+  --elr-startup-delay: 120ms;
   position: fixed;
   z-index: 500;
   inset: 0;
@@ -25,11 +25,12 @@
   display: block;
   width: clamp(44px, 6vw, 64px);
   height: auto;
+  animation: elr-startup-icon-in 680ms cubic-bezier(.22, 1, .36, 1) var(--elr-startup-delay) both;
 }
 .elr-startup-wordmark {
   position: relative;
   width: var(--elr-startup-wordmark-width);
-  aspect-ratio: 2164 / 375;
+  aspect-ratio: 2169 / 379;
 }
 .elr-startup-co, .elr-startup-reader {
   position: absolute;
@@ -40,56 +41,72 @@
   animation-delay: var(--elr-startup-delay);
   animation-fill-mode: both;
 }
-.elr-startup:not(.is-animating) :is(.elr-startup-brand, .elr-startup-co, .elr-startup-reader) {
+.elr-startup:not(.is-animating) :is(.elr-startup-brand, .elr-startup-icon, .elr-startup-co-c, .elr-startup-co-o, .elr-startup-reader) {
   animation-play-state: paused;
 }
 .elr-startup-co {
   clip-path: inset(0 calc(100% - var(--elr-startup-split)) 0 0);
-  background: light-dark(#1646b5, #9db8ff);
-  transform-origin: 25% 63%;
-  animation-name: elr-startup-co-impact;
+}
+.elr-startup-co-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.elr-startup-co-c, .elr-startup-co-o {
+  fill: none;
+  stroke: light-dark(#1646b5, #9db8ff);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1.02;
+  stroke-dashoffset: 1.02;
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(.33, 0, .18, 1);
+  animation-name: elr-startup-stroke-draw;
+  animation-duration: 1400ms;
+  animation-delay: var(--elr-startup-delay);
+}
+.elr-startup-co-c {
+  stroke-width: 108;
+}
+.elr-startup-co-o {
+  stroke-width: 104;
 }
 .elr-startup-reader {
   clip-path: inset(0 0 0 var(--elr-startup-split));
   background: light-dark(#0b806f, #77dbc4);
   transform-origin: var(--elr-startup-split) 63%;
-  animation-name: elr-startup-reader-impact;
+  animation: elr-startup-reader-draw var(--elr-startup-scene) cubic-bezier(.25, .8, .25, 1) var(--elr-startup-delay) both;
+}
+@keyframes elr-startup-icon-in {
+  0% { opacity: 0; transform: scale(.92); }
+  100% { opacity: 1; transform: scale(1); }
 }
 @keyframes elr-startup-align {
-  0%, 20% {
+  0%, 55% {
     transform: translateX(calc(var(--elr-startup-wordmark-width) * .35755));
-    animation-timing-function: cubic-bezier(.77, 0, .175, 1);
+    animation-timing-function: cubic-bezier(.65, 0, .22, 1);
   }
-  58%, 100% { transform: translateX(0); }
+  96%, 100% { transform: translateX(0); }
 }
-@keyframes elr-startup-co-impact {
-  0%, 54% { transform: translateX(0) rotate(0); }
-  66% {
-    transform: translateX(-4px) rotate(-2.5deg);
-    animation-timing-function: cubic-bezier(.22, 1, .36, 1);
-  }
-  83% { transform: translateX(1px) rotate(.8deg); }
-  100% { transform: translateX(0) rotate(0); }
+@keyframes elr-startup-stroke-draw {
+  0% { stroke-dashoffset: 1.02; opacity: 0; }
+  6% { opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 1; }
 }
-@keyframes elr-startup-reader-impact {
-  0%, 20% {
-    transform: translateX(47%) rotate(0);
+@keyframes elr-startup-reader-draw {
+  0%, 57% {
+    clip-path: inset(0 72% 0 var(--elr-startup-split));
+    transform: translateX(14px);
     opacity: 0;
-    animation-timing-function: cubic-bezier(.23, 1, .32, 1);
+    animation-timing-function: cubic-bezier(.25, .8, .25, 1);
   }
-  41% {
-    transform: translateX(22%) rotate(0);
+  62% { opacity: 1; }
+  100% {
+    clip-path: inset(0 0 0 var(--elr-startup-split));
+    transform: translateX(0);
     opacity: 1;
-    animation-timing-function: cubic-bezier(.23, 1, .32, 1);
   }
-  54% { transform: translateX(-1px) rotate(0); opacity: 1; }
-  66% {
-    transform: translateX(-5px) rotate(-2.5deg);
-    opacity: 1;
-    animation-timing-function: cubic-bezier(.22, 1, .36, 1);
-  }
-  83% { transform: translateX(2px) rotate(.8deg); opacity: 1; }
-  100% { transform: translateX(0) rotate(0); opacity: 1; }
 }
 @media (prefers-color-scheme: dark) {
   .elr-startup {
@@ -98,5 +115,6 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .elr-startup-brand, .elr-startup-co, .elr-startup-reader { animation: none; }
+  .elr-startup-brand, .elr-startup-icon, .elr-startup-co-c, .elr-startup-co-o, .elr-startup-reader { animation: none; }
+  .elr-startup-co-c, .elr-startup-co-o { stroke-dashoffset: 0; opacity: 1; }
 }

@@ -2,16 +2,15 @@ import { createGlassLens, supportsGlassLens } from './glass-lens.mjs';
 
 const surfaces = {
   '.elr-reader-capsule': .12,
-  '.elr-pdf-outline': .08,
   '.elr-parallel-actions': .10,
-  '.elr-reading-round, .elr-find, .elr-zoom-menu, .elr-reader-options, .elr-settings-panel': 0,
+  '.elr-reading-round, .elr-find, .elr-zoom-menu, .elr-reader-options, .elr-settings-panel, .elr-pdf-outline': 0,
   '.elr-selection-tools, .elr-popup, .elr-note-bubble, .elr-term-popover, .elr-formula-card': 0,
-  '.elr-sec[data-elr-floating-card], .elr-card-menu, .elr-menu, .elr-agent-model-menu': 0,
+  '.elr-sec[data-elr-docked-card], .elr-sec[data-elr-floating-card], .elr-card-menu, .elr-menu, .elr-agent-model-menu': 0,
   '.elr-parallel-status, .elr-workspace-tab, .desktop-update': 0,
   '.pl-dialog, .settings.model-center, .settings.connection-detail, .settings.pdf-password, .report-dialog': 0,
 };
 const modalDialogSelector = '.pl-dialog, .settings.model-center, .settings.connection-detail, .settings.pdf-password, .report-dialog';
-const fixedInkSelector = modalDialogSelector + ', .elr-pdf-outline';
+const fixedInkSelector = modalDialogSelector + ', .elr-pdf-outline, .elr-sec[data-elr-docked-card]';
 const surfaceSelector = Object.keys(surfaces).join(', ');
 const materialProperties = ['density', 'brightness', 'saturation', 'protection'];
 const sceneSelector = '.elr-view, .elr-reading-space, .elr-pdf-container, .elr-pdf-wrap, .pl-home, .pdfViewer .page';
@@ -296,6 +295,16 @@ export function installLiquidGlass(readSettings, subscribe) {
       if (surface.matches('.elr-floating-card[data-elr-folding][data-elr-liquid]')) continue;
       const rect = surface.getBoundingClientRect();
       if (surface.classList.contains('is-closed')) {
+        if (surface.classList.contains('elr-pdf-outline') && !surface.hasAttribute('data-elr-liquid')) {
+          const scheme = getComputedStyle(surface).colorScheme === 'dark' ? 'dark' : 'light';
+          const ink = scheme === 'dark' ? 'light' : 'dark';
+          surface.dataset.elrLiquid = scheme;
+          surface.dataset.elrLiquidInk = ink;
+          surface.style.setProperty('--elr-liquid-density', '0.7500');
+          surface.style.setProperty('--elr-liquid-brightness', scheme === 'dark' ? '0.8000' : '1.0600');
+          surface.style.setProperty('--elr-liquid-saturation', '1.4500');
+          surface.style.setProperty('--elr-liquid-protection', '0.0000');
+        }
         if (getComputedStyle(surface).visibility === 'hidden' || rect.bottom <= 0 || rect.right <= 0 || rect.top >= innerHeight || rect.left >= innerWidth) {
           state.lens?.clear();
         }
@@ -305,7 +314,7 @@ export function installLiquidGlass(readSettings, subscribe) {
         state.lens?.clear();
         continue;
       }
-      if (surface.classList.contains('elr-pdf-outline') && getComputedStyle(surface).translate !== 'none') {
+      if (surface.classList.contains('elr-pdf-outline') && surface.hasAttribute('data-elr-liquid') && getComputedStyle(surface).translate !== 'none') {
         continue;
       }
       const scheme = getComputedStyle(surface).colorScheme === 'dark' ? 'dark' : 'light';

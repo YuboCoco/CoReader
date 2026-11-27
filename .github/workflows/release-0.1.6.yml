@@ -1,0 +1,138 @@
+name: Release CoReader 0.1.6
+
+on:
+  push:
+    tags: [v0.1.6]
+
+permissions:
+  contents: read
+
+env:
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+  ONNXRUNTIME_NODE_INSTALL: skip
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci --registry=https://registry.npmjs.org --replace-registry-host=always --no-audit --no-fund
+      - run: node --test --test-concurrency=1
+      - run: npm run prepare:translation:win
+      - run: npm run prepare:layout:win
+      - name: Build Windows installer and portable ZIP
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (Test-Path -LiteralPath $compiler) { $env:COREADER_ISCC = $compiler }
+          npm run installer:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = Get-Item -LiteralPath 'release/CoReader-win32-x64/CoReader.exe'
+          if ($exe.VersionInfo.ProductVersion -ne '0.1.6') { throw 'Unexpected Windows version' }
+          tar.exe -tf release/CoReader-0.1.6-win-x64.zip > $null
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-x64
+          path: |
+            release/CoReader-0.1.6-Setup-win-x64.exe
+            release/CoReader-0.1.6-win-x64.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci --registry=https://registry.npmjs.org --replace-registry-host=always --no-audit --no-fund
+      - run: npm run prepare:translation:mac -- ${{ matrix.arch }}
+      - run: npm run prepare:layout:mac
+      - run: npm run package:mac -- ${{ matrix.arch }}
+      - run: unzip -tq release/CoReader-0.1.6-mac-${{ matrix.arch }}.zip
+      - uses: actions/upload-artifact@v6
+        with:
+          name: mac-${{ matrix.arch }}
+          path: release/CoReader-0.1.6-mac-${{ matrix.arch }}.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Publish the verified downloads
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag=v0.1.6
+          cd packages
+          files=(
+            CoReader-0.1.6-Setup-win-x64.exe
+            CoReader-0.1.6-win-x64.zip
+            CoReader-0.1.6-mac-arm64.zip
+            CoReader-0.1.6-mac-x64.zip
+          )
+          for file in "${files[@]}"; do test -s "$file"; done
+          cat > "$RUNNER_TEMP/coreader-016-notes.md" <<'EOF'
+          ## CoReader 0.1.6
+
+          ### 卡片交互与液态玻璃体验
+          - **功能栏卡片全面液态玻璃化**：停靠在功能栏中的卡片与长按拖动时的胶囊浮层均启用液态玻璃材质，并修复百分比下拉框继承胶囊透镜导致的显示异常及目录首次展开时的颜色跳变。
+          - **全新长按拖动与展开动效**：卡片拖动升级为「长按顶栏 → 整卡平滑收缩进胶囊 → 弹起拖动 → 松手重新展开」的连贯动效；统一所有卡片的展开/收起过渡效果，并为卡片顶栏加入拟物触感按压反馈。
+          - **卡片管理面板升级**：改为上下分区直观展示「已启用的卡片」与「未启用的卡片」，支持直接从设置面板将未启用卡片拖入阅读区成为悬浮窗。
+          - **双磨砂圆角分屏拖动**：调整功能栏宽度或底栏高度时，阅读区域与功能栏切换为四周圆角的柔和磨砂视图（含图标与实时占比提示），彻底消除拖动卡顿并适配浅色/深色主题。
+          - **卡片排版与视觉精修**：优化卡片顶部标题样式与胶囊四边等距内边距，去除顶栏多余分割线与拖动蓝线，并将「论文分析」和「参考文献」的操作按钮移入内容框右上角。
+
+          ### 阅读体验与高亮批注
+          - 更精准的文献阅读进度判定，持久化记录已读页集合。
+          - **高亮与批注体验优化**：优化页面缩放时高亮区域的实时跟随，多条高亮重叠时后刷高亮优先置顶显示，并修复高亮/批注选中提示框的错位与清晰度问题。
+          - **页面左右位置调节优化**：滑条改为从居中（0%）向左右双向填充，并将页面水平位移升级为纯 GPU 缓动过渡，拖动与居中复位同样丝滑。
+          - 新增自定义磨砂指针套件与启动动画细节修复（修正 `C` 字形边缘裁剪与比例）。
+
+          ### 翻译与排版引擎
+          - 默认本地翻译模型切换为 **Hy-MT2-1.8B**；同步优化 PDF 文本对齐、版面分析与图片/表格区域识别。
+
+          ## 下载
+
+          - Windows x64：安装版 EXE（`CoReader-0.1.6-Setup-win-x64.exe`）或便携 ZIP（`CoReader-0.1.6-win-x64.zip`）。
+          - macOS 13.3 及以上：Apple Silicon 下载 `CoReader-0.1.6-mac-arm64.zip`，Intel 下载 `CoReader-0.1.6-mac-x64.zip`。两个 ZIP 均使用临时签名，未进行 Apple 公证。
+          EOF
+          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            test "$draft" = true
+          else
+            gh release create "$tag" --draft --verify-tag --title 'CoReader 0.1.6' --notes-file "$RUNNER_TEMP/coreader-016-notes.md"
+          fi
+          gh release upload "$tag" "${files[@]}" --clobber
+          gh release edit "$tag" --draft=false --latest

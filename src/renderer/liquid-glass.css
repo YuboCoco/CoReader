@@ -7,14 +7,25 @@ html:root [data-elr-liquid][data-elr-liquid-ink] {
   --elr-frosted-background: var(--elr-liquid-background);
   --elr-frosted-filter: var(--elr-liquid-filter);
   --elr-frosted-rim: var(--elr-liquid-shadow);
+  --elr-liquid-lens: initial;
   background: var(--elr-liquid-background);
   backdrop-filter: var(--elr-liquid-filter);
   box-shadow: var(--elr-liquid-shadow);
   color: var(--elr-liquid-primary);
 }
 
-html:root :is(.elr-sec[data-elr-floating-card], .elr-drag-ghost)[data-elr-liquid]::after {
+html:root :is(.elr-zoom-menu, .elr-reader-options)[data-elr-liquid][data-elr-liquid-ink] {
+  backdrop-filter: blur(18px) saturate(var(--elr-liquid-saturation)) brightness(var(--elr-liquid-brightness));
+  -webkit-backdrop-filter: blur(18px) saturate(var(--elr-liquid-saturation)) brightness(var(--elr-liquid-brightness));
+}
+
+html:root :is(.elr-sec[data-elr-docked-card], .elr-sec[data-elr-floating-card], .elr-drag-ghost)[data-elr-liquid]::after {
   box-shadow: none;
+}
+
+html:root .elr-drag-ghost[data-elr-liquid][data-elr-liquid-ink] {
+  backdrop-filter: blur(18px) saturate(var(--elr-liquid-saturation, 1.45)) brightness(var(--elr-liquid-brightness, 1));
+  -webkit-backdrop-filter: blur(18px) saturate(var(--elr-liquid-saturation, 1.45)) brightness(var(--elr-liquid-brightness, 1));
 }
 
 html:root .elr-reading-round[data-elr-liquid]:is(:active, [aria-expanded="true"]) {
@@ -41,7 +52,23 @@ html:root [data-elr-liquid][data-elr-liquid-ink][data-elr-liquid-strong-labels] 
 
 [data-elr-liquid-ink="light"] .elr-popup-result-box,
 [data-elr-liquid-ink="light"] .elr-popup-textarea {
-  background-color: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 82%, transparent);
+  background-color: transparent;
+}
+[data-elr-liquid-ink="light"] .elr-popup-block-original {
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 28%, transparent);
+  border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 38%, transparent);
+}
+[data-elr-liquid-ink="light"] .elr-popup-block-result {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 24%, transparent));
+  border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 38%, transparent);
+}
+[data-elr-liquid-ink="light"].elr-popup.is-frosted-blocks .elr-popup-block-original {
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);
+  border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 55%, transparent);
+}
+[data-elr-liquid-ink="light"].elr-popup.is-frosted-blocks .elr-popup-block-result {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent));
+  border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 55%, transparent);
 }
 
 html:root :is(.elr-reader-capsule, .elr-parallel-actions)[data-elr-liquid] {

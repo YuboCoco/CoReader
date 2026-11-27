@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { postReader, readStore, writeStore } from './desktop-runtime.js';
-import { blockForAnchor, chapterRange, embeddedOutline, flattenOutline, headingOutline, outlineAt, paragraphBlocks,
+import { blockForAnchor, bodyStyleOfLines, chapterRange, embeddedOutline, flattenOutline, headingOutline, outlineAt, paragraphBlocks,
   sourceScrollOffset } from './pdf-reading.mjs';
 import { blockAtPoint, bookmarkWithNumber, insertMedia, lineInsideMedia, pdfGraphics, pdfMedia, protectMath, renderMedia, translationSource, viewportBounds } from './pdf-media.mjs';
 import { composeMedia, formulaTextInBounds, readLayout, textOutsideMedia } from './pdf-layout.mjs';
@@ -115,14 +115,19 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
         }));
         nodes = await addNumbers(nodes);
       } else {
-        const headings = [];
+        const pages = [];
         for (let number = 1; number <= job.pdf.numPages; number++) {
           signal.throwIfAborted();
           const contents = await readText(job, number).catch(() => null);
-          if (contents) for (const block of paragraphBlocks(contents.positioned, contents.view)) {
-            if (block.heading) headings.push({ ...block, page: number });
-          }
+          if (contents) pages.push({ number, ...contents });
           if (number % 3 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        const bodyStyle = bodyStyleOfLines(pages.flatMap((page) => page.positioned));
+        const headings = [];
+        for (const page of pages) {
+          for (const block of paragraphBlocks(page.positioned, page.view, bodyStyle)) {
+            if (block.heading) headings.push({ ...block, page: page.number });
+          }
         }
         nodes = headingOutline(headings);
       }

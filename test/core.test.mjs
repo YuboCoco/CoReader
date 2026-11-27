@@ -22,6 +22,8 @@ test('the library deduplicates a PDF and persists page position, notes and term 
     assert.equal(library.recent().length, 1);
     library.position(id, 3, 1.5, 12);
     library.position(id, 2, 1.5);
+    assert.deepEqual(library.paperLibrary().papers.map((item) => [item.furthestPage, item.readPages]), [[0, []]]);
+    library.markPagesRead(id, [2, 3]);
     library.addMark(id, { page: 3, kind: 'note', note: '我的批注', quote: 'paper', rects: [{ x: 0, y: 0, w: 0.3, h: 0.1 }] });
     library.beginTerm(id, 'Paper', 'first', 'paper context');
     assert.equal(library.records(id).terms[0].status, 'pending');
@@ -32,7 +34,7 @@ test('the library deduplicates a PDF and persists page position, notes and term 
     library.close();
     library = openLibrary(directory);
     assert.deepEqual(library.recent().map((item) => [item.page, item.zoom]), [[2, 1.5]]);
-    assert.deepEqual(library.paperLibrary().papers.map((item) => [item.furthestPage, item.pageCount]), [[3, 12]]);
+    assert.deepEqual(library.paperLibrary().papers.map((item) => [item.furthestPage, item.pageCount, item.readPages]), [[3, 12, [2, 3]]]);
     assert.equal(library.records(id).marks[0].note, '我的批注');
     assert.equal(library.records(id).terms.find((item) => item.key === 'paper').context, 'new context');
     assert.equal(library.records(id).terms.find((item) => item.key === 'second term').status, 'error');

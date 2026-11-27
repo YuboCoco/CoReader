@@ -173,7 +173,7 @@ export function splitSpanTokens(text) {
 export function matchSpanToRuns(spanText, spanLeftPct, spanTopPct, fontHeightPct, runs, startHint = 0) {
   const tokens = splitSpanTokens(spanText);
   const words = tokens.filter((t) => !t.space);
-  if (words.length < 2) return null;
+  if (!words.length) return null;
 
   // TextLayer sets `span.style.top` to `baselineY - fontAscent` (~0.75..0.85 * fontHeight).
   const expectedBaselinePct = spanTopPct + fontHeightPct * 0.78;
@@ -237,11 +237,20 @@ export function matchSpanToRuns(spanText, spanLeftPct, spanTopPct, fontHeightPct
     const widthPct = rightPct - leftPct;
     if (widthPct <= 0) return null;
     if (matchedWords.length && leftPct < matchedWords.at(-1).leftPct - 0.1) return null;
-    matchedWords.push({ text: words[wIdx].text, leftPct, widthPct });
+    matchedWords.push({ text: words[wIdx].text, leftPct, widthPct, baselinePct: startRun.topPct });
     cursor += consumed;
   }
 
   return { tokens, words: matchedWords, nextCursor: cursor };
+}
+
+function normalizeTextLayerFont(fontFamily) {
+  const family = String(fontFamily || '').trim();
+  const lower = family.toLowerCase();
+  if (!lower || lower === 'sans-serif') return 'Arial, sans-serif';
+  if (lower === 'serif') return 'Times New Roman, serif';
+  if (lower === 'monospace') return 'Consolas, monospace';
+  return family;
 }
 
 let measureCtx = null;
@@ -288,8 +297,19 @@ export function alignPageTextLayer(pageEl, operators, OPS, viewport) {
     if (!matched) continue;
     runCursor = matched.nextCursor;
 
-    const fontFamily = span.style.fontFamily || 'sans-serif';
-    const baseTop = span.style.top;
+    const fontFamily = normalizeTextLayerFont(span.style.fontFamily || 'sans-serif');
+    const expectedTopPct = matched.words[0].baselinePct - fontHeightPct * 0.78;
+    const alignedTop = Math.abs(spanTopPct - expectedTopPct) > fontHeightPct * 0.15
+      ? expectedTopPct.toFixed(4) + '%'
+      : span.style.top;
+    if (matched.words.length === 1) {
+      span.style.fontFamily = fontFamily;
+      span.style.top = alignedTop;
+      changed = true;
+      continue;
+    }
+
+    const baseTop = alignedTop;
     const baseFontHeight = span.style.getPropertyValue('--font-height');
     const dir = span.dir;
 

@@ -2,13 +2,13 @@ export const connectionNames = {
   chatgpt: 'ChatGPT', deepseek: 'DeepSeek', kimi: 'Kimi', glm: 'GLM', claude: 'Claude', workbuddy: 'WorkBuddy', doubao: '火山方舟', 'kimi-code': 'Kimi Code', compatible: '自定义 API',
 };
 
-export const defaultLocalTranslationModel = 'haidass-translate-143m';
+export const defaultLocalTranslationModel = 'hy-mt2-1.8b';
 export const localTranslationModels = {
-  [defaultLocalTranslationModel]: {
-    label: 'Haidass-Translate-143M', weights: 'haidass-translate-143m-q8_0.gguf', license: 'Haidass-LICENSE.txt',
-  },
   'hy-mt2-1.8b': {
     label: 'Hy-MT2-1.8B', weights: 'Hy-MT2-1.8B-Q4_K_M.gguf', license: 'Hy-MT2-LICENSE.txt',
+  },
+  'haidass-translate-143m': {
+    label: 'Haidass-Translate-143M', weights: 'haidass-translate-143m-q8_0.gguf', license: 'Haidass-LICENSE.txt',
   },
 };
 

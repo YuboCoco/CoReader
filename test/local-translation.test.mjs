@@ -16,7 +16,7 @@ test('Haidass uses the translation template, keeps paragraph order and bounds ea
     assert.ok(source.length <= 421);
     seen.push(source);
     return { content: '译文。', stop_type: 'eos' };
-  });
+  }, undefined, 'haidass-translate-143m');
   assert.ok(seen.length > 2);
   assert.equal(seen.slice(0, -1).join(' '), first);
   assert.equal(seen.at(-1), second.replace('<', '＜'));
@@ -24,7 +24,7 @@ test('Haidass uses the translation template, keeps paragraph order and bounds ea
   assert.equal(await translateSelection('Attention head', async ({ prompt }) => {
     assert.equal(readSource(prompt), 'Attention head.');
     return { content: '注意力头。', stop_type: 'eos' };
-  }), '注意力头');
+  }, undefined, 'haidass-translate-143m'), '注意力头');
 });
 
 test('Haidass retries a length-limited chunk in smaller parts and honors cancellation', async () => {
@@ -36,13 +36,13 @@ test('Haidass retries a length-limited chunk in smaller parts and honors cancell
     seen.push(piece);
     if (piece === left + ' ' + right) return { content: '不完整', stop_type: 'limit' };
     return { content: '译文。', stop_type: 'eos' };
-  });
+  }, undefined, 'haidass-translate-143m');
   assert.ok(seen.length >= 3);
   assert.doesNotMatch(result, /不完整/);
-  await assert.rejects(translateSelection(left, () => assert.fail('must not run'), AbortSignal.abort()), { name: 'AbortError' });
+  await assert.rejects(translateSelection(left, () => assert.fail('must not run'), AbortSignal.abort(), 'haidass-translate-143m'), { name: 'AbortError' });
 });
 
-test('Hy-MT2 uses the chat template and keeps unpunctuated selections and paragraph boundaries', async () => {
+test('Hy-MT2 is the default local model, uses the chat template and keeps unpunctuated selections and paragraph boundaries', async () => {
   const seen = [];
   const result = await translateSelection('Attention head\n\nThe time scale changes.', async (body) => {
     assert.equal(body.model, 'hy-mt2-1.8b');
@@ -54,7 +54,7 @@ test('Hy-MT2 uses the chat template and keeps unpunctuated selections and paragr
     assert.equal(body.repeat_penalty, 1.05);
     seen.push(body.messages[0].content.split('\n')[1]);
     return { choices: [{ message: { content: seen.length === 1 ? '注意力头' : '时间尺度发生变化。' }, finish_reason: 'stop' }] };
-  }, undefined, 'hy-mt2-1.8b');
+  });
   assert.deepEqual(seen, ['Attention head', 'The time scale changes.']);
   assert.equal(result, '注意力头\n\n时间尺度发生变化。');
 });

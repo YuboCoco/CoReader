@@ -904,6 +904,7 @@ function attachActions() {
   registerHandler('paper:recent', () => library.recent());
   registerHandler('paper:reopen', (_event, id) => library.reopen(id));
   registerHandler('paper:position', (_event, id, page, zoom, pageCount) => library.position(id, page, zoom, pageCount));
+  registerHandler('paper:readPages', (_event, id, pages) => library.markPagesRead(id, pages));
   registerHandler('paper:page-count', (_event, id, count) => library.savePaperPageCount(id, count));
   registerHandler('paper:index', (_event, id, count, details) => library.indexPaper(id, count, details));
   registerHandler('paper:records', (_event, id) => library.records(id));

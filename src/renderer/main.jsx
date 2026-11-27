@@ -2,11 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Reader, installCss, setHostScheme, translate, readReaderSettings, subscribeReaderSettings } from './reader-view.js';
 import { installLiquidGlass } from './liquid-glass.mjs';
+import { installCustomCursors } from './cursors.mjs';
 import { loadLibrary } from './desktop-runtime.js';
 import { ModelCenter } from './model-center.jsx';
 import { OnboardingTour, WelcomeDialog, shouldStartOnboarding } from './onboarding-tour.jsx';
 import './reader.css';
 import './liquid-glass.css';
+import './cursors.css';
 import { motionTiming, reduceMotion } from './surface-motion.js';
 
 const api = window.reader;
@@ -162,6 +164,7 @@ system.addEventListener('change', updateScheme);
 updateScheme();
 installCss();
 installLiquidGlass(readReaderSettings, subscribeReaderSettings);
+installCustomCursors(readReaderSettings, subscribeReaderSettings);
 
 loadLibrary().then(() => '', (error) => error.message).then((issue) => {
   createRoot(document.getElementById('root')).render(<App issue={issue} />);

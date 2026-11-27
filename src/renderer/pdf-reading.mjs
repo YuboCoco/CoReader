@@ -19,6 +19,8 @@ export function equationNumber(text) {
 }
 
 const sentenceEnd = /[.!?。！？:：]$/;
+const runInAbbrev = /^(?:fig(?:s|ure)?|tab(?:le)?|eq(?:s|uation)?|sec(?:tion)?|ch(?:apter)?|app(?:endix)?|alg(?:orithm)?|ref(?:s)?|no|vol|pp|vs|al|dr|prof|mr|ms|mrs|st|e\.g|i\.e|etc)$/i;
+const trailingFunctionWord = /\b(?:and|or|but|nor|of|in|on|at|to|for|with|by|from|as|the|a|an|each|every|is|are|was|were|be|been|whose|which|that|this|these|those)$/i;
 
 export function captionOfLine(line, previous) {
   const match = captionPattern.exec(line.text);
@@ -97,19 +99,32 @@ export function readingLines(items) {
     if (fraction) index = fraction.end - 1;
     const shift = row ? Math.abs(y - row.y) : Infinity;
     const gap = row ? left - row.right : Infinity;
-    const sameBaseline = row && shift <= Math.min(2, row.size * .22) && gap >= -row.size * .45;
+    const tail = row?.fragments.at(-1);
+    const inMathTail = Boolean(tail && (tail.inline || /[=+−√∑∏∫∂∈∉⊂⊃⊆⊇∪∩∀∃≤≥≈≠±÷∞^_ˆ¯˜([{]\s*$/u.test(tail.text || '') || /^[\p{L}\p{N}∑∏√∫∂=+−×·,^_()[\]{}|¯ˆ˜∈∉⊂⊃⊆⊇∪∩∀∃≤≥≈≠±÷∞.-]{1,4}$/u.test(tail.text.trim())));
+    const raisedLead = Boolean(row && row.fragments.length === 1 && row.size <= size * 1.05
+      && /^(?:[*†‡§♠♣♥♦]|\d{1,2})$/u.test(row.fragments[0].text.trim())
+      && y <= row.y + size * .2 && row.y - y <= size * .65 && gap >= -size * .3 && gap <= size * 1.4);
+    const sameBaseline = raisedLead || (row && shift <= Math.min(inMathTail ? 3.2 : 2, row.size * (inMathTail ? .28 : .22)) && gap >= -row.size * (inMathTail ? .8 : .45));
     // PDF.js can insert line endings inside raised fractions or footnote markers.
     // Keep the main baseline fixed while attaching the smaller glyph runs.
     const lowered = row && size <= row.size * .82 && gap >= -row.size * 2.4 && left >= row.left;
-    const tail = row?.fragments.at(-1);
-    const followsMath = row && size <= row.size * 1.12 && gap >= -row.size && gap <= row.size * .85
-      && /^[\p{L}\p{N}∑∏−+._]{1,6}$/u.test(run.text.trim())
-      && (tail?.inline || /[=+−∑∏]\s*$/u.test(tail?.text || '')
-        || (/^[PXY∑∏][\p{L}\p{N}−]*$/u.test(run.text.trim())
-          && runs.slice(index + 1, index + 4).some((next) => Math.abs(next.y - row.y) <= 1.5
-            && next.left >= right - 1 && next.left <= right + 1.15 * row.size && /\p{L}{3}/u.test(next.text))));
-    const inline = row && !sameBaseline && shift <= row.size * .88 && (lowered || followsMath);
-    const joins = (sameBaseline || inline) && gap < Math.min(row.size * 1.7, 16);
+    const raisedAccent = row && /^[ˆ¯˜˙¨⃗´`]+$/u.test(run.text.trim())
+      && y >= row.y - row.size * .1 && y - row.y <= row.size * .95 && gap >= -row.size * .6 && gap < row.size * 2.2;
+    const tallDelimiter = row && /^[()[\]{}|⟨⟩]+$/u.test(run.text.trim())
+      && shift <= row.size * .9 && gap >= -row.size * .5 && gap < row.size * 1.8;
+    const followsMath = row && size <= row.size * 1.15 && gap >= -row.size && gap <= row.size * 1.1
+      && /^[\p{L}\p{N}∑∏√−+._]{1,6}$/u.test(run.text.trim())
+      && (inMathTail
+        || (/^[PXY∑∏√][\p{L}\p{N}−]*$/u.test(run.text.trim())
+          && (runs.slice(index + 1, index + 4).some((next) => Math.abs(next.y - row.y) <= 1.5
+            && next.left >= right - 1 && next.left <= right + 1.15 * row.size && /\p{L}{3}/u.test(next.text))
+            || /^√/.test(run.text.trim()))));
+    const tallMathFrag = row && inMathTail && left >= row.left && gap >= -row.size * 10 && gap < row.size * 2.2
+      && shift <= row.size * 1.45
+      && (size <= row.size * .92 || /^[\p{L}\p{N}∑∏√∫∂=+−×·,^_()[\]{}|¯ˆ˜∈∉⊂⊃⊆⊇∪∩∀∃≤≥≈≠±÷∞.-]{1,14}$/u.test(run.text.trim()));
+    const inline = row && !sameBaseline && ((shift <= row.size * .88 && (lowered || followsMath)) || tallMathFrag || raisedAccent || tallDelimiter);
+    const joins = (sameBaseline && gap < (inMathTail ? Math.max(row.size * 2.4, 24) : Math.min(row.size * 1.7, 16)))
+      || (inline && gap < (tallMathFrag ? row.size * 2.2 : Math.min(row.size * 1.7, 16)));
     if (!joins) {
       row = { text: '', left, right: left, y, size, inlineMath: [], inlineMathBounds: [], fragments: [] };
       rows.push(row);
@@ -117,7 +132,10 @@ export function readingLines(items) {
     row.fragments.push({ ...run, space: joins && gap > row.size * .11 && !/^[,.;:!?)]/.test(run.text.trimStart()),
       inline: Boolean(joins && inline) });
     row.right = Math.max(row.right, right);
-    if (!joins || !inline) row.size = Math.max(row.size, size);
+    if (raisedLead) {
+      row.y = y;
+      row.size = size;
+    } else if (!joins || !inline) row.size = Math.max(row.size, size);
   }
   return rows.map(({ fragments, ...line }) => {
     let math = [];
@@ -145,20 +163,53 @@ export function readingLines(items) {
     appendInline();
     line.text = line.text.replace(/\s+/g, ' ').trim();
     line.inlineMath = line.inlineMath.map((value) => value.replace(/\s+/g, ' ')).filter(Boolean);
+    if (fragments.length > 1) {
+      const sizeWeights = new Map();
+      for (const fragment of fragments) {
+        const chars = fragment.text.replace(/\s+/g, '').length;
+        if (!chars || !fragment.size) continue;
+        const key = Math.round(fragment.size * 10) / 10;
+        sizeWeights.set(key, (sizeWeights.get(key) || 0) + chars);
+      }
+      let bestSize = line.size;
+      let bestWeight = 0;
+      for (const [sz, weight] of sizeWeights) {
+        if (weight > bestWeight) {
+          bestWeight = weight;
+          bestSize = sz;
+        }
+      }
+      if (bestWeight > 0) line.size = bestSize;
+    }
     const firstFont = fragments[0].fontName;
     const switchAt = firstFont ? fragments.findIndex((fragment) => fragment.fontName && fragment.fontName !== firstFont) : -1;
+    line.fontName = firstFont || '';
+    line.uniformFont = Boolean(firstFont) && switchAt < 0;
     if (switchAt > 0) {
-      const lead = fragments.slice(0, switchAt).map(({ text, space }) => (space ? ' ' : '') + text).join('').trim();
+      const rawLead = fragments.slice(0, switchAt).map(({ text, space }) => (space ? ' ' : '') + text).join('').trim();
       const body = fragments[switchAt];
-      line.runIn = /^[\p{Lu}\p{Script=Han}][\p{L}\p{N} –-]+$/u.test(lead) && lead.length <= 100
-        && lead.split(/\s+/).length >= 2 && /^[\p{Lu}\p{Script=Han}]/u.test(body.text.trimStart())
-        && body.left - fragments[switchAt - 1].right >= .7 * line.size;
+      const rawBody = body.text.trimStart();
+      const punctAtEnd = /[:：.。]$/.test(rawLead);
+      const colonAtStart = /^[:：]\s*/.test(rawBody);
+      const hasPunct = punctAtEnd || colonAtStart;
+      const lead = rawLead.replace(/[:：.。]$/, '').trim();
+      const bodyAfterColon = colonAtStart ? rawBody.replace(/^[:：]\s*/, '') : rawBody;
+      const gap = body.left - fragments[switchAt - 1].right;
+      const wordCount = lead ? lead.split(/\s+/).length : 0;
+      const minWords = hasPunct ? 1 : 2;
+      line.runIn = /^[\p{Lu}\p{Script=Han}][\p{L}\p{N} ,&()–-]+$/u.test(lead) && lead.length <= 100
+        && wordCount >= minWords && !(wordCount === 1 && runInAbbrev.test(lead))
+        && /^[\p{Lu}\p{Script=Han}]/u.test(bodyAfterColon)
+        && (hasPunct || gap >= .7 * line.size);
+    }
+    if (!line.runIn && /^(?:Theorem|Lemma|Proposition|Corollary|Definition|Assumption|Remark|Proof|Example|Claim|Property)(?:\s+(?:\d+(?:\.\d+)*|[A-Z]\.\d+))?(?:\s*\([^)]{1,80}\))?[.:：](?:\s|$)/u.test(line.text)) {
+      line.runIn = true;
     }
     return line;
   });
 }
 
-export function headingFromLine(line, bodySize = 0) {
+export function headingFromLine(line, bodySize = 0, bodyFont = '') {
   const text = line.text.trim();
   if (!text || text.length > 105 || /[?!;。]$/.test(text) || /^\[\d+\]/.test(text)) return null;
   const numbered = numberedTitle.exec(text);
@@ -169,6 +220,26 @@ export function headingFromLine(line, bodySize = 0) {
       && (prefix.includes('.') || line.size >= bodySize * 1.09)) {
     return { title: text, depth: prefix.split('.').length };
   }
+  if (bodySize > 0 && !/[.,?!;。！？–—-]$/.test(text) && !captionPattern.test(text) && !/[=<>≈≠≤≥∑∫*†‡§{}%]/.test(text)
+      && !/@|https?:\/\/|www\.|[;；]|\bet al\.|\b(?:19|20)\d{2}\b/i.test(text)
+      && !/[.!?。！？]\s+\S/.test(text) && !/\([^)]*\/[^)]*\)/.test(text) && !trailingFunctionWord.test(text)) {
+    const plain = title.trim();
+    const words = plain.split(/\s+/).filter(Boolean);
+    const commaCount = (plain.match(/[,，]/g) || []).length;
+    const significantWords = words.filter((w) => w.length >= 4 && /^[A-Za-z]/.test(w));
+    const upperSignificant = significantWords.filter((w) => /^[A-Z]/.test(w)).length;
+    const titleCased = significantWords.length === 0 || upperSignificant * 2 >= significantWords.length;
+    const looksTitle = Boolean(plain) && plain.length >= 4 && plain.length <= 85 && words.length >= 1 && words.length <= 12
+      && commaCount <= 1 && /^[\p{Lu}\p{Script=Han}]/u.test(plain) && titleCased;
+    if (looksTitle) {
+      const larger = line.size >= bodySize * 1.12;
+      const distinctFont = Boolean(bodyFont) && line.uniformFont && line.fontName && line.fontName !== bodyFont
+        && plain.length <= 75 && words.length <= 10 && line.size >= bodySize * .96;
+      if (larger || distinctFont) {
+        return { title: text, depth: line.size >= bodySize * 1.15 ? 1 : 2 };
+      }
+    }
+  }
   return null;
 }
 
@@ -178,10 +249,29 @@ export function appendReadingLine(text, line) {
   return (compoundTail.test(line) ? text : text.slice(0, -1)) + line;
 }
 
-export function paragraphBlocks(lines, view = []) {
+export function bodyStyleOfLines(lines) {
   const ordered = lines.filter((line) => line.text.trim() && Number.isFinite(line.y));
-  const sizes = ordered.map((line) => line.size).filter((value) => value > 0).sort((a, b) => a - b);
+  const proseSizes = ordered.filter((line) => line.text.trim().length >= 25).map((line) => line.size).filter((value) => value > 0).sort((a, b) => a - b);
+  const allSizes = ordered.map((line) => line.size).filter((value) => value > 0).sort((a, b) => a - b);
+  const sizes = proseSizes.length >= 3 ? proseSizes : allSizes;
   const bodySize = sizes[Math.floor(sizes.length / 2)] || 10;
+  const fontCounts = new Map();
+  for (const line of ordered) {
+    if (line.uniformFont && line.fontName && Math.abs((line.size || bodySize) - bodySize) <= bodySize * .15 && line.text.length >= 18) {
+      fontCounts.set(line.fontName, (fontCounts.get(line.fontName) || 0) + 1);
+    }
+  }
+  let bodyFont = '';
+  let maxFontCount = 0;
+  for (const [font, count] of fontCounts) {
+    if (count > maxFontCount) { maxFontCount = count; bodyFont = font; }
+  }
+  return { bodySize, bodyFont };
+}
+
+export function paragraphBlocks(lines, view = [], bodyStyle = null) {
+  const ordered = lines.filter((line) => line.text.trim() && Number.isFinite(line.y));
+  const { bodySize, bodyFont } = bodyStyle && bodyStyle.bodySize > 0 ? bodyStyle : bodyStyleOfLines(ordered);
   const [leftEdge = 0, bottom = 0, rightEdge = 0, top = 0] = view;
   const edge = (top - bottom) * .065;
   const standardGaps = ordered.slice(1).map((line, index) => {
@@ -203,20 +293,56 @@ export function paragraphBlocks(lines, view = []) {
   for (const line of ordered) {
     const text = line.text.trim();
     if (/^\d{1,5}$/.test(text) && (line.y < bottom + edge || line.y > top - edge)) continue;
-    const heading = headingFromLine(line, bodySize);
+    const heading = headingFromLine(line, bodySize, bodyFont);
     const lineSize = line.size || bodySize;
     const left = Number.isFinite(line.left) ? line.left : leftEdge;
     const right = Number.isFinite(line.right) && line.right > left ? line.right : left + text.length * lineSize * .46;
     const box = [left, line.y - lineSize * .27, right, line.y + lineSize * .82];
     const isCaption = Boolean(captionOfLine(line, previous));
     const verticalGap = previous ? previous.y - line.y : 0;
-    const indent = paragraph && Number.isFinite(line.left) && line.left - paragraph.x > lineSize * .8;
-    const columnJump = paragraph && Number.isFinite(line.left) && Math.abs(line.left - paragraph.x) > Math.max(50, (rightEdge - leftEdge) * .17);
+    const prevRight = Number.isFinite(previous?.right)
+      ? previous.right
+      : (previous ? (Number.isFinite(previous.left) ? previous.left : leftEdge) + previous.text.length * (previous.size || bodySize) * .46 : left);
     const previousEnds = sentenceEnd.test(previous?.text || '');
-    const listItem = bulletStart.test(text);
+    const sameBaselineContinuation = Boolean(paragraph && previous)
+      && (left > prevRight - lineSize * 1.5 && left - prevRight <= bodySize * 1.8 && !previousEnds
+        ? Math.abs(verticalGap) <= bodySize * .95
+        : Math.abs(verticalGap) <= bodySize * .35 && left > prevRight - lineSize * 1.5 && left - paragraph.x < Math.max(220, (rightEdge - leftEdge) * .42));
+    const indent = paragraph && !sameBaselineContinuation && Number.isFinite(line.left) && line.left - paragraph.x > lineSize * .8;
+    const outdent = paragraph && previous && Number.isFinite(line.left) && Number.isFinite(previous.left)
+      && previous.left - paragraph.x > lineSize * .5 && previous.left - line.left > lineSize * .6;
+    const columnJump = paragraph && !sameBaselineContinuation && Number.isFinite(line.left) && Math.abs(line.left - paragraph.x) > Math.max(50, (rightEdge - leftEdge) * .17);
+    const dashContinuation = Boolean(paragraph && !paragraph.listItem && !previousEnds && !indent) && /^[–—]\s+\S/u.test(text);
+    const listItem = !dashContinuation && bulletStart.test(text);
     const extraLeading = leading && previousEnds && verticalGap >= Math.max(lineSize * 1.3, leading * 1.42);
-    if (paragraph && (heading || isCaption || listItem || extraLeading || verticalGap < -lineSize * .3 || verticalGap > lineSize * 1.75
-      || columnJump || ((indent || line.runIn) && previousEnds) || Math.abs((previous.size || bodySize) - lineSize) > bodySize * .3)) save();
+    const nearBottom = top > bottom && line.y <= bottom + (top - bottom) * .28;
+    const hasProseWords = /(?:[A-Za-z]{4,}.*){2,}/.test(text);
+    const hasFootnoteText = /[A-Za-z]{4,}|[\u4e00-\u9fff]{2,}|https?:\/\/|www\./i.test(text);
+    const footnoteMarker = /^(?:[*†‡§♠♣♥♦]\s*\S|\d{1,2}\s+(?:Please|http|https|Corresponding|These|This|See|For|Note|The|In|We|Copyright)\b|\d{1,2}https?:\/\/)/u.test(text)
+      || (nearBottom && /^(?:[*†‡§♠♣♥♦]\s*\S|\d{1,2}\s*(?:[A-Z][a-z]{2,}|https?:\/\/|www\.))/u.test(text));
+    const isFootnote = (footnoteMarker && hasFootnoteText && lineSize <= bodySize * (nearBottom ? .98 : .93))
+      || (nearBottom && lineSize <= bodySize * .9 && (hasProseWords || /https?:\/\/|www\.|Copyright/i.test(text))
+        && bodySize - lineSize > bodySize * .12
+        && !/[=+−]$/.test(previous?.text?.trim() || ''));
+    const prevWasFootnote = Boolean(previous?._isFootnote);
+    line._isFootnote = isFootnote;
+    const isMathFragment = Boolean(paragraph) && !heading && !isCaption && !listItem && !isFootnote
+      && Math.abs(verticalGap) <= bodySize * 2.85
+      && (Math.abs(left - paragraph.x) <= Math.max(120, (rightEdge - leftEdge) * .35)
+        || (left >= paragraph.x && left <= Math.max(paragraph.right, prevRight) + bodySize * 2))
+      && !hasProseWords
+      && (lineSize <= bodySize * .85
+        || (lineSize >= bodySize * 1.25 && /[∑∏√∫∂|]/u.test(text))
+        || (text.length <= 45 && /[∑∏√∫∂=+−×^_()[\]{}|~∼\p{Script=Greek}]/u.test(text) && !/[.!?。！？]$/.test(text)));
+    const prevWasMath = Boolean(previous?._isMathFragment);
+    line._isMathFragment = isMathFragment;
+    const hasInlineMath = Boolean(line.inlineMath?.length) || /[∑∏√∫∂=+−×|~∼≈∝∈∉⊂⊃\p{Script=Greek}]|\/\s*[\p{L}\p{N}(]/u.test(text);
+    const maxLineGap = !previousEnds && (hasInlineMath || /[=+−~∼]$/.test(previous?.text?.trim() || ''))
+      ? lineSize * 3.1 : lineSize * 1.75;
+    const continuesFromMath = (prevWasMath || sameBaselineContinuation) && !heading && !isCaption && !listItem && !isFootnote && !line.runIn
+      && Math.abs(verticalGap) <= bodySize * 3.1 && !previousEnds;
+    if (paragraph && (isFootnote || prevWasFootnote !== isFootnote || (!isMathFragment && !continuesFromMath && (heading || isCaption || listItem || extraLeading || verticalGap < -lineSize * .3 || verticalGap > maxLineGap
+      || columnJump || ((indent || outdent || line.runIn) && previousEnds) || Math.abs((previous.size || bodySize) - lineSize) > bodySize * .3)))) save();
     if (!paragraph) paragraph = { text, x: left, right, y: box[3], bottom: box[1], heading, listItem, inlineMath: [...(line.inlineMath || [])], boxes: [box] };
     else {
       paragraph.text = appendReadingLine(paragraph.text, text);
@@ -287,9 +413,12 @@ export async function embeddedOutline(pdf, signal) {
 }
 
 export function headingOutline(headings) {
+  const firstSectionIdx = headings.findIndex((block) => block.page === 1
+    && /^(?:(?:1[.)]?\s+)?(?:abstract|introduction|摘要|引言|绪论))$/i.test(block.heading.title.replace(/[:：]$/, '').trim()));
+  const filtered = firstSectionIdx > 0 ? headings.slice(firstSectionIdx) : headings;
   const nodes = [];
   const stack = [];
-  for (const block of headings) {
+  for (const block of filtered) {
     const depth = block.heading.depth;
     while (stack.length && stack.at(-1).depth >= depth) stack.pop();
     const node = { page: block.page, x: block.x, y: block.y, title: block.heading.title,

@@ -272,6 +272,42 @@ export function pdfMedia(lines, items, graphics, pageBox) {
     const bounds = number ? union(lineBox(line), lineBox(number)) : lineBox(line);
     add('formula', bounds, number ? line.text + ' ' + number.text : line.text, equationNumber(number?.text ?? line.text));
   }
+  let merged = true;
+  while (merged) {
+    merged = false;
+    for (let i = 0; i < media.length && !merged; i++) {
+      if (media[i].kind !== 'figure') continue;
+      for (let j = i + 1; j < media.length; j++) {
+        if (media[j].kind !== 'figure') continue;
+        const a = media[i].bounds;
+        const b = media[j].bounds;
+        const aw = a[2] - a[0];
+        const bw = b[2] - b[0];
+        const ah = a[3] - a[1];
+        const bh = b[3] - b[1];
+        const ox = Math.min(a[2], b[2]) - Math.max(a[0], b[0]);
+        const oy = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
+        const verticalStack = ox / Math.max(1, Math.min(aw, bw)) >= .55 && Math.min(aw, bw) / Math.max(1, Math.max(aw, bw)) >= .55
+          && -oy >= -8 && -oy <= Math.min(48, height * .065);
+        const horizontalPair = oy / Math.max(1, Math.min(ah, bh)) >= .55 && Math.min(ah, bh) / Math.max(1, Math.max(ah, bh)) >= .55
+          && -ox >= -8 && -ox <= Math.min(36, width * .06);
+        if (!verticalStack && !horizontalPair) continue;
+        const gapBox = verticalStack
+          ? [Math.min(a[0], b[0]), Math.min(a[3], b[3]), Math.max(a[2], b[2]), Math.max(a[1], b[1])]
+          : [Math.min(a[2], b[2]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[3], b[3])];
+        const blocked = lines.some((line, idx) => {
+          const box = lineBox(line);
+          if (!intersection(box, gapBox)) return false;
+          return captionLines.has(line) || Boolean(captionOfLine(line, lines[idx - 1])) || line.text.trim().length > 55;
+        });
+        if (blocked) continue;
+        media[i] = { ...media[i], bounds: union(a, b), label: media[i].label || media[j].label };
+        media.splice(j, 1);
+        merged = true;
+        break;
+      }
+    }
+  }
   return media;
 }
 

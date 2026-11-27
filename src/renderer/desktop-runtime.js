@@ -170,6 +170,12 @@ export function savePosition(id, page, scale, pageCount) {
   if (paperId.test(id)) api.position(id, page, Math.max(.25, Math.min(6, scale)), pageCount || undefined).catch(() => {});
 }
 
+export function markPagesRead(id, pages) {
+  if (paperId.test(id) && Array.isArray(pages) && pages.length) {
+    api.readPages?.(id, pages).catch(() => {});
+  }
+}
+
 async function modelCatalog() {
   const [current, connections] = await Promise.all([api.getModel(), api.modelConnections()]);
   const providers = connections.filter((entry) => entry.models.length > 0).map(({ provider, models }) => ({

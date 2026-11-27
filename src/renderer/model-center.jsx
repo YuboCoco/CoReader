@@ -303,6 +303,14 @@ function DisplaySettings({ value, onChange, highlightedSection = '' }) {
         <input className="elr-glass-switch" type="checkbox" role="switch" checked={glassEnabled}
           onChange={(event) => onChange({ glassEnabled: event.target.checked })} />
       </label>
+      <label>使用定制液态玻璃指针
+        <input className="elr-glass-switch" type="checkbox" role="switch" checked={value.customCursor !== false}
+          onChange={(event) => onChange({ customCursor: event.target.checked })} />
+      </label>
+      <label>选词区域卡片透明
+        <input className="elr-glass-switch" type="checkbox" role="switch" checked={value.selectionPopupTransparent !== false}
+          onChange={(event) => onChange({ selectionPopupTransparent: event.target.checked })} />
+      </label>
       {[['glassTintLight', '浅色玻璃着色强度'], ['glassTintDark', '深色玻璃着色强度']].map(([key, label]) => {
         const tint = glassTintPreference(value[key]);
         const percent = Math.round(tint * 100) + '%';

@@ -1,0 +1,168 @@
+/* CoReader Liquid Glass Cursor Suite
+   Activated when :root[data-elr-cursors="glass"] is set by cursors.mjs.
+   Higher specificity ensures consistent cursors across dynamically injected styles. */
+
+:root[data-elr-cursors="glass"],
+:root[data-elr-cursors="glass"] body {
+  cursor: var(--elr-cur-default);
+}
+
+/* Interactive click targets */
+:root[data-elr-cursors="glass"] :is(
+  a[href],
+  button:not(:disabled),
+  select:not(:disabled),
+  summary,
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"],
+  input:is([type="checkbox"], [type="radio"], [type="range"]):not(:disabled),
+  .elr-btn:not(:disabled),
+  .elr-icon-btn:not(:disabled),
+  .elr-seg:not(:disabled),
+  .elr-tab:not(:disabled),
+  .elr-card-control:not(:disabled),
+  .elr-card-toggle,
+  .elr-card-menu-row,
+  .elr-menu-item,
+  .elr-settings-row,
+  .elr-album-stage,
+  .elr-album-hud-btn,
+  .elr-album-thumb,
+  .elr-clock-stage,
+  .elr-clock-pill,
+  .elr-ambient-track,
+  .elr-ambient-cat,
+  .elr-ambient-play:not(:disabled),
+  .elr-ambient-mode:not(:disabled),
+  .elr-ambient-preset-apply,
+  .elr-ambient-preset-btn,
+  .elr-theme-chip:not(:disabled),
+  .elr-mark-preview,
+  .elr-term-toggle,
+  .elr-reading-round,
+  .elr-find-toggle,
+  .elr-agent-cite,
+  .elr-agent-remove,
+  .elr-pdf-translations.is-parallel article,
+  .pl-home button:not(:disabled),
+  .pl-home select:not(:disabled),
+  .pl-dialog button:not(:disabled),
+  .settings button:not(:disabled),
+  .settings select:not(:disabled)
+) {
+  cursor: var(--elr-cur-pointer);
+}
+
+/* Text selection & editors (including PDF textLayer) */
+:root[data-elr-cursors="glass"] :is(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not(:disabled),
+  textarea:not(:disabled),
+  [contenteditable="true"],
+  .pdfViewer .textLayer,
+  .pdfViewer .textLayer span,
+  .elr-sel-text,
+  .elr-popup-result-box
+) {
+  cursor: var(--elr-cur-text);
+}
+
+/* Disabled controls */
+:root[data-elr-cursors="glass"] :is(
+  button:disabled,
+  select:disabled,
+  input:disabled,
+  .elr-btn:disabled
+) {
+  cursor: var(--elr-cur-default);
+}
+
+:root[data-elr-cursors="glass"] .elr-btn:disabled {
+  cursor: var(--elr-cur-not-allowed);
+}
+
+/* Grab / Dragging */
+:root[data-elr-cursors="glass"] .elr-clock-card.is-chrome-hidden .elr-clock-stage {
+  cursor: var(--elr-cur-default);
+}
+
+:root[data-elr-cursors="glass"] :is(
+  .card-ring-stage,
+  .elr-popup-head,
+  .elr-note-bubble .elr-popup-head,
+  .elr-clock-card.is-chrome-hidden .elr-clock-digital,
+  .elr-clock-card.is-chrome-hidden .elr-clock-analog
+) {
+  cursor: var(--elr-cur-grab);
+}
+
+:root[data-elr-cursors="glass"] :is(
+  .card-ring-stage:active,
+  .elr-card-toggle:active,
+  .elr-popup-head:active,
+  .elr-clock-card.is-direct-dragging .elr-clock-digital,
+  .elr-clock-card.is-direct-dragging .elr-clock-analog
+),
+:root[data-elr-cursors="glass"] body.elr-card-dragging,
+:root[data-elr-cursors="glass"] body.elr-card-dragging * {
+  cursor: var(--elr-cur-grabbing) !important;
+}
+
+/* Crosshair & Move (Figure / Formula picker) */
+:root[data-elr-cursors="glass"] .elr-figure-picker,
+:root[data-elr-cursors="glass"] .elr-pdf-container.elr-picking-figure,
+:root[data-elr-cursors="glass"] .elr-pdf-container.elr-picking-figure * {
+  cursor: var(--elr-cur-crosshair);
+}
+
+:root[data-elr-cursors="glass"] .elr-figure-box {
+  cursor: var(--elr-cur-move);
+}
+
+:root[data-elr-cursors="glass"] .elr-figure-actions {
+  cursor: var(--elr-cur-default);
+}
+
+/* Splitters & Resize Handles */
+:root[data-elr-cursors="glass"] :is(.elr-divider:not(.axis-row), .elr-pdf-split-handle) {
+  cursor: var(--elr-cur-col);
+}
+
+:root[data-elr-cursors="glass"] .elr-divider.axis-row {
+  cursor: var(--elr-cur-row);
+}
+
+:root[data-elr-cursors="glass"] :is(
+  .elr-rz-e,
+  .elr-rz-w,
+  .elr-popup-column-grip,
+  .elr-selection-panes.is-side-by-side > .elr-selection-split
+) {
+  cursor: var(--elr-cur-ew);
+}
+
+:root[data-elr-cursors="glass"] :is(
+  .elr-rz-n,
+  .elr-rz-s,
+  .elr-popup-grip,
+  .elr-selection-split
+) {
+  cursor: var(--elr-cur-ns);
+}
+
+:root[data-elr-cursors="glass"] :is(
+  .elr-rz-nw,
+  .elr-rz-se,
+  .elr-figure-handle[data-adjust="nw"],
+  .elr-figure-handle[data-adjust="se"]
+) {
+  cursor: var(--elr-cur-nwse);
+}
+
+:root[data-elr-cursors="glass"] :is(
+  .elr-rz-ne,
+  .elr-rz-sw,
+  .elr-figure-handle[data-adjust="ne"],
+  .elr-figure-handle[data-adjust="sw"]
+) {
+  cursor: var(--elr-cur-nesw);
+}

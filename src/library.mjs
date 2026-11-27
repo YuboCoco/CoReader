@@ -45,6 +45,9 @@ export function openLibrary(root) {
   if (!documentColumns.has('page_count')) {
     db.exec('BEGIN; ALTER TABLE documents ADD COLUMN page_count INTEGER; ALTER TABLE documents ADD COLUMN furthest_page INTEGER NOT NULL DEFAULT 0; UPDATE documents SET furthest_page=page WHERE opened IS NOT NULL; COMMIT;');
   }
+  if (!documentColumns.has('read_pages')) {
+    db.exec("ALTER TABLE documents ADD COLUMN read_pages TEXT NOT NULL DEFAULT '[]';");
+  }
   const seedTags = db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='paper_tags'").get() === undefined;
   db.exec(`
     CREATE TABLE IF NOT EXISTS paper_categories (
@@ -120,10 +123,17 @@ export function openLibrary(root) {
     paperLibrary() {
       const categories = db.prepare("SELECT id, name, parent FROM paper_categories WHERE tags = '[]' ORDER BY name COLLATE NOCASE, id").all();
       const papers = db.prepare(`
-        SELECT d.id, d.name, d.page, d.page_count AS pageCount, d.furthest_page AS furthestPage, d.touched, d.opened, c.category, c.metadata
+        SELECT d.id, d.name, d.page, d.page_count AS pageCount, d.furthest_page AS furthestPage, d.read_pages AS readPages, d.touched, d.opened, c.category, c.metadata
         FROM documents d LEFT JOIN paper_catalog c ON c.paper=d.id
         ORDER BY d.touched DESC, d.id
-      `).all().map(({ metadata, ...row }) => ({ ...row, ...JSON.parse(metadata || '{}') }));
+      `).all().map(({ metadata, readPages, ...row }) => {
+        let pages = [];
+        try {
+          const parsed = JSON.parse(readPages || '[]');
+          if (Array.isArray(parsed)) pages = parsed.filter((p) => Number.isSafeInteger(p) && p >= 1);
+        } catch (_) {}
+        return { ...row, readPages: pages, ...JSON.parse(metadata || '{}') };
+      });
       const tags = db.prepare('SELECT name FROM paper_tags ORDER BY name COLLATE NOCASE').all().map(({ name }) => name);
       return { categories, papers, tags };
     },
@@ -309,8 +319,26 @@ export function openLibrary(root) {
         || (pageCount != null && (!Number.isSafeInteger(pageCount) || pageCount < 1))) {
         throw new Error('无效的阅读位置。');
       }
-      db.prepare('UPDATE documents SET page=?, zoom=?, page_count=coalesce(?,page_count), furthest_page=max(furthest_page,?) WHERE id=?')
-        .run(page, zoom, pageCount ?? null, page, id);
+      db.prepare('UPDATE documents SET page=?, zoom=?, page_count=coalesce(?,page_count) WHERE id=?')
+        .run(page, zoom, pageCount ?? null, id);
+    },
+    markPagesRead(id, pages) {
+      const paper = requirePaper(id);
+      const maxPage = Number.isSafeInteger(paper.page_count) && paper.page_count > 0 ? paper.page_count : Infinity;
+      const incoming = (Array.isArray(pages) ? pages : [pages])
+        .map((p) => Number(p))
+        .filter((p) => Number.isSafeInteger(p) && p >= 1 && p <= maxPage);
+      if (!incoming.length) return [];
+      let existing = [];
+      try {
+        const parsed = JSON.parse(paper.read_pages || '[]');
+        if (Array.isArray(parsed)) existing = parsed.filter((p) => Number.isSafeInteger(p) && p >= 1 && p <= maxPage);
+      } catch (_) {}
+      const merged = [...new Set([...existing, ...incoming])].sort((a, b) => a - b);
+      const furthest = merged[merged.length - 1] || 0;
+      db.prepare('UPDATE documents SET read_pages=?, furthest_page=max(furthest_page, ?) WHERE id=?')
+        .run(JSON.stringify(merged), furthest, id);
+      return merged;
     },
     savePaperPageCount(id, pageCount) {
       requirePaper(id);

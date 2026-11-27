@@ -28,17 +28,21 @@ const paperTitle = (paper) => paper.title || paper.name.replace(/\.pdf$/i, '');
 const normalize = (value) => value.normalize('NFKC').toLowerCase();
 function readingProgress(paper, indexedPages) {
   const total = paper.pageCount || indexedPages.get(paper.id);
-  const readTo = Math.min(total || Infinity, paper.furthestPage || 0);
-  const completed = Boolean(total && readTo === total);
-  const status = completed ? 'read' : paper.status || (paper.opened ? 'reading' : 'unread');
-  const percent = status === 'read' ? 100 : !readTo ? 0 : total ? Math.min(99, Math.round(readTo / total * 100)) : null;
+  const readPages = Array.isArray(paper.readPages)
+    ? paper.readPages.filter((p) => Number.isInteger(p) && p >= 1 && (!total || p <= total))
+    : [];
+  const readTo = readPages.length > 0 ? readPages.length : Math.min(total || Infinity, paper.furthestPage || 0);
+  const ratio = total ? readTo / total : 0;
+  const completed = Boolean(total && (readTo >= total || ratio >= 0.85));
+  const status = completed ? 'read' : paper.status || (readTo > 0 || paper.opened ? 'reading' : 'unread');
+  const percent = status === 'read' ? 100 : !readTo ? 0 : total ? Math.min(99, Math.round(ratio * 100)) : null;
   return { total, readTo, completed, status, percent };
 }
 
 function ReadingProgress({ paper, indexedPages, compact = false }) {
   const { total, readTo, percent } = readingProgress(paper, indexedPages);
   const label = percent == null ? '第 ' + readTo + ' 页' : percent + '%';
-  const description = total && readTo > 0 ? '已读到第 ' + readTo + ' / ' + total + ' 页' : label;
+  const description = total && readTo > 0 ? '已有效阅读 ' + readTo + ' / ' + total + ' 页' : label;
   return <div className={'pl-reading-progress' + (compact ? ' is-compact' : '')} role="progressbar" aria-label="阅读进度"
     aria-valuenow={percent ?? undefined} aria-valuetext={description === label ? label : label + '，' + description} title={description}>
     {!compact && <span className="pl-progress-track" aria-hidden="true"><span style={{ '--pl-progress': (percent ?? 0) + '%' }} /></span>}
