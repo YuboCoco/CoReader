@@ -1,0 +1,133 @@
+name: Release CoReader 0.1.7
+
+on:
+  push:
+    tags: [v0.1.7]
+
+permissions:
+  contents: read
+
+env:
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+  ONNXRUNTIME_NODE_INSTALL: skip
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci --registry=https://registry.npmjs.org --replace-registry-host=always --no-audit --no-fund
+      - run: node --test --test-concurrency=1
+      - run: npm run prepare:translation:win
+      - run: npm run prepare:layout:win
+      - name: Build Windows installer and portable ZIP
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (Test-Path -LiteralPath $compiler) { $env:COREADER_ISCC = $compiler }
+          npm run installer:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = Get-Item -LiteralPath 'release/CoReader-win32-x64/CoReader.exe'
+          if ($exe.VersionInfo.ProductVersion -ne '0.1.7') { throw 'Unexpected Windows version' }
+          tar.exe -tf release/CoReader-0.1.7-win-x64.zip > $null
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-x64
+          path: |
+            release/CoReader-0.1.7-Setup-win-x64.exe
+            release/CoReader-0.1.7-win-x64.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci --registry=https://registry.npmjs.org --replace-registry-host=always --no-audit --no-fund
+      - run: npm run prepare:translation:mac -- ${{ matrix.arch }}
+      - run: npm run prepare:layout:mac
+      - run: npm run package:mac -- ${{ matrix.arch }}
+      - run: unzip -tq release/CoReader-0.1.7-mac-${{ matrix.arch }}.zip
+      - uses: actions/upload-artifact@v6
+        with:
+          name: mac-${{ matrix.arch }}
+          path: release/CoReader-0.1.7-mac-${{ matrix.arch }}.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Publish the verified downloads
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag=v0.1.7
+          cd packages
+          files=(
+            CoReader-0.1.7-Setup-win-x64.exe
+            CoReader-0.1.7-win-x64.zip
+            CoReader-0.1.7-mac-arm64.zip
+            CoReader-0.1.7-mac-x64.zip
+          )
+          for file in "${files[@]}"; do test -s "$file"; done
+          cat > "$RUNNER_TEMP/coreader-017-notes.md" <<'EOF'
+          ## CoReader 0.1.7
+
+          ### Bing 每日壁纸
+          - **内置 Bing 每日壁纸**：支持中国区（`zh-CN`）与国际区（`en-US`）双来源，自动拉取并缓存最近 30 天壁纸，支持跨日自动切换与离线缓存回退。
+          - **4K 超清原图与可读性调节**：优先拉取 `_UHD.jpg` 超清原图（不可用时自动回退 `1920×1080`），默认 `0px` 无模糊直出；提供背景模糊度（`0–16px`）、可读性遮罩（`0–75%`）以及根据壁纸主色调动态提取主题强调色的功能。
+          - **收藏、下载与保存目录管理**：支持一键「收藏并下载」当前壁纸高清原图，支持在设置中自定义壁纸保存目录、快速打开目录，以及在「近期壁纸 / 已收藏」之间切换复用；主题色板弹窗中也加入了壁纸快捷开关与收藏按钮。
+
+          ### 应用内更新与数据目录迁移
+          - **新版本弹窗与一键覆盖更新**：启动检测到新版本后自动弹出更新提示，直接展示 Release 更新内容；点击「更新」可在软件内流式下载安装包（支持进度显示与取消）并自动覆盖重启，点击「忽略」后同版本不再弹窗，首页左下角版本号替换为「有新版本 vX.Y.Z」按键方便随时前往 Release 页面。
+
+          ### 界面质感与流畅度优化
+          - **流光主题流畅度与液态玻璃兼顾**：修复「晴光流彩」与「极夜流光」不显示流动光晕的问题，并引入交互暂停、空闲降帧（10fps）、轻量化磨砂与自适应性能分档，在保留液态玻璃折射的同时消除界面操作卡顿。
+
+          ## 下载
+
+          - Windows x64：安装版 EXE（`CoReader-0.1.7-Setup-win-x64.exe`）或便携 ZIP（`CoReader-0.1.7-win-x64.zip`）。
+          - macOS 13.3 及以上：Apple Silicon 下载 `CoReader-0.1.7-mac-arm64.zip`，Intel 下载 `CoReader-0.1.7-mac-x64.zip`。两个 ZIP 均使用临时签名，未进行 Apple 公证。
+          EOF
+          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            test "$draft" = true
+          else
+            gh release create "$tag" --draft --verify-tag --title 'CoReader 0.1.7' --notes-file "$RUNNER_TEMP/coreader-017-notes.md"
+          fi
+          gh release upload "$tag" "${files[@]}" --clobber
+          gh release edit "$tag" --draft=false --latest
