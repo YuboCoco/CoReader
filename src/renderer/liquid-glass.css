@@ -19,6 +19,11 @@ html:root :is(.elr-zoom-menu, .elr-reader-options)[data-elr-liquid][data-elr-liq
   -webkit-backdrop-filter: blur(18px) saturate(var(--elr-liquid-saturation)) brightness(var(--elr-liquid-brightness));
 }
 
+html[data-elr-aurora-tier="2"] :is(.elr-tone-prism-light, .elr-tone-prism-dark) .elr-sec[data-elr-docked-card][data-elr-liquid][data-elr-liquid-ink] {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 html:root :is(.elr-sec[data-elr-docked-card], .elr-sec[data-elr-floating-card], .elr-drag-ghost)[data-elr-liquid]::after {
   box-shadow: none;
 }

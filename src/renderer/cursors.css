@@ -3,7 +3,9 @@
    Higher specificity ensures consistent cursors across dynamically injected styles. */
 
 :root[data-elr-cursors="glass"],
-:root[data-elr-cursors="glass"] body {
+:root[data-elr-cursors="glass"] body,
+:root[data-elr-cursors="glass"] dialog,
+:root[data-elr-cursors="glass"] dialog::backdrop {
   cursor: var(--elr-cur-default);
 }
 

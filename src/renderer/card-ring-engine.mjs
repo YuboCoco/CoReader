@@ -366,7 +366,8 @@ void main() {
 
   // Far-side fade toward page background (section 6).
   float fadeAmt = (uFarFade / 100.0) * smoothstep(0.3, 1.0, back) * outFactor;
-  color = mix(color, uBgColor, fadeAmt);
+  color = mix(color, uBgColor, fadeAmt * 0.45);
+  alpha *= 1.0 - fadeAmt * 0.45;
 
   // Premultiplied alpha output.
   outColor = vec4(color * alpha, alpha);
@@ -408,10 +409,7 @@ out vec4 outColor;
 
 vec4 compositeSample(vec2 uv) {
   vec2 clamped = clamp(uv, vec2(0.0), vec2(1.0));
-  vec4 s = texture(uScene, clamped);
-  // Premultiplied alpha over page background.
-  vec3 rgb = s.rgb + uBgColor * (1.0 - s.a);
-  return vec4(rgb, 1.0);
+  return texture(uScene, clamped);
 }
 
 void main() {
@@ -435,23 +433,29 @@ void main() {
   float spread = (uDispersion / 100.0) * k;
   vec3 accum = vec3(0.0);
   vec3 weightSum = vec3(0.0);
+  float alphaAccum = 0.0;
+  float alphaWeight = 0.0;
 
   for (int i = 0; i < 7; i++) {
     float t = float(i) / 6.0;
     float mult = 1.0 + spread * (1.0 - 2.0 * t);
-    vec3 sampleCol = compositeSample(vUv + baseOffsetUv * mult).rgb;
+    vec4 s = compositeSample(vUv + baseOffsetUv * mult);
     vec3 w = clamp(vec3(
       1.5 - 3.0 * t,
       1.0 - 1.5 * abs(2.0 * t - 1.0),
       3.0 * t - 1.5
     ), 0.0, 1.0);
-    accum += sampleCol * w;
+    accum += s.rgb * w;
     weightSum += w;
+    float aw = (w.r + w.g + w.b) / 3.0;
+    alphaAccum += s.a * aw;
+    alphaWeight += aw;
   }
 
+  float a = alphaAccum / max(alphaWeight, 0.0001);
   vec3 color = accum / max(weightSum, vec3(0.0001));
-  color = mix(color, vec3(1.0), pow(k, 3.0) * 0.12);
-  outColor = vec4(color, 1.0);
+  color = mix(color, vec3(a), pow(k, 3.0) * 0.12);
+  outColor = vec4(color, a);
 }
 `;
 

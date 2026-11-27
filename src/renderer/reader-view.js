@@ -2,6 +2,7 @@
 // Native Windows storage and model requests are provided by desktop-runtime.js.
 import React from 'react';
 import { createPortal } from 'react-dom';
+import { getBingWallpaperState, isBingFavorited, subscribeBingWallpaper, toggleBingFavorite } from './bing-wallpaper.mjs';
 import ChevronDown from 'kubai-icons-react/icons/chevron-down';
 import ChevronLeft from 'kubai-icons-react/icons/chevron-left';
 import ChevronRight from 'kubai-icons-react/icons/chevron-right';
@@ -439,6 +440,13 @@ const DEFAULT_SHARED = {
   // surface reads as one blue / green interface. `default` keeps the host
   // tokens untouched, so an old snapshot looks exactly as before.
   uiTone: 'default',
+  auroraMode: 'smooth',
+  bingWallpaperEnabled: false,
+  bingWallpaperMarket: 'zh-CN',
+  bingWallpaperDate: '',
+  bingWallpaperBlur: 0,
+  bingWallpaperDim: 28,
+  bingWallpaperDynamicColor: true,
   popupOn: false, autoTranslateSelection: false, autoTranslatePaper: true, popupLayout: 'stacked', popupShowOriginal: true, paperId: '',
   // (v21 #1) The reference column. `references` holds the parsed bibliography
   // enriched with resolved addresses, so it survives a tab switch together with
@@ -675,6 +683,13 @@ if (!['summary', 'references', 'figure', 'agent'].includes(shared.analysisTab)) 
   shared.cardHeights = heights;
 }
 if (shared.uiTone !== 'default' && !Object.values(UI_TONES).some((tones) => tones.includes(shared.uiTone))) shared.uiTone = 'default';
+if (!['smooth', 'quality', 'off'].includes(shared.auroraMode)) shared.auroraMode = 'smooth';
+shared.bingWallpaperEnabled = Boolean(shared.bingWallpaperEnabled);
+shared.bingWallpaperMarket = shared.bingWallpaperMarket === 'en-US' ? 'en-US' : 'zh-CN';
+shared.bingWallpaperDate = typeof shared.bingWallpaperDate === 'string' && /^\d{8}$/.test(shared.bingWallpaperDate) ? shared.bingWallpaperDate : '';
+shared.bingWallpaperBlur = Number.isFinite(Number(shared.bingWallpaperBlur)) ? Math.max(0, Math.min(16, Math.round(Number(shared.bingWallpaperBlur)))) : 0;
+shared.bingWallpaperDim = Number.isFinite(Number(shared.bingWallpaperDim)) ? Math.max(0, Math.min(75, Math.round(Number(shared.bingWallpaperDim)))) : 28;
+shared.bingWallpaperDynamicColor = shared.bingWallpaperDynamicColor !== false;
 const sharedListeners = new Set();
 const readShared = () => shared;
 const viewKeys = Object.keys(DEFAULT_SHARED).filter((key) => !contentKeys.has(key));
@@ -4141,6 +4156,9 @@ function Reader(props) {
   const [theme, setTheme] = useShared('theme');
   // (v40) Reader chrome tint (淡蓝 / 淡绿), independent from `theme` above.
   const [uiTone, setUiTone] = useShared('uiTone');
+  const [bingWallpaperEnabled, setBingWallpaperEnabled] = useShared('bingWallpaperEnabled');
+  const [bingWallpaper, setBingWallpaper] = React.useState(() => getBingWallpaperState());
+  React.useEffect(() => subscribeBingWallpaper(setBingWallpaper), []);
   // Floating cards also need the tone when the portal host is under document.body.
   const toneCls = uiTone === 'default' ? '' : ' elr-tone-' + uiTone;
   const [popupOn, setPopupOn] = useShared('popupOn');
@@ -9785,7 +9803,7 @@ function Reader(props) {
       showPdfStart ? h(PaperLibrary, {
         onOpen: openRecent, onOpenCover: openFromCover, onCoverReady: coverReady,
         onOpenFile: openPdfPicker, onSettings: openModelSettings,
-        version: props.version, readerError: pdfError, tone: toneCls,
+        version: props.version, availableUpdate: props.availableUpdate, readerError: pdfError, tone: toneCls,
       }) : null,
       hasPdf && pdfError ? h('div', { className: 'elr-retry-bar' },
         h('span', null, t('pdf.failed') + ' ' + pdfError),
@@ -10859,6 +10877,31 @@ function Reader(props) {
               }, h('span', { className: 'elr-theme-swatch', 'aria-hidden': true, style: { '--elr-swatch': UI_TONE_SWATCHES[tone] } }), t('tone.' + tone)))
             )
           ))
+        ),
+        h('div', { className: 'elr-theme-menu-group' },
+          h('div', { className: 'elr-theme-menu-label' }, 'Bing 每日壁纸'),
+          h('div', { className: 'elr-theme-chip-grid' },
+            h('button', {
+              type: 'button',
+              className: 'elr-theme-chip',
+              'aria-pressed': Boolean(bingWallpaperEnabled),
+              onClick: () => setBingWallpaperEnabled(!bingWallpaperEnabled),
+            }, bingWallpaperEnabled ? 'Bing 壁纸：已开启' : '开启 Bing 每日壁纸'),
+            bingWallpaperEnabled && bingWallpaper.activeItem && h('button', {
+              type: 'button',
+              className: 'elr-theme-chip',
+              'aria-pressed': isBingFavorited(bingWallpaper.activeItem, bingWallpaper.favorites),
+              onClick: () => { toggleBingFavorite(bingWallpaper.activeItem).catch(() => {}); },
+            }, isBingFavorited(bingWallpaper.activeItem, bingWallpaper.favorites) ? '★ 已收藏' : '☆ 收藏并下载'),
+            openModelSettings && h('button', {
+              type: 'button',
+              className: 'elr-theme-chip',
+              onClick: () => {
+                document.getElementById(themeMenuId)?.hidePopover?.();
+                openModelSettings({ tab: 'display', section: 'bing-wallpaper' });
+              },
+            }, '壁纸与历史…')
+          )
         )
       ),
       h('span', { className: 'elr-spacer' }),

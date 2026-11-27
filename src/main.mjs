@@ -1,12 +1,17 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, protocol, safeStorage, shell } from 'electron';
-import { createReadStream, mkdirSync, writeFileSync } from 'node:fs';
-import { readdir, stat } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { execFile, spawn } from 'node:child_process';
+import { cpSync, createReadStream, createWriteStream, existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
 import { defaultModel, openLibrary } from './library.mjs';
 import { albumMimeType, listAlbumImages, resolveAlbumImageFile } from './album.mjs';
 import { ambientMimeType, listAmbientAudio, resolveAmbientAudioFile } from './ambient.mjs';
+import { createBingWallpaper } from './bing-wallpaper.mjs';
 import { apiModelEndpoints, complete, makeMessages, modelSelection, normalizeApiEndpoint } from './model.mjs';
 import { availableEfforts, connectionNames, defaultLocalTranslationModel, localTranslationModels } from './model-capabilities.mjs';
 import { fetchApiModelDirectory, normalizeModelDirectory } from './model-directory.mjs';
@@ -20,7 +25,7 @@ import { runReadingAgent } from './reading-agent.mjs';
 import { locateCodeBuddy, readCodeBuddyModels, runCodeBuddy } from './codebuddy.mjs';
 import { createLocalTranslator } from './local-translation.mjs';
 import { detectPdfLayout } from './layout-model.mjs';
-import { findAppUpdate } from './app-updates.mjs';
+import { findAppUpdateDetails, selectUpdateAsset } from './app-updates.mjs';
 
 const origin = 'litreader://app';
 const isMac = process.platform === 'darwin';
@@ -38,9 +43,12 @@ const requestIdPattern = /^[a-f0-9-]{36}$/i;
 let mainWindow;
 let library;
 let chatgpt;
+let bingWallpaper;
 const jobs = new Map();
 const appLifetime = new AbortController();
+const execFileAsync = promisify(execFile);
 let updateCheck;
+let updateDownloadController = null;
 const translationBundle = app.isPackaged ? join(process.resourcesPath, 'haidass')
   : fileURLToPath(new URL('../release/runtime/haidass/', import.meta.url));
 const offlineTranslators = new Map(Object.keys(localTranslationModels).map((id) =>
@@ -68,10 +76,24 @@ protocol.registerSchemesAsPrivileged([{
   privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true },
 }]);
 
-// Keep the original profile location and web origin when upgrading to CoReader.
-const dataOverride = process.env.ENGLISH_LIT_READER_DATA;
+// Use CoReader as the userData directory, migrating legacy English Lit Reader data seamlessly.
+const dataOverride = process.env.COREADER_DATA || process.env.ENGLISH_LIT_READER_DATA;
 const profile = dataOverride && isAbsolute(dataOverride)
-  ? dataOverride : join(app.getPath('appData'), 'English Lit Reader');
+  ? dataOverride : join(app.getPath('appData'), 'CoReader');
+if (!dataOverride && !existsSync(profile)) {
+  const legacyProfile = join(app.getPath('appData'), 'English Lit Reader');
+  if (existsSync(legacyProfile)) {
+    try {
+      renameSync(legacyProfile, profile);
+    } catch {
+      try {
+        cpSync(legacyProfile, profile, { recursive: true });
+      } catch (error) {
+        console.error('Could not migrate legacy userData:', error?.message || error);
+      }
+    }
+  }
+}
 mkdirSync(profile, { recursive: true });
 app.setPath('userData', profile);
 const kimiCode = createKimiCode({ home: join(profile, 'kimi-code'), signal: appLifetime.signal,
@@ -563,6 +585,27 @@ async function albumResponse(request, url) {
   }
 }
 
+async function bingWallpaperResponse(request, url) {
+  if (!bingWallpaper) return new Response(null, { status: 404 });
+  try {
+    const date = url.searchParams.get('date') || '';
+    const market = url.searchParams.get('market') || 'zh-CN';
+    const kind = url.searchParams.get('kind') || 'full';
+    const { filePath, mime } = await bingWallpaper.getImageFile({ market, date, kind });
+    const info = await stat(filePath);
+    if (!info.isFile()) return new Response(null, { status: 404 });
+    const headers = {
+      'Content-Type': mime,
+      'Content-Length': String(info.size),
+      'Cache-Control': 'public, max-age=86400',
+    };
+    if (request.method === 'HEAD') return new Response(null, { status: 200, headers });
+    return new Response(Readable.toWeb(createReadStream(filePath)), { status: 200, headers });
+  } catch {
+    return new Response(null, { status: 404 });
+  }
+}
+
 function serveApp() {
   protocol.handle('litreader', async (request) => {
     const url = new URL(request.url);
@@ -570,6 +613,7 @@ function serveApp() {
     if (url.pathname.startsWith('/documents/')) return pdfResponse(request, url.pathname.slice('/documents/'.length));
     if (url.pathname === '/album-file') return albumResponse(request, url);
     if (url.pathname === '/ambient-file') return ambientResponse(request, url);
+    if (url.pathname === '/bing-wallpaper-file') return bingWallpaperResponse(request, url);
     try {
       const path = resolve(dist, '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));
       const child = relative(dist, path);
@@ -1019,7 +1063,7 @@ function attachActions() {
   registerHandler('app:check-update', async (_event, force = false) => {
     if (force) updateCheck = null;
     if (!updateCheck) {
-      updateCheck = findAppUpdate(app.getVersion(), fetchThroughSystem,
+      updateCheck = findAppUpdateDetails(app.getVersion(), fetchThroughSystem,
         AbortSignal.any([appLifetime.signal, AbortSignal.timeout(10000)])).catch((error) => {
         updateCheck = null;
         if (force) throw new Error('检查更新失败，请确认网络或系统代理连接正常。');
@@ -1027,6 +1071,172 @@ function attachActions() {
       });
     }
     return updateCheck;
+  });
+  registerHandler('app:cancel-update', () => {
+    updateDownloadController?.abort();
+    updateDownloadController = null;
+    return true;
+  });
+  registerHandler('app:install-update', async (event, updateInfo) => {
+    if (!app.isPackaged) {
+      return { started: false, reason: 'dev', message: '当前为开发模式，无法自动覆盖，请前往 Release 页面下载。' };
+    }
+    const exePath = app.getPath('exe');
+    const exeDir = dirname(exePath);
+    const isInstaller = process.platform === 'win32' && existsSync(join(exeDir, 'unins000.exe'));
+    const asset = selectUpdateAsset(updateInfo?.assets, {
+      platform: process.platform,
+      arch: process.arch,
+      isInstaller,
+    });
+    if (!asset) {
+      return { started: false, reason: 'no-asset', message: '未找到适配当前系统的安装包，请前往 Release 页面手动下载。' };
+    }
+    if (updateDownloadController) {
+      throw new Error('正在下载更新，请稍候。');
+    }
+
+    const controller = new AbortController();
+    updateDownloadController = controller;
+    const signal = AbortSignal.any([appLifetime.signal, controller.signal]);
+    const updatesDir = join(app.getPath('userData'), 'updates');
+    await mkdir(updatesDir, { recursive: true });
+    const targetFile = join(updatesDir, basename(asset.name));
+    const partFile = targetFile + '.part';
+    const sendProgress = (payload) => {
+      if (!event.sender.isDestroyed()) event.sender.send('app:update-progress', payload);
+    };
+
+    try {
+      let skipDownload = false;
+      if (asset.size > 0 && existsSync(targetFile)) {
+        try {
+          const existing = await stat(targetFile);
+          if (existing.isFile() && existing.size === asset.size) skipDownload = true;
+        } catch {}
+      }
+
+      if (!skipDownload) {
+        sendProgress({ stage: 'downloading', received: 0, total: asset.size || 0, percent: 0 });
+        const res = await fetchThroughSystem(asset.url, { signal });
+        if (!res.ok || !res.body) throw new Error(`下载更新失败（HTTP ${res.status}）。`);
+        const total = Number(res.headers.get('content-length')) || asset.size || 0;
+        let received = 0;
+        let lastSent = 0;
+        const reader = res.body.getReader();
+        const stream = new Readable({
+          async read() {
+            try {
+              const { done, value } = await reader.read();
+              if (done) {
+                this.push(null);
+                return;
+              }
+              received += value.byteLength;
+              const now = Date.now();
+              if (now - lastSent >= 100 || (total && received >= total)) {
+                lastSent = now;
+                const percent = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0;
+                sendProgress({ stage: 'downloading', received, total, percent });
+              }
+              this.push(Buffer.from(value));
+            } catch (err) {
+              this.destroy(err);
+            }
+          },
+        });
+        await pipeline(stream, createWriteStream(partFile), { signal });
+        if (asset.size > 0) {
+          const info = await stat(partFile);
+          if (info.size !== asset.size) {
+            await rm(partFile, { force: true }).catch(() => {});
+            throw new Error('下载文件不完整，请重试。');
+          }
+        }
+        await rm(targetFile, { force: true }).catch(() => {});
+        await rename(partFile, targetFile);
+      }
+
+      sendProgress({ stage: 'installing', received: asset.size || 0, total: asset.size || 0, percent: 100 });
+
+      if (asset.kind === 'win-installer') {
+        const child = spawn(targetFile, ['/SILENT', '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS'], {
+          detached: true,
+          stdio: 'ignore',
+        });
+        child.unref();
+        setTimeout(() => app.quit(), 250);
+        return { started: true, kind: asset.kind };
+      }
+
+      if (asset.kind === 'win-zip') {
+        const extractDir = join(updatesDir, 'extract-' + Date.now());
+        await mkdir(extractDir, { recursive: true });
+        await execFileAsync('powershell.exe', [
+          '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+          `Expand-Archive -LiteralPath '${targetFile.replace(/'/g, "''")}' -DestinationPath '${extractDir.replace(/'/g, "''")}' -Force`,
+        ], { signal });
+        let sourceDir = extractDir;
+        if (!existsSync(join(sourceDir, 'CoReader.exe'))) {
+          const entries = await readdir(extractDir, { withFileTypes: true });
+          const sub = entries.find((entry) => entry.isDirectory() && existsSync(join(extractDir, entry.name, 'CoReader.exe')));
+          if (sub) sourceDir = join(extractDir, sub.name);
+        }
+        if (!existsSync(join(sourceDir, 'CoReader.exe'))) {
+          throw new Error('更新包内容异常，未找到 CoReader.exe。');
+        }
+        const psScript = join(tmpdir(), `coreader-update-${process.pid}-${Date.now()}.ps1`);
+        const esc = (s) => s.replace(/'/g, "''");
+        await writeFile(psScript, [
+          `Wait-Process -Id ${process.pid} -Timeout 30 -ErrorAction SilentlyContinue`,
+          'Start-Sleep -Milliseconds 600',
+          `Copy-Item -Path '${esc(sourceDir)}\\*' -Destination '${esc(exeDir)}' -Recurse -Force`,
+          `Start-Process -FilePath '${esc(exePath)}'`,
+          `Remove-Item -LiteralPath '${esc(extractDir)}' -Recurse -Force -ErrorAction SilentlyContinue`,
+          `Remove-Item -LiteralPath '${esc(psScript)}' -Force -ErrorAction SilentlyContinue`,
+        ].join('\r\n'), 'utf8');
+        const child = spawn('powershell.exe', [
+          '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', psScript,
+        ], { detached: true, stdio: 'ignore' });
+        child.unref();
+        setTimeout(() => app.quit(), 250);
+        return { started: true, kind: asset.kind };
+      }
+
+      if (asset.kind === 'mac-zip') {
+        const appBundle = resolve(exeDir, '../..');
+        if (!appBundle.endsWith('.app')) {
+          return { started: false, reason: 'no-bundle', message: '无法定位当前应用包，请前往 Release 页面手动更新。' };
+        }
+        const extractDir = join(updatesDir, 'extract-' + Date.now());
+        await mkdir(extractDir, { recursive: true });
+        await execFileAsync('ditto', ['-x', '-k', targetFile, extractDir], { signal });
+        const newApp = join(extractDir, 'CoReader.app');
+        if (!existsSync(newApp)) throw new Error('更新包内未找到 CoReader.app。');
+        const shScript = join(tmpdir(), `coreader-update-${process.pid}-${Date.now()}.sh`);
+        const q = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
+        await writeFile(shScript, [
+          '#!/bin/sh',
+          `while kill -0 ${process.pid} 2>/dev/null; do sleep 0.3; done`,
+          `rm -rf ${q(appBundle)} && ditto ${q(newApp)} ${q(appBundle)} && open -n ${q(appBundle)}`,
+          `rm -rf ${q(extractDir)} ${q(shScript)}`,
+        ].join('\n'), { mode: 0o755 });
+        const child = spawn('/bin/sh', [shScript], { detached: true, stdio: 'ignore' });
+        child.unref();
+        setTimeout(() => app.quit(), 250);
+        return { started: true, kind: asset.kind };
+      }
+
+      return { started: false, reason: 'unsupported' };
+    } catch (error) {
+      await rm(partFile, { force: true }).catch(() => {});
+      if (controller.signal.aborted) {
+        return { started: false, reason: 'canceled' };
+      }
+      throw error;
+    } finally {
+      if (updateDownloadController === controller) updateDownloadController = null;
+    }
   });
   registerHandler('window:ready', () => reportStartup('READY'));
   registerHandler('album:choose-folder', async (_event, currentFolder = '') => {
@@ -1064,6 +1274,79 @@ function attachActions() {
     if (!folder) return listAmbientAudio(builtinSoundsDir, true);
     if (!isAuthorizedAmbientFolder(folder)) return { path: '', tracks: [], unauthorized: true };
     return listAmbientAudio(folder, false);
+  });
+  registerHandler('bing-wallpaper:list', async (_event, options = {}) => {
+    const result = await bingWallpaper.list({ market: options?.market, force: Boolean(options?.force) });
+    const decorate = (item, market) => ({
+      date: item.date,
+      title: item.title,
+      copyright: item.copyright,
+      market,
+      ...(item.savedPath ? { savedPath: item.savedPath } : {}),
+      fullUrl: `${origin}/bing-wallpaper-file?date=${encodeURIComponent(item.date)}&market=${encodeURIComponent(market)}&kind=full`,
+      thumbUrl: `${origin}/bing-wallpaper-file?date=${encodeURIComponent(item.date)}&market=${encodeURIComponent(market)}&kind=thumb`,
+    });
+    const items = result.items.map((item) => decorate(item, result.market));
+    const favorites = Array.isArray(result.favorites)
+      ? result.favorites.map((item) => decorate(item, item.market || result.market))
+      : [];
+    return { ...result, items, favorites };
+  });
+  const currentBingSaveDir = () => library.getSetting('bing-wallpaper-save-dir', '')
+    || join(app.getPath('pictures'), 'CoReader Bing Wallpapers');
+  const decorateBingItem = (item, market) => ({
+    date: item.date,
+    title: item.title,
+    copyright: item.copyright,
+    market,
+    ...(item.savedPath ? { savedPath: item.savedPath } : {}),
+    fullUrl: `${origin}/bing-wallpaper-file?date=${encodeURIComponent(item.date)}&market=${encodeURIComponent(market)}&kind=full`,
+    thumbUrl: `${origin}/bing-wallpaper-file?date=${encodeURIComponent(item.date)}&market=${encodeURIComponent(market)}&kind=thumb`,
+  });
+  registerHandler('bing-wallpaper:get-save-dir', () => ({
+    path: currentBingSaveDir(),
+    isDefault: !library.getSetting('bing-wallpaper-save-dir', ''),
+  }));
+  registerHandler('bing-wallpaper:choose-save-dir', async () => {
+    const current = currentBingSaveDir();
+    const defaultPath = await existingDirectory(current) || app.getPath('pictures');
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择壁纸保存目录',
+      ...(defaultPath ? { defaultPath } : {}),
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    const folder = result.filePaths[0];
+    library.setSetting('bing-wallpaper-save-dir', folder);
+    return { path: folder, isDefault: false };
+  });
+  registerHandler('bing-wallpaper:open-save-dir', async () => {
+    const dir = currentBingSaveDir();
+    await mkdir(dir, { recursive: true });
+    const err = await shell.openPath(dir);
+    if (err) throw new Error(err);
+    return true;
+  });
+  registerHandler('bing-wallpaper:save-favorite', async (_event, input = {}) => {
+    const res = await bingWallpaper.saveFavorite({
+      market: input?.market,
+      date: input?.date,
+      saveDir: currentBingSaveDir(),
+    });
+    return {
+      savedPath: res.savedPath,
+      favorite: decorateBingItem(res.favorite, res.favorite.market),
+      favorites: res.favorites.map((item) => decorateBingItem(item, item.market)),
+    };
+  });
+  registerHandler('bing-wallpaper:remove-favorite', async (_event, input = {}) => {
+    const res = await bingWallpaper.removeFavorite({
+      market: input?.market,
+      date: input?.date,
+    });
+    return {
+      favorites: res.favorites.map((item) => decorateBingItem(item, item.market)),
+    };
   });
   registerHandler('window:fullscreen', () => {
     const next = !mainWindow.isFullScreen();
@@ -1148,6 +1431,10 @@ if (ownsApp) {
       },
       write(value) { library.setSetting('chatgpt', protect(JSON.stringify(value))); },
       openBrowser: (url) => shell.openExternal(url),
+    });
+    bingWallpaper = createBingWallpaper({
+      cacheDir: join(app.getPath('userData'), 'bing-wallpaper'),
+      fetcher: fetchThroughSystem,
     });
     serveApp();
     attachActions();

@@ -308,14 +308,15 @@
   --dsw-alias-label-primary: #1a2130;
   --dsw-alias-label-secondary: #536078;
   --elr-glass-docked-fill: 56%;
+  --elr-glass-docked-blur: 12px;
   --elr-glass-floating-fill: 82%;
   --elr-glass-dialog-fill: 82%;
   --elr-glass-saturation: 126%;
   --elr-glass-ambient: #cfe0fb;
   --elr-glass-bounce: #e6dcfb;
-  --elr-prism-g1: rgb(96 179 255 / .24);
-  --elr-prism-g2: rgb(158 134 255 / .20);
-  --elr-prism-g3: rgb(88 214 195 / .20);
+  --elr-prism-g1: rgb(96 179 255 / .34);
+  --elr-prism-g2: rgb(164 134 255 / .28);
+  --elr-prism-g3: rgb(72 216 196 / .28);
 }
 
 /* 极夜流光 — Restrained deep aurora tailored for Liquid Glass */
@@ -330,14 +331,15 @@
   --dsw-alias-label-primary: #eef2fa;
   --dsw-alias-label-secondary: #aab6cc;
   --elr-glass-docked-fill: 60%;
+  --elr-glass-docked-blur: 12px;
   --elr-glass-floating-fill: 86%;
   --elr-glass-dialog-fill: 84%;
   --elr-glass-saturation: 128%;
   --elr-glass-ambient: #253b61;
   --elr-glass-bounce: #2b2449;
-  --elr-prism-g1: rgb(56 130 246 / .22);
-  --elr-prism-g2: rgb(139 92 246 / .19);
-  --elr-prism-g3: rgb(32 186 168 / .17);
+  --elr-prism-g1: rgb(56 138 255 / .34);
+  --elr-prism-g2: rgb(146 96 255 / .30);
+  --elr-prism-g3: rgb(32 196 176 / .26);
 }
 
 :is(.elr-view, .pl-home):is(.elr-tone-prism-light, .elr-tone-prism-dark) {
@@ -349,21 +351,60 @@
 :is(.elr-view, .pl-home):is(.elr-tone-prism-light, .elr-tone-prism-dark)::before {
   content: '';
   position: fixed;
-  inset: -14%;
+  inset: -10%;
   z-index: -1;
+  contain: strict;
   pointer-events: none;
   background:
-    radial-gradient(46% 42% at 18% 20%, var(--elr-prism-g1), transparent 72%),
-    radial-gradient(48% 44% at 84% 24%, var(--elr-prism-g2), transparent 74%),
-    radial-gradient(50% 46% at 54% 86%, var(--elr-prism-g3), transparent 76%);
-  animation: elr-prism-drift 28s ease-in-out infinite alternate;
+    radial-gradient(50% 46% at 20% 22%, var(--elr-prism-g1) 0%, transparent 72%),
+    radial-gradient(48% 44% at 82% 26%, var(--elr-prism-g2) 0%, transparent 74%),
+    radial-gradient(52% 48% at 52% 82%, var(--elr-prism-g3) 0%, transparent 76%);
+  animation: elr-prism-drift 20s steps(200, end) infinite alternate;
   will-change: transform;
 }
 
+html[data-elr-aurora-mode="quality"] :is(.elr-view, .pl-home):is(.elr-tone-prism-light, .elr-tone-prism-dark)::before {
+  animation-timing-function: ease-in-out;
+}
+
+html[data-elr-aurora-tier="1"] :is(.elr-view, .pl-home):is(.elr-tone-prism-light, .elr-tone-prism-dark)::before {
+  animation-timing-function: steps(120, end);
+}
+
+html[data-elr-aurora-tier="2"] :is(.elr-view, .pl-home):is(.elr-tone-prism-light, .elr-tone-prism-dark)::before {
+  animation-duration: 32s;
+  animation-timing-function: steps(96, end);
+}
+
+html:is([data-elr-interacting="on"], [data-elr-aurora-paused="on"]) :is(.elr-view, .pl-home):is(.elr-tone-prism-light, .elr-tone-prism-dark)::before,
+body:is(.elr-card-dragging, .elr-gesturing) :is(.elr-view, .pl-home):is(.elr-tone-prism-light, .elr-tone-prism-dark)::before {
+  animation-play-state: paused;
+}
+
+html[data-elr-aurora-mode="off"] :is(.elr-view, .pl-home):is(.elr-tone-prism-light, .elr-tone-prism-dark)::before {
+  animation: none;
+  transform: none;
+}
+
+:is(.elr-view, .pl-home):is(.elr-tone-prism-light, .elr-tone-prism-dark) :is(.elr-body, .elr-main, .elr-side, .elr-feature-workspace, .elr-pdf-wrap) {
+  background: transparent;
+}
+
+:is(.elr-view, .pl-home):is(.elr-tone-prism-light, .elr-tone-prism-dark) :is(.elr-head, .elr-toolbar, .elr-tabs) {
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 56%, transparent);
+  backdrop-filter: blur(10px) saturate(130%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+}
+
+:is(.elr-view, .pl-home):is(.elr-tone-prism-light, .elr-tone-prism-dark) .elr-card-head.elr-workspace-head::before {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 48%, transparent) 0%, color-mix(in srgb, var(--dsw-alias-bg-base) 16%, transparent) 58%, transparent 100%);
+  backdrop-filter: blur(10px) saturate(128%);
+  -webkit-backdrop-filter: blur(10px) saturate(128%);
+}
+
 @keyframes elr-prism-drift {
-  0% { transform: translate3d(-2%, -1.5%, 0) scale(1); }
-  50% { transform: translate3d(2%, 1.5%, 0) scale(1.04); }
-  100% { transform: translate3d(-1%, 2%, 0) scale(1.02); }
+  0% { transform: translate3d(-4%, -3%, 0); }
+  100% { transform: translate3d(4%, 3%, 0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -371,6 +412,63 @@
     animation: none;
     transform: none;
   }
+}
+
+/* Bing Daily Wallpaper layer + dynamic accent tokens */
+html[data-elr-bing-wallpaper="on"] :is(.elr-view, .pl-home) {
+  isolation: isolate;
+  overflow: hidden;
+  background-color: var(--dsw-alias-bg-base);
+}
+
+html[data-elr-bing-wallpaper="on"] :is(.elr-view, .pl-home)::before {
+  content: '';
+  position: fixed;
+  inset: calc(-2 * var(--elr-bing-blur, 0px));
+  z-index: -2;
+  pointer-events: none;
+  background-image: var(--elr-bing-url);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: blur(var(--elr-bing-blur, 0px)) saturate(1.06);
+  transition: filter .2s ease;
+  animation: none;
+  transform: none;
+}
+
+html[data-elr-bing-wallpaper="on"] :is(.elr-view, .pl-home)::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) calc(var(--elr-bing-veil, 28) * 1%), transparent);
+  filter: none;
+  animation: none;
+  transform: none;
+}
+
+html[data-elr-bing-wallpaper="on"] :is(.elr-view, .pl-home) :is(.elr-body, .elr-main, .elr-side, .elr-feature-workspace, .elr-pdf-wrap) {
+  background: transparent;
+}
+
+html[data-elr-bing-wallpaper="on"] :is(.elr-view, .pl-home) :is(.elr-head, .elr-toolbar, .elr-tabs) {
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 44%, transparent);
+  backdrop-filter: blur(12px) saturate(135%);
+  -webkit-backdrop-filter: blur(12px) saturate(135%);
+}
+
+html[data-elr-bing-wallpaper="on"] :is(.elr-view, .pl-home) .elr-card-head.elr-workspace-head::before {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 42%, transparent) 0%, color-mix(in srgb, var(--dsw-alias-bg-base) 16%, transparent) 58%, transparent 100%);
+  backdrop-filter: blur(10px) saturate(130%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+}
+
+html[data-elr-bing-wallpaper="on"][data-elr-bing-dynamic="on"] :is(.elr-view, .pl-home, .settings.model-center) {
+  --dsw-alias-brand-primary: var(--elr-bing-brand);
+  --elr-glass-ambient: var(--elr-bing-ambient);
+  --elr-glass-bounce: var(--elr-bing-bounce);
 }
 
 /* Materials for controls and panels over PDF pages and other live content. */

@@ -375,7 +375,7 @@ function LibraryDialog({ title, cancel, submit, busy, issue, children, action = 
   </dialog>;
 }
 
-export function PaperLibrary({ onOpen, onOpenCover, onCoverReady, onOpenFile, onSettings, version, readerError, tone }) {
+export function PaperLibrary({ onOpen, onOpenCover, onCoverReady, onOpenFile, onSettings, version, availableUpdate, readerError, tone }) {
   const [data, setData] = useState(empty);
   const [indexedPages, setIndexedPages] = useState(() => new Map());
   const indexedPapers = useRef(new Set());
@@ -722,7 +722,15 @@ export function PaperLibrary({ onOpen, onOpenCover, onCoverReady, onOpenFile, on
         </div>
         <div className="pl-sidebar-utility">
           <button type="button" onClick={onSettings}>设置</button>
-          {version && <span title="当前版本">v{version}</span>}
+          {availableUpdate?.version ? (
+            <button type="button" className="pl-update-badge"
+              title={'发现新版本 v' + availableUpdate.version + '，点击前往 Release 页面'}
+              onClick={() => api.openLink(availableUpdate.url)}>
+              有新版本 v{availableUpdate.version}
+            </button>
+          ) : (
+            version && <span title="当前版本">v{version}</span>
+          )}
         </div>
       </footer>
     </aside>

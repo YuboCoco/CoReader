@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { Reader, installCss, setHostScheme, translate, readReaderSettings, subscribeReaderSettings } from './reader-view.js';
 import { installLiquidGlass } from './liquid-glass.mjs';
 import { installCustomCursors } from './cursors.mjs';
+import { installBingWallpaper } from './bing-wallpaper.mjs';
+import { installAuroraIdle } from './aurora-idle.mjs';
 import { loadLibrary } from './desktop-runtime.js';
 import { ModelCenter } from './model-center.jsx';
 import { OnboardingTour, WelcomeDialog, shouldStartOnboarding } from './onboarding-tour.jsx';
@@ -76,6 +78,161 @@ function PdfPassword({ request, onClose }) {
   </dialog>;
 }
 
+const IGNORED_UPDATE_KEY = 'coreader.ignored-update-version';
+
+function readIgnoredUpdateVersion() {
+  try { return localStorage.getItem(IGNORED_UPDATE_KEY) || ''; } catch { return ''; }
+}
+
+function writeIgnoredUpdateVersion(version) {
+  try {
+    if (version) localStorage.setItem(IGNORED_UPDATE_KEY, version);
+    else localStorage.removeItem(IGNORED_UPDATE_KEY);
+  } catch {}
+}
+
+function formatMegabytes(bytes) {
+  return (Math.max(0, Number(bytes) || 0) / (1024 * 1024)).toFixed(1);
+}
+
+function ReleaseNotes({ notes }) {
+  if (!notes) {
+    return <p className="update-notes-empty">暂无详细更新日志，可点击下方「前往 Release 页面」查看完整说明。</p>;
+  }
+  const blocks = [];
+  let listItems = [];
+  const flushList = (keyBase) => {
+    if (!listItems.length) return;
+    blocks.push(<ul key={'ul-' + keyBase}>{listItems}</ul>);
+    listItems = [];
+  };
+  notes.split(/\r?\n/).forEach((rawLine, index) => {
+    const line = rawLine.trim();
+    if (!line) {
+      flushList(index);
+      return;
+    }
+    const heading = /^#{1,4}\s+(.+)$/.exec(line);
+    if (heading) {
+      flushList(index);
+      blocks.push(<h4 key={'h-' + index}>{heading[1]}</h4>);
+      return;
+    }
+    const bullet = /^[-*•]\s+(.+)$/.exec(line);
+    if (bullet) {
+      listItems.push(<li key={'li-' + index}>{bullet[1]}</li>);
+      return;
+    }
+    flushList(index);
+    blocks.push(<p key={'p-' + index}>{line}</p>);
+  });
+  flushList('end');
+  return <div className="update-notes-body">{blocks}</div>;
+}
+
+function UpdateDialog({ update, currentVersion, onIgnore, onClose }) {
+  const modal = useRef(null);
+  const [stage, setStage] = useState('idle'); // 'idle' | 'downloading' | 'installing' | 'error'
+  const [progress, setProgress] = useState({ received: 0, total: 0, percent: 0 });
+  const [errorText, setErrorText] = useState('');
+
+  useEffect(() => {
+    modal.current?.showModal();
+    return api.onUpdateProgress((payload) => {
+      if (!payload) return;
+      if (payload.stage === 'downloading') {
+        setStage('downloading');
+        setProgress({
+          received: payload.received || 0,
+          total: payload.total || 0,
+          percent: payload.percent || 0,
+        });
+      } else if (payload.stage === 'installing') {
+        setStage('installing');
+        setProgress((prev) => ({ ...prev, percent: 100 }));
+      }
+    });
+  }, []);
+
+  async function startUpdate() {
+    if (stage === 'downloading' || stage === 'installing') return;
+    setErrorText('');
+    setStage('downloading');
+    setProgress({ received: 0, total: 0, percent: 0 });
+    try {
+      const result = await api.installUpdate(update);
+      if (result?.started) return;
+      if (result?.reason === 'canceled') {
+        setStage('idle');
+        return;
+      }
+      setStage('error');
+      setErrorText(result?.message || '当前环境不支持自动更新，请前往 Release 页面手动下载。');
+    } catch (error) {
+      setStage('error');
+      setErrorText(error?.message || '更新下载失败，请重试或前往 Release 页面下载。');
+    }
+  }
+
+  function handleIgnore() {
+    if (stage === 'downloading') {
+      api.cancelUpdateDownload().catch(() => {});
+    }
+    onIgnore();
+  }
+
+  const busy = stage === 'downloading' || stage === 'installing';
+
+  return <dialog className="settings update-dialog" ref={modal} aria-labelledby="update-dialog-title"
+    onCancel={(event) => {
+      event.preventDefault();
+      if (!busy) handleIgnore();
+    }}>
+    <header className="dialog-head">
+      <div className="update-dialog-heading">
+        <h2 id="update-dialog-title">检测到新版本 v{update.version}</h2>
+        <p className="update-version-meta">
+          {currentVersion ? `当前版本 v${currentVersion} → 最新版本 v${update.version}` : `最新版本 v${update.version}`}
+        </p>
+      </div>
+      {!busy && <button type="button" className="quiet" aria-label="忽略此版本" onClick={handleIgnore}>×</button>}
+    </header>
+    <div className="update-notes-box">
+      <ReleaseNotes notes={update.notes} />
+    </div>
+    {busy && (
+      <div className="update-progress-box" role="status">
+        <div className="update-progress-label">
+          <span>{stage === 'installing' ? '正在安装更新并准备重启…' : '正在下载安装包…'}</span>
+          <span>
+            {progress.total > 0
+              ? `${formatMegabytes(progress.received)} / ${formatMegabytes(progress.total)} MB (${progress.percent}%)`
+              : `${formatMegabytes(progress.received)} MB`}
+          </span>
+        </div>
+        <progress className="update-progress-bar" max={100} value={progress.percent} />
+      </div>
+    )}
+    {errorText && <p className="form-error" role="alert">{errorText}</p>}
+    <footer className="update-dialog-footer">
+      <button type="button" className="quiet update-release-link" onClick={() => {
+        api.openLink(update.url).catch(() => {});
+        onClose();
+      }}>前往 Release 页面</button>
+      <div className="dialog-actions">
+        {stage === 'downloading' ? (
+          <button type="button" onClick={() => api.cancelUpdateDownload().catch(() => {})}>取消下载</button>
+        ) : (
+          <button type="button" disabled={busy} onClick={handleIgnore}>忽略</button>
+        )}
+        <button type="button" className="primary" disabled={busy} onClick={startUpdate}>
+          {stage === 'installing' ? '正在安装…' : stage === 'downloading' ? '下载中…' : '更新'}
+        </button>
+      </div>
+    </footer>
+  </dialog>;
+}
+
 function App({ issue: startupIssue }) {
   const [modelCenter, setModelCenter] = useState(null);
   const [tourStage, setTourStage] = useState(''); // '' | 'welcome' | 'tour'
@@ -84,7 +241,8 @@ function App({ issue: startupIssue }) {
   const [issue, setIssue] = useState(startupIssue);
   const [version, setVersion] = useState('');
   const [update, setUpdate] = useState(null);
-  const [dismissed, setDismissed] = useState(false);
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [startupDone, setStartupDone] = useState(false);
   const [nativeFullscreen, setNativeFullscreen] = useState(false);
 
   const openModelCenter = (target) => {
@@ -104,7 +262,9 @@ function App({ issue: startupIssue }) {
     let active = true;
     api.windowReady().catch(() => {});
     finishStartup().catch(() => {}).finally(() => {
-      if (active && shouldStartOnboarding()) setTourStage('welcome');
+      if (!active) return;
+      setStartupDone(true);
+      if (shouldStartOnboarding()) setTourStage('welcome');
     });
     api.appVersion().then((value) => { if (active) setVersion(value); }).catch(() => {});
     api.checkForUpdate().then((value) => { if (active) setUpdate(value); }).catch(() => {});
@@ -124,21 +284,38 @@ function App({ issue: startupIssue }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!startupDone || tourStage || !update?.version) return;
+    if (readIgnoredUpdateVersion() === update.version) return;
+    setUpdateModalOpen(true);
+  }, [startupDone, tourStage, update?.version]);
+
   return <div className="desktop-app">
     {isMac && !nativeFullscreen && <div className="desktop-mac-toolbar" aria-hidden="true">CoReader</div>}
     {issue && <aside className="desktop-error" role="alert">
       <span>{issue}</span><button className="quiet" aria-label="关闭提示" onClick={() => setIssue('')}>×</button>
     </aside>}
-    {update && !dismissed && <aside className="desktop-update" aria-label="软件更新">
-      <strong role="status">发现 CoReader {update.version}，可以更新</strong>
-      <a href={update.url}>查看发布</a>
-      <button type="button" aria-label="关闭更新提示" onClick={() => setDismissed(true)}>×</button>
-    </aside>}
-    <Reader t={translate} version={version} nativeFullscreen={nativeFullscreen} modelRevision={revision} onModelSettings={openModelCenter} onPdfPassword={setPassword} />
+    <Reader t={translate} version={version} availableUpdate={update} nativeFullscreen={nativeFullscreen} modelRevision={revision} onModelSettings={openModelCenter} onPdfPassword={setPassword} />
     {password && <PdfPassword request={password} onClose={() => setPassword(null)} />}
+    {update && updateModalOpen && <UpdateDialog
+      update={update}
+      currentVersion={version}
+      onIgnore={() => {
+        writeIgnoredUpdateVersion(update.version);
+        setUpdateModalOpen(false);
+      }}
+      onClose={() => setUpdateModalOpen(false)}
+    />}
     {modelCenter && <ModelCenter version={version} availableUpdate={update}
       initialTab={modelCenter.tab} initialSection={modelCenter.section} navigationKey={modelCenter.nonce}
-      onUpdateFound={(next) => { setUpdate(next); if (next) setDismissed(false); }}
+      onUpdateFound={(next) => {
+        setUpdate(next);
+        if (next) {
+          writeIgnoredUpdateVersion('');
+          setModelCenter(null);
+          setUpdateModalOpen(true);
+        }
+      }}
       onClose={() => setModelCenter(null)}
       onReplayTour={() => { setModelCenter(null); setTourStage('tour'); }}
       onConnectionsChange={() => setRevision((previous) => previous + 1)} onSave={() => {
@@ -165,6 +342,8 @@ updateScheme();
 installCss();
 installLiquidGlass(readReaderSettings, subscribeReaderSettings);
 installCustomCursors(readReaderSettings, subscribeReaderSettings);
+installBingWallpaper(readReaderSettings, subscribeReaderSettings);
+installAuroraIdle(readReaderSettings, subscribeReaderSettings);
 
 loadLibrary().then(() => '', (error) => error.message).then((issue) => {
   createRoot(document.getElementById('root')).render(<App issue={issue} />);

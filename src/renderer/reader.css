@@ -81,7 +81,7 @@ button, input, select, textarea { font: inherit; }
     }
   }
   /* Refined translucent pill scrollbars for Settings modal, panels, and menus */
-  :is(.settings, .model-center-pane, .connection-detail-body, .elr-settings-panel, .elr-card-menu) {
+  :is(.settings, .model-center-pane, .connection-detail-body, .elr-settings-panel, .elr-card-menu, .elr-reader-options, .bing-wallpaper-grid) {
     scrollbar-width: auto;
     scrollbar-color: auto;
 
@@ -100,6 +100,16 @@ button, input, select, textarea { font: inherit; }
     }
     &::-webkit-scrollbar-thumb:active, & ::-webkit-scrollbar-thumb:active {
       background-color: color-mix(in srgb, var(--dsw-alias-label-secondary) 76%, transparent);
+    }
+  }
+  .elr-reader-options {
+    &::-webkit-scrollbar { width: 7px; height: 7px; }
+    &::-webkit-scrollbar-track { margin: 8px 0; background: transparent; }
+    &::-webkit-scrollbar-thumb {
+      background-color: color-mix(in srgb, var(--dsw-alias-label-secondary) 22%, transparent);
+    }
+    &::-webkit-scrollbar-thumb:hover {
+      background-color: color-mix(in srgb, var(--dsw-alias-label-secondary) 46%, transparent);
     }
   }
   [data-elr-docked-card] {
@@ -220,23 +230,6 @@ button, input, select, textarea { font: inherit; }
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--dsw-alias-bg-base) 45%, transparent);
-}
-.settings .elr-segmented-control button {
-  min-height: 26px;
-  padding: 4px 12px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-weight: 500;
-  white-space: nowrap;
-}
-.settings .elr-segmented-control button:hover:not(:disabled) { color: var(--dsw-alias-label-primary); }
-.settings .elr-segmented-control button[aria-pressed="true"] {
-  background: var(--dsw-alias-bg-layer-1);
-  border-color: var(--dsw-alias-border-l1);
-  color: var(--dsw-alias-brand-primary);
-  font-weight: 650;
 }
 .display-settings { padding: 16px var(--settings-gutter) 20px; display: grid; gap: 12px; }
 .display-setting-group { display: grid; gap: 8px; padding: 12px 16px; border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--radius-md); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 37%, transparent); transition: border-color .28s var(--ease-out), box-shadow .28s var(--ease-out); }
@@ -465,6 +458,28 @@ button, input, select, textarea { font: inherit; }
   min-height: 30px;
   padding: 4px 8px;
 }
+.settings .elr-segmented-control > button[type="button"] {
+  min-height: 26px;
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color var(--duration-feedback) var(--ease-out), border-color var(--duration-feedback) var(--ease-out), color var(--duration-feedback) var(--ease-out), box-shadow var(--duration-feedback) var(--ease-out);
+}
+.settings .elr-segmented-control > button[type="button"]:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 55%, transparent);
+}
+.settings .elr-segmented-control > button[type="button"][aria-pressed="true"] {
+  background: var(--dsw-alias-brand-primary);
+  border-color: transparent;
+  color: var(--dsw-alias-bg-base);
+  font-weight: 650;
+  box-shadow: 0 1px 3px rgb(12 20 34 / .18);
+}
 .settings input[type="range"] {
   border: 0;
   background: transparent;
@@ -489,3 +504,215 @@ button, input, select, textarea { font: inherit; }
 .account-actions { margin-top: 6px; }
 .advanced-config summary { cursor: pointer; }
 .advanced-config[open] summary { margin-bottom: 7px; }
+
+.bing-wallpaper-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 55%, transparent);
+}
+.bing-wallpaper-caption {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: 2px;
+}
+.bing-wallpaper-caption strong {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bing-wallpaper-caption span {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bing-wallpaper-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bing-wallpaper-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  max-height: 224px;
+  overflow: auto;
+  padding: 2px;
+}
+.settings .bing-wallpaper-card {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  border: 2px solid transparent;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.settings .bing-wallpaper-card[aria-pressed="true"] {
+  border-color: var(--dsw-alias-brand-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 24%, transparent);
+}
+.bing-wallpaper-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.bing-wallpaper-date {
+  position: absolute;
+  inset: auto 4px 4px auto;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgb(10 14 22 / .66);
+  color: #f4f7fb;
+  font-size: 10px;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+.bing-wallpaper-star {
+  position: absolute;
+  inset: 4px auto auto 4px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgb(10 14 22 / .66);
+  color: #ffd166;
+  font-size: 10px;
+  line-height: 1.3;
+}
+.bing-wallpaper-dir-setting {
+  display: grid;
+  gap: 6px;
+}
+.bing-wallpaper-dir-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 500;
+}
+.bing-wallpaper-dir-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.settings .bing-wallpaper-dir-actions button {
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+.bing-wallpaper-dir-path {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 55%, transparent);
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bing-wallpaper-status {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.setting-current-value {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.settings.update-dialog {
+  width: min(520px, 92vw);
+  max-height: min(560px, 86vh);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+}
+.update-dialog-heading {
+  display: grid;
+  gap: 3px;
+}
+.update-version-meta {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.update-notes-box {
+  flex: 1 1 auto;
+  min-height: 110px;
+  max-height: 280px;
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 48%, transparent);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.update-notes-body {
+  display: grid;
+  gap: 8px;
+}
+.update-notes-body h4 {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--dsw-alias-label-primary);
+}
+.update-notes-body ul {
+  margin: 0;
+  padding-inline-start: 18px;
+  display: grid;
+  gap: 4px;
+}
+.update-notes-empty {
+  color: var(--dsw-alias-label-secondary);
+}
+.update-progress-box {
+  display: grid;
+  gap: 6px;
+}
+.update-progress-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.update-progress-bar {
+  width: 100%;
+  height: 7px;
+  accent-color: var(--dsw-alias-brand-primary);
+}
+.update-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.update-dialog-footer .dialog-actions {
+  margin-top: 0;
+}
+.settings .update-release-link {
+  padding-inline: 4px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.settings .update-release-link:hover {
+  color: var(--dsw-alias-brand-primary);
+}

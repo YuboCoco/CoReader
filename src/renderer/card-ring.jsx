@@ -33,7 +33,11 @@ export const AccountCardRing = React.forwardRef(function AccountCardRing(
     const reducedMq = window.matchMedia('(prefers-reduced-motion: reduce)');
     const schemeMq = window.matchMedia('(prefers-color-scheme: dark)');
 
-    const readBgColor = () => getComputedStyle(stage).backgroundColor;
+    const readBgColor = () => {
+      const host = stage.closest('dialog') || document.documentElement;
+      return getComputedStyle(host).getPropertyValue('--dsw-alias-bg-overlay').trim()
+        || getComputedStyle(host).backgroundColor;
+    };
 
     let engine;
     try {

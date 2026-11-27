@@ -4,6 +4,16 @@ import { AccountConnections } from './account-connections.jsx';
 import { ModelSettings } from './settings.jsx';
 import { glassTintPreference } from './liquid-glass.mjs';
 import {
+  chooseBingSaveDir,
+  getBingWallpaperState,
+  isBingFavorited,
+  loadBingSaveDir,
+  openBingSaveDir,
+  refreshBingWallpapers,
+  subscribeBingWallpaper,
+  toggleBingFavorite,
+} from './bing-wallpaper.mjs';
+import {
   ALBUM_INTERVAL_MAX,
   ALBUM_INTERVAL_MIN,
   ALBUM_INTERVAL_OPTIONS,
@@ -296,16 +306,23 @@ function DisplaySettings({ value, onChange, highlightedSection = '' }) {
           </optgroup>
         </select>
       </label>
+      {(value.uiTone === 'prism-light' || value.uiTone === 'prism-dark') && (
+        <div className="display-setting-row">
+          <span id="setting-aurora-mode-label">流光动画</span>
+          <div className="elr-segmented-control" role="group" aria-labelledby="setting-aurora-mode-label">
+            <button type="button" aria-pressed={(value.auroraMode || 'smooth') === 'smooth'} onClick={() => onChange({ auroraMode: 'smooth' })}>流畅优先</button>
+            <button type="button" aria-pressed={value.auroraMode === 'quality'} onClick={() => onChange({ auroraMode: 'quality' })}>效果优先</button>
+            <button type="button" aria-pressed={value.auroraMode === 'off'} onClick={() => onChange({ auroraMode: 'off' })}>关闭</button>
+          </div>
+        </div>
+      )}
     </div>
+    <BingWallpaperSettings value={value} onChange={onChange} highlighted={highlightedSection === 'bing-wallpaper'} />
     <div className="display-setting-group">
       <h3>液态玻璃</h3>
       <label>启用液态玻璃
         <input className="elr-glass-switch" type="checkbox" role="switch" checked={glassEnabled}
           onChange={(event) => onChange({ glassEnabled: event.target.checked })} />
-      </label>
-      <label>使用定制液态玻璃指针
-        <input className="elr-glass-switch" type="checkbox" role="switch" checked={value.customCursor !== false}
-          onChange={(event) => onChange({ customCursor: event.target.checked })} />
       </label>
       <label>选词区域卡片透明
         <input className="elr-glass-switch" type="checkbox" role="switch" checked={value.selectionPopupTransparent !== false}
@@ -402,6 +419,168 @@ function DisplaySettings({ value, onChange, highlightedSection = '' }) {
   </div>;
 }
 
+function BingWallpaperSettings({ value, onChange, highlighted = false }) {
+  const [wallpaper, setWallpaper] = useState(() => getBingWallpaperState());
+  const [galleryMode, setGalleryMode] = useState('recent');
+  const [savingFav, setSavingFav] = useState(false);
+  const [favStatus, setFavStatus] = useState('');
+  useEffect(() => {
+    const unsub = subscribeBingWallpaper(setWallpaper);
+    loadBingSaveDir().catch(() => {});
+    return unsub;
+  }, []);
+
+  const enabled = Boolean(value.bingWallpaperEnabled);
+  const market = value.bingWallpaperMarket === 'en-US' ? 'en-US' : 'zh-CN';
+  const blur = Number.isFinite(Number(value.bingWallpaperBlur)) ? Math.max(0, Math.min(16, Number(value.bingWallpaperBlur))) : 0;
+  const dim = Number.isFinite(Number(value.bingWallpaperDim)) ? Math.max(0, Math.min(75, Number(value.bingWallpaperDim))) : 28;
+  const dynamicColor = value.bingWallpaperDynamicColor !== false;
+  const selectedDate = value.bingWallpaperDate || '';
+  const active = wallpaper.activeItem;
+  const favorited = isBingFavorited(active, wallpaper.favorites);
+  const showingFavorites = galleryMode === 'favorites' && wallpaper.favorites.length > 0;
+  const galleryItems = showingFavorites ? wallpaper.favorites : wallpaper.items;
+
+  const formatShortDate = (raw) => (/^\d{8}$/.test(raw) ? raw.slice(4, 6) + '-' + raw.slice(6, 8) : raw);
+
+  const handleToggleFavorite = async () => {
+    if (!active || savingFav) return;
+    setSavingFav(true);
+    setFavStatus('');
+    try {
+      const res = await toggleBingFavorite(active);
+      if (res?.favorited) {
+        setFavStatus(res.savedPath ? '已收藏并保存到：' + res.savedPath : '已收藏当前壁纸');
+      } else {
+        setFavStatus('已取消收藏（本地已下载文件保留）');
+      }
+    } catch (error) {
+      setFavStatus(error?.message || '收藏失败');
+    } finally {
+      setSavingFav(false);
+    }
+  };
+
+  const handleChooseSaveDir = async () => {
+    setFavStatus('');
+    try {
+      await chooseBingSaveDir();
+    } catch (error) {
+      setFavStatus(error?.message || '设置目录失败');
+    }
+  };
+
+  const handleOpenSaveDir = async () => {
+    setFavStatus('');
+    try {
+      await openBingSaveDir();
+    } catch (error) {
+      setFavStatus(error?.message || '打开目录失败');
+    }
+  };
+
+  return <div className={'display-setting-group' + (highlighted ? ' is-highlighted' : '')}
+    id="setting-section-bing-wallpaper" data-setting-section="bing-wallpaper">
+    <h3>Bing 每日壁纸</h3>
+    <label>启用 Bing 每日壁纸
+      <input className="elr-glass-switch" type="checkbox" role="switch" checked={enabled}
+        onChange={(event) => onChange({ bingWallpaperEnabled: event.target.checked })} />
+    </label>
+    <div className="display-setting-row">
+      <span id="setting-bing-market-label">
+        壁纸来源
+        <span className="setting-current-value">当前：{market === 'en-US' ? '国际区' : '中国区'}</span>
+      </span>
+      <div className="elr-segmented-control" role="group" aria-labelledby="setting-bing-market-label">
+        <button type="button" aria-pressed={market === 'zh-CN'} onClick={() => onChange({ bingWallpaperMarket: 'zh-CN' })}>中国区</button>
+        <button type="button" aria-pressed={market === 'en-US'} onClick={() => onChange({ bingWallpaperMarket: 'en-US' })}>国际区</button>
+      </div>
+    </div>
+    <div className="bing-wallpaper-dir-setting">
+      <div className="bing-wallpaper-dir-head">
+        <span>壁纸保存目录</span>
+        <div className="bing-wallpaper-dir-actions">
+          <button type="button" onClick={handleChooseSaveDir}>选择目录</button>
+          <button type="button" onClick={handleOpenSaveDir}>打开目录</button>
+        </div>
+      </div>
+      <div className="bing-wallpaper-dir-path" title={wallpaper.saveDir || '默认图片目录'}>
+        {wallpaper.saveDir || '默认图片目录'}
+      </div>
+    </div>
+    <label>跟随壁纸提取主题强调色
+      <input className="elr-glass-switch" type="checkbox" role="switch" checked={dynamicColor} disabled={!enabled}
+        onChange={(event) => onChange({ bingWallpaperDynamicColor: event.target.checked })} />
+    </label>
+    <label>背景模糊
+      <span className="elr-glass-slider">
+        <input type="range" min="0" max="16" step="1" value={blur} disabled={!enabled} aria-label="背景模糊" aria-valuetext={blur + 'px'}
+          onChange={(event) => onChange({ bingWallpaperBlur: event.target.valueAsNumber })} />
+        <output aria-hidden="true">{blur}px</output>
+      </span>
+    </label>
+    <label>可读性遮罩
+      <span className="elr-glass-slider">
+        <input type="range" min="0" max="75" step="1" value={dim} disabled={!enabled} aria-label="可读性遮罩" aria-valuetext={dim + '%'}
+          onChange={(event) => onChange({ bingWallpaperDim: event.target.valueAsNumber })} />
+        <output aria-hidden="true">{dim}%</output>
+      </span>
+    </label>
+    {enabled && (
+      <>
+        <div className="bing-wallpaper-meta">
+          <div className="bing-wallpaper-caption">
+            <strong>{active?.title || (wallpaper.loading ? '正在获取 Bing 今日壁纸…' : '暂无壁纸信息')}</strong>
+            <span>{active?.copyright || (wallpaper.offline ? '当前处于离线缓存模式' : wallpaper.error || '')}</span>
+          </div>
+          <div className="bing-wallpaper-actions">
+            <button type="button" aria-pressed={favorited} disabled={!active || savingFav} onClick={handleToggleFavorite}>
+              {savingFav ? '保存中…' : favorited ? '★ 已收藏' : '☆ 收藏并下载'}
+            </button>
+            {selectedDate && (
+              <button type="button" onClick={() => onChange({ bingWallpaperDate: '' })}>跟随今日</button>
+            )}
+            <button type="button" disabled={wallpaper.loading} onClick={() => refreshBingWallpapers(true)}>
+              {wallpaper.loading ? '刷新中…' : '刷新'}
+            </button>
+          </div>
+        </div>
+        {favStatus && <p className="bing-wallpaper-status" role="status">{favStatus}</p>}
+        {wallpaper.favorites.length > 0 && (
+          <div className="elr-segmented-control" role="group" aria-label="壁纸列表切换">
+            <button type="button" aria-pressed={!showingFavorites} onClick={() => setGalleryMode('recent')}>
+              近期壁纸
+            </button>
+            <button type="button" aria-pressed={showingFavorites} onClick={() => setGalleryMode('favorites')}>
+              已收藏 ({wallpaper.favorites.length})
+            </button>
+          </div>
+        )}
+        {galleryItems.length > 0 && (
+          <div className="bing-wallpaper-grid" role="group" aria-label={showingFavorites ? '已收藏壁纸' : '近期 Bing 壁纸'}>
+            {galleryItems.map((item) => {
+              const itemMarket = item.market || market;
+              const isSelected = active?.date === item.date && (active?.market || market) === itemMarket;
+              const isItemFav = isBingFavorited(item, wallpaper.favorites);
+              return <button key={itemMarket + '-' + item.date} type="button" className="bing-wallpaper-card"
+                aria-pressed={isSelected} title={`${item.date} ${item.title || ''}`.trim()}
+                onClick={() => onChange({
+                  bingWallpaperEnabled: true,
+                  bingWallpaperMarket: itemMarket,
+                  bingWallpaperDate: !showingFavorites && item.date === wallpaper.items[0]?.date && !selectedDate ? '' : item.date,
+                })}>
+                <img src={item.thumbUrl} alt={item.title || item.date} loading="lazy" />
+                {isItemFav && <span className="bing-wallpaper-star" aria-hidden="true">★</span>}
+                <span className="bing-wallpaper-date">{formatShortDate(item.date)}</span>
+              </button>;
+            })}
+          </div>
+        )}
+      </>
+    )}
+  </div>;
+}
+
 function ReadingSettings({ value, onChange, onReplayTour }) {
   return <div className="display-settings">
     <div className="display-setting-group">
@@ -425,7 +604,10 @@ function ReadingSettings({ value, onChange, onReplayTour }) {
     <div className="display-setting-group">
       <h3>阅读操作</h3>
       <div className="display-setting-row">
-        <span id="setting-capsule-label">阅读工具栏位置</span>
+        <span id="setting-capsule-label">
+          阅读工具栏位置
+          <span className="setting-current-value">当前：{value.capsulePosition === 'bottom' ? '页面底部' : '页面顶部'}</span>
+        </span>
         <div className="elr-segmented-control" role="group" aria-labelledby="setting-capsule-label">
           <button type="button" aria-pressed={(value.capsulePosition || 'top') === 'top'} onClick={() => onChange({ capsulePosition: 'top' })}>页面顶部</button>
           <button type="button" aria-pressed={value.capsulePosition === 'bottom'} onClick={() => onChange({ capsulePosition: 'bottom' })}>页面底部</button>

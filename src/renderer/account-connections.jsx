@@ -455,9 +455,6 @@ export function AccountConnections({ connections, chatgpt, onUpdate, onRefresh }
       }}
     />
 
-    <div className="connection-pagination" aria-hidden="true">
-      {providers.map((provider, position) => <span key={provider} data-active={position === activeIndex} />)}
-    </div>
     <span className="connection-announcement" role="status">
       {connectionNames[activeProvider]} · {activeIndex + 1} / {providers.length}
     </span>
