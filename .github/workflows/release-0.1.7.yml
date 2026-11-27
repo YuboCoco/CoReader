@@ -124,8 +124,8 @@ jobs:
           - Windows x64：安装版 EXE（`CoReader-0.1.7-Setup-win-x64.exe`）或便携 ZIP（`CoReader-0.1.7-win-x64.zip`）。
           - macOS 13.3 及以上：Apple Silicon 下载 `CoReader-0.1.7-mac-arm64.zip`，Intel 下载 `CoReader-0.1.7-mac-x64.zip`。两个 ZIP 均使用临时签名，未进行 Apple 公证。
           EOF
-          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
-            test "$draft" = true
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title 'CoReader 0.1.7' --notes-file "$RUNNER_TEMP/coreader-017-notes.md"
           else
             gh release create "$tag" --draft --verify-tag --title 'CoReader 0.1.7' --notes-file "$RUNNER_TEMP/coreader-017-notes.md"
           fi
