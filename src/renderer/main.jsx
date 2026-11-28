@@ -130,53 +130,17 @@ function ReleaseNotes({ notes }) {
   return <div className="update-notes-body">{blocks}</div>;
 }
 
-function UpdateDialog({ update, currentVersion, onIgnore, onClose }) {
+function UpdateDialog({ update, currentVersion, state, onStart, onCancelDownload, onIgnore, onClose }) {
   const modal = useRef(null);
-  const [stage, setStage] = useState('idle'); // 'idle' | 'downloading' | 'installing' | 'error'
-  const [progress, setProgress] = useState({ received: 0, total: 0, percent: 0 });
-  const [errorText, setErrorText] = useState('');
+  const { stage, progress, errorText } = state;
 
   useEffect(() => {
     modal.current?.showModal();
-    return api.onUpdateProgress((payload) => {
-      if (!payload) return;
-      if (payload.stage === 'downloading') {
-        setStage('downloading');
-        setProgress({
-          received: payload.received || 0,
-          total: payload.total || 0,
-          percent: payload.percent || 0,
-        });
-      } else if (payload.stage === 'installing') {
-        setStage('installing');
-        setProgress((prev) => ({ ...prev, percent: 100 }));
-      }
-    });
   }, []);
-
-  async function startUpdate() {
-    if (stage === 'downloading' || stage === 'installing') return;
-    setErrorText('');
-    setStage('downloading');
-    setProgress({ received: 0, total: 0, percent: 0 });
-    try {
-      const result = await api.installUpdate(update);
-      if (result?.started) return;
-      if (result?.reason === 'canceled') {
-        setStage('idle');
-        return;
-      }
-      setStage('error');
-      setErrorText(result?.message || '当前环境不支持自动更新，请前往 Release 页面手动下载。');
-    } catch (error) {
-      setStage('error');
-      setErrorText(error?.message || '更新下载失败，请重试或前往 Release 页面下载。');
-    }
-  }
 
   function handleIgnore() {
     if (stage === 'downloading') {
-      api.cancelUpdateDownload().catch(() => {});
+      onCancelDownload();
     }
     onIgnore();
   }
@@ -186,7 +150,8 @@ function UpdateDialog({ update, currentVersion, onIgnore, onClose }) {
   return <dialog className="settings update-dialog" ref={modal} aria-labelledby="update-dialog-title"
     onCancel={(event) => {
       event.preventDefault();
-      if (!busy) handleIgnore();
+      if (busy) onClose();
+      else handleIgnore();
     }}>
     <header className="dialog-head">
       <div className="update-dialog-heading">
@@ -195,7 +160,8 @@ function UpdateDialog({ update, currentVersion, onIgnore, onClose }) {
           {currentVersion ? `当前版本 v${currentVersion} → 最新版本 v${update.version}` : `最新版本 v${update.version}`}
         </p>
       </div>
-      {!busy && <button type="button" className="quiet" aria-label="忽略此版本" onClick={handleIgnore}>×</button>}
+      <button type="button" className="quiet" aria-label={busy ? '后台下载' : '忽略此版本'}
+        onClick={busy ? onClose : handleIgnore}>×</button>
     </header>
     <div className="update-notes-box">
       <ReleaseNotes notes={update.notes} />
@@ -203,7 +169,7 @@ function UpdateDialog({ update, currentVersion, onIgnore, onClose }) {
     {busy && (
       <div className="update-progress-box" role="status">
         <div className="update-progress-label">
-          <span>{stage === 'installing' ? '正在安装更新并准备重启…' : '正在下载安装包…'}</span>
+          <span>{stage === 'installing' ? '正在安装更新并准备重启…' : '正在后台下载安装包…'}</span>
           <span>
             {progress.total > 0
               ? `${formatMegabytes(progress.received)} / ${formatMegabytes(progress.total)} MB (${progress.percent}%)`
@@ -221,11 +187,14 @@ function UpdateDialog({ update, currentVersion, onIgnore, onClose }) {
       }}>前往 Release 页面</button>
       <div className="dialog-actions">
         {stage === 'downloading' ? (
-          <button type="button" onClick={() => api.cancelUpdateDownload().catch(() => {})}>取消下载</button>
+          <>
+            <button type="button" onClick={onCancelDownload}>取消下载</button>
+            <button type="button" onClick={onClose}>后台下载</button>
+          </>
         ) : (
           <button type="button" disabled={busy} onClick={handleIgnore}>忽略</button>
         )}
-        <button type="button" className="primary" disabled={busy} onClick={startUpdate}>
+        <button type="button" className="primary" disabled={busy} onClick={onStart}>
           {stage === 'installing' ? '正在安装…' : stage === 'downloading' ? '下载中…' : '更新'}
         </button>
       </div>
@@ -242,6 +211,11 @@ function App({ issue: startupIssue }) {
   const [version, setVersion] = useState('');
   const [update, setUpdate] = useState(null);
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [updateState, setUpdateState] = useState({
+    stage: 'idle',
+    progress: { received: 0, total: 0, percent: 0 },
+    errorText: '',
+  });
   const [startupDone, setStartupDone] = useState(false);
   const [nativeFullscreen, setNativeFullscreen] = useState(false);
 
@@ -268,6 +242,26 @@ function App({ issue: startupIssue }) {
     });
     api.appVersion().then((value) => { if (active) setVersion(value); }).catch(() => {});
     api.checkForUpdate().then((value) => { if (active) setUpdate(value); }).catch(() => {});
+    const unsubscribeUpdate = api.onUpdateProgress((payload) => {
+      if (!active || !payload) return;
+      if (payload.stage === 'downloading') {
+        setUpdateState((prev) => ({
+          ...prev,
+          stage: 'downloading',
+          progress: {
+            received: payload.received || 0,
+            total: payload.total || 0,
+            percent: payload.percent || 0,
+          },
+        }));
+      } else if (payload.stage === 'installing') {
+        setUpdateState((prev) => ({
+          ...prev,
+          stage: 'installing',
+          progress: { ...prev.progress, percent: 100 },
+        }));
+      }
+    });
     const showError = (event) => setIssue(event.detail);
     const linkClick = (event) => {
       const link = event.target.closest?.('a[href]');
@@ -279,10 +273,43 @@ function App({ issue: startupIssue }) {
     document.addEventListener('click', linkClick, true);
     return () => {
       active = false;
+      unsubscribeUpdate();
       window.removeEventListener('reader-storage-error', showError);
       document.removeEventListener('click', linkClick, true);
     };
   }, []);
+
+  async function startUpdateDownload() {
+    if (!update || updateState.stage === 'downloading' || updateState.stage === 'installing') return;
+    setUpdateState({
+      stage: 'downloading',
+      progress: { received: 0, total: 0, percent: 0 },
+      errorText: '',
+    });
+    try {
+      const result = await api.installUpdate(update);
+      if (result?.started) return;
+      if (result?.reason === 'canceled') {
+        setUpdateState((prev) => ({ ...prev, stage: 'idle' }));
+        return;
+      }
+      setUpdateState((prev) => ({
+        ...prev,
+        stage: 'error',
+        errorText: result?.message || '当前环境不支持自动更新，请前往 Release 页面手动下载。',
+      }));
+    } catch (error) {
+      setUpdateState((prev) => ({
+        ...prev,
+        stage: 'error',
+        errorText: error?.message || '更新下载失败，请重试或前往 Release 页面下载。',
+      }));
+    }
+  }
+
+  function cancelUpdateDownload() {
+    api.cancelUpdateDownload().catch(() => {});
+  }
 
   useEffect(() => {
     if (!startupDone || tourStage || !update?.version) return;
@@ -295,11 +322,14 @@ function App({ issue: startupIssue }) {
     {issue && <aside className="desktop-error" role="alert">
       <span>{issue}</span><button className="quiet" aria-label="关闭提示" onClick={() => setIssue('')}>×</button>
     </aside>}
-    <Reader t={translate} version={version} availableUpdate={update} nativeFullscreen={nativeFullscreen} modelRevision={revision} onModelSettings={openModelCenter} onPdfPassword={setPassword} />
+    <Reader t={translate} version={version} availableUpdate={update} updateState={updateState} onOpenUpdate={() => setUpdateModalOpen(true)} nativeFullscreen={nativeFullscreen} modelRevision={revision} onModelSettings={openModelCenter} onPdfPassword={setPassword} />
     {password && <PdfPassword request={password} onClose={() => setPassword(null)} />}
     {update && updateModalOpen && <UpdateDialog
       update={update}
       currentVersion={version}
+      state={updateState}
+      onStart={startUpdateDownload}
+      onCancelDownload={cancelUpdateDownload}
       onIgnore={() => {
         writeIgnoredUpdateVersion(update.version);
         setUpdateModalOpen(false);

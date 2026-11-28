@@ -9808,7 +9808,7 @@ function Reader(props) {
       showPdfStart ? h(PaperLibrary, {
         onOpen: openRecent, onOpenCover: openFromCover, onCoverReady: coverReady,
         onOpenFile: openPdfPicker, onSettings: openModelSettings,
-        version: props.version, availableUpdate: props.availableUpdate, readerError: pdfError, tone: toneCls,
+        version: props.version, availableUpdate: props.availableUpdate, updateState: props.updateState, onOpenUpdate: props.onOpenUpdate, readerError: pdfError, tone: toneCls,
       }) : null,
       hasPdf && pdfError ? h('div', { className: 'elr-retry-bar' },
         h('span', null, t('pdf.failed') + ' ' + pdfError),
