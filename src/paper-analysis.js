@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mergePageRanges, pageOffsets, sectionEnds, splitBefore } from "./paper-planning.js";
+import { mergePageRanges, pageOffsets, REFERENCE_HEADING_RE, sectionEnds, splitBefore } from "./paper-planning.js";
 
 const REPORT_GUIDE = [
   "Write a thorough, clear paper analysis in Simplified Chinese Markdown. Use the level-2 headings below in order, using only the heading text before each dash.",
@@ -15,10 +15,9 @@ const REPORT_GUIDE = [
 export const FULL_ANALYSIS_SYSTEM = "Analyze the supplied academic paper in detail. " + REPORT_GUIDE;
 export const SYNTHESIS_SYSTEM = "Synthesize the supplied paper notes into a single coherent, detailed analysis. Merge overlaps, link the methods to the experimental findings, and report only facts supported by the notes. " + REPORT_GUIDE;
 export const EXCERPT_SYSTEM = [
-  "Make accurate technical notes from this paper excerpt for an in-depth academic analysis.",
-  "Preserve problem scope, contributions, methodological steps and symbol definitions, training or implementation settings, and limitations.",
-  "Record quantitative results with dataset or condition, metric, units and comparator. Retain negative and ablation results. Distinguish what was measured from what is inferred.",
-  "Use structured notes. Prioritize substantive content over boilerplate, and keep the level of detail proportional to the complexity of the excerpt.",
+  "Extract concise, high-signal technical notes from this paper excerpt for synthesis.",
+  "Keep contributions, core method steps, symbol definitions, hyperparameters, quantitative results (with dataset, metric, units, baselines), ablations, and stated limitations.",
+  "Be compact and avoid prose filler. Distinguish measured results from author claims.",
 ].join(" ");
 const MAX_DRAFT_CHARS = 700000;
 
@@ -44,7 +43,7 @@ export function paperSource(text, lengths) {
   return { text, pages, totalPages, fingerprint };
 }
 
-function paperExcerpt(paper, start, end) {
+export function paperExcerpt(paper, start, end) {
   if (!paper.pages.length) return { start, end, text: paper.text.slice(start, end), pages: [] };
   const slices = paper.pages.filter((page) => page.start < end && page.end > start);
   return {
@@ -54,26 +53,69 @@ function paperExcerpt(paper, start, end) {
   };
 }
 
+export function bodyOnlyPaper(paper) {
+  const minStart = Math.floor(paper.text.length * 0.15);
+  let cut = -1;
+  for (const match of paper.text.matchAll(/[^\r\n]+/g)) {
+    const line = match[0];
+    if (line.length > 100) continue;
+    if (match.index >= minStart && REFERENCE_HEADING_RE.test(line)) {
+      cut = match.index;
+      break;
+    }
+  }
+  if (cut <= 0) return paper;
+  const text = paper.text.slice(0, cut).trimEnd();
+  if (!text.trim()) return paper;
+  const pages = paper.pages
+    .filter((p) => p.start < text.length)
+    .map((p) => ({ ...p, end: Math.min(p.end, text.length) }));
+  return { ...paper, text, pages };
+}
+
 export const fullPaper = (paper) => paperExcerpt(paper, 0, paper.text.length);
+
+const APPENDIX_HEADING_RE = /^\s*(?:appendix(?:\s+[A-Z0-9]+)?|supplementary(?:\s+material)?)\s*[:.]?\s*$/i;
+
+function referenceSpan(text) {
+  let start = -1;
+  let end = text.length;
+  for (const match of text.matchAll(/[^\r\n]+/g)) {
+    const line = match[0];
+    if (line.length > 100) continue;
+    if (start < 0) {
+      if (match.index > 0 && REFERENCE_HEADING_RE.test(line)) start = match.index;
+    } else if (match.index > start && APPENDIX_HEADING_RE.test(line)) {
+      end = match.index;
+      break;
+    }
+  }
+  return start >= 0 ? { start, end } : null;
+}
 
 export function completeExcerpts(paper, budget) {
   // Prefer complete sections near the boundary, then split at a line or word.
   const boundaries = sectionEnds(paper.text);
+  const refs = referenceSpan(paper.text);
   const maxChars = Math.max(400, Math.min(32000, budget * 2));
   const chunks = [];
   for (let start = 0; start < paper.text.length;) {
-    let end = Math.min(start + maxChars, paper.text.length);
+    const insideRefs = Boolean(refs && start >= refs.start && start < refs.end);
+    const hardStop = refs
+      ? (start < refs.start ? refs.start : (insideRefs ? refs.end : paper.text.length))
+      : paper.text.length;
+    let end = Math.min(start + maxChars, hardStop);
     let excerpt;
     for (;;) {
       const minimum = start + Math.floor((end - start) * 0.72);
-      const boundary = end === paper.text.length ? end : (boundaries.findLast((point) => point <= end && point >= minimum)
+      const boundary = end === hardStop ? end : (boundaries.findLast((point) => point <= end && point >= minimum)
         || splitBefore(paper.text, end, minimum));
       excerpt = paperExcerpt(paper, start, boundary);
       if (estimateTokens(excerpt.text) <= budget) break;
       if (end - start < 80) throw new Error("The selected model context cannot fit a paper excerpt.");
       end = start + Math.floor((end - start) / 2);
     }
-    if (excerpt.text.trim()) chunks.push(excerpt);
+    if (excerpt.text.trim()) chunks.push({ ...excerpt, isReferences: insideRefs });
     start = excerpt.end;
   }
   return chunks;

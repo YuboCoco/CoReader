@@ -1141,7 +1141,8 @@ const CSS = [
   '.elr-markdown ol { list-style: decimal; margin-block: 6px; padding-inline-start: 24px; }',
   '.elr-markdown code { background: var(--dsw-alias-bg-layer-2); padding: 1px 4px; border-radius: 4px; }',
   // ---- v9 #2: rendered math and tables ----
-  '.elr-math-block { margin: 8px 0; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }',
+  '.elr-math-block { margin: 8px 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: 2px 0 6px; scrollbar-width: thin; }',
+  '.elr-math-block .elr-katex .katex { font-size: .96em; }',
   '.elr-math-inline { padding: 0 1px; }',
   '.elr-katex-err { color: var(--dsw-alias-state-error-primary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: calc(11px + var(--elr-card-font-adjust, 0px)); word-break: break-all; }',
   '.elr-table-wrap { margin: 8px 0; overflow-x: auto; }',
@@ -1635,6 +1636,13 @@ const CSS = [
   '.elr-ref-link:hover { text-decoration: underline; }',
   '.elr-ref-missing { display: block; margin-top: 3px; font-size: calc(11px + var(--elr-card-font-adjust, 0px)); color: var(--dsw-alias-label-secondary); }',
   '.elr-refs-stage { flex: 0 0 auto; padding: 4px 12px 6px; font-size: calc(11px + var(--elr-card-font-adjust, 0px)); color: var(--dsw-alias-label-secondary); border-bottom: 1px solid var(--dsw-alias-border-l1); }',
+  '.elr-analysis-card-body > .elr-col { position: relative; }',
+  '.elr-card-center-status { position: absolute; inset: 0; z-index: 6; display: grid; place-items: center; padding: 16px; pointer-events: none; }',
+  '.elr-card-center-box { pointer-events: auto; max-width: min(320px, 92%); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 18px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 72%, transparent); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent); backdrop-filter: blur(14px) saturate(1.25); -webkit-backdrop-filter: blur(14px) saturate(1.25); box-shadow: 0 10px 28px rgb(12 20 34 / .22); text-align: center; font-size: calc(12.5px + var(--elr-card-font-adjust, 0px)); line-height: 1.55; color: var(--dsw-alias-label-primary); }',
+  '.elr-card-center-box.is-error { border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 42%, transparent); }',
+  '.elr-card-center-msg { color: var(--dsw-alias-label-secondary); word-break: break-word; }',
+  '.elr-card-center-box.is-error .elr-card-center-msg { color: var(--dsw-alias-state-error-primary); }',
+  '.elr-card-center-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; }',
   // Apple-inspired desktop surface.
   '.elr-view { font-family: inherit; letter-spacing: -.005em; background: var(--dsw-alias-bg-base); }',
   '.elr-head { min-height: 48px; box-sizing: border-box; padding: 8px 14px; background: var(--dsw-alias-bg-layer-1); border-bottom: 1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 72%, transparent); box-shadow: 0 1px 0 rgba(255,255,255,.32), 0 4px 16px rgba(20,28,45,.035); backdrop-filter: saturate(150%) blur(18px); -webkit-backdrop-filter: saturate(150%) blur(18px); }',
@@ -1719,7 +1727,7 @@ const CSS = [
   '@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .settings:is(.model-center,.connection-detail)[open], .elr-settings-panel, .elr-card-menu, .elr-note-bubble { background: var(--dsw-alias-bg-layer-1); backdrop-filter: none; } }',
   '.elr-feature-workspace { position: relative; flex: 1 1 auto; min-height: 0; height: 100%; overflow: hidden; background: radial-gradient(ellipse at 82% 6%, var(--elr-duo-side-ambient, var(--elr-glass-ambient)), transparent 72%), radial-gradient(ellipse at 14% 85%, var(--elr-workspace-reflection, var(--elr-glass-bounce)), transparent 69%), var(--elr-duo-side, var(--dsw-alias-bg-base)); }',
   '.elr-card-head.elr-workspace-head { position: absolute; inset: 0 0 auto 0; z-index: 6; box-sizing: border-box; min-height: ' + BOTTOM_DOCK_HEAD_H + 'px; margin-bottom: 0; padding: 9px 12px 10px; background: transparent; container-type: inline-size; isolation: isolate; }',
-  '.elr-card-head.elr-workspace-head::before { content: ""; position: absolute; inset: 0 0 -18px 0; z-index: -1; pointer-events: none; background: linear-gradient(180deg, color-mix(in srgb, var(--elr-duo-side, var(--dsw-alias-bg-base)) 72%, transparent) 0%, color-mix(in srgb, var(--elr-duo-side, var(--dsw-alias-bg-base)) 44%, transparent) 58%, transparent 100%); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 56%, rgb(0 0 0 / .62) 78%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0%, #000 56%, rgb(0 0 0 / .62) 78%, transparent 100%); }',
+  '.elr-card-head.elr-workspace-head::before { content: ""; position: absolute; inset: 0 0 -18px 0; z-index: -1; pointer-events: none; background: linear-gradient(180deg, color-mix(in srgb, var(--elr-duo-side, var(--dsw-alias-bg-base)) 82%, transparent) 0%, color-mix(in srgb, var(--elr-duo-side, var(--dsw-alias-bg-base)) 46%, transparent) 58%, transparent 100%); }',
   '@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .elr-card-head.elr-workspace-head::before { background: linear-gradient(180deg, var(--elr-duo-side, var(--dsw-alias-bg-base)) 68%, transparent 100%); backdrop-filter: none; -webkit-backdrop-filter: none; } }',
   '.elr-card-font-menu > label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; font-size: 12px; }',
   '.elr-card-font-menu output { color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }',
@@ -2046,6 +2054,7 @@ const ensurePdfJs = desktop.ensurePdfJs;
 // expressions come out typeset.
 function normalizeTex(tex) {
   let src = String(tex == null ? '' : tex);
+  src = src.replace(/[\u200b-\u200d\ufeff]/g, '').replace(/[\u3000\u00a0]/g, ' ');
   src = src.replace(/\\mathbbm(?![a-zA-Z])/g, '\\mathbb');
   src = src.replace(/\\bm(?![a-zA-Z])\s*\{/g, '\\boldsymbol{');
   src = src.replace(/\\operatorname\*\s*\{/g, '\\operatorname{');
@@ -2116,11 +2125,20 @@ function renderInline(text, source) {
     const part = parts[i];
     if (!part) continue;
     if (part.length > 4 && part.slice(0, 2) === '**' && part.slice(-2) === '**') {
-      out.push(h('strong', { key: 'b' + i }, part.slice(2, -2)));
+      out.push(h('strong', { key: 'b' + i }, renderInline(part.slice(2, -2), source)));
       continue;
     }
     if (part.length > 2 && part.charAt(0) === '`' && part.charAt(part.length - 1) === '`') {
-      out.push(h('code', { key: 'c' + i }, part.slice(1, -1)));
+      const codeText = part.slice(1, -1);
+      if (/^\$\$[\s\S]+?\$\$$/.test(codeText) && /\\[a-zA-Z]+/.test(codeText)) {
+        out.push(h('span', { key: 'M' + i, className: 'elr-math-inline' }, renderMath(codeText.slice(2, -2), false)));
+        continue;
+      }
+      if (/^\$[^$\n]+\$$/.test(codeText) && /\\[a-zA-Z]+/.test(codeText)) {
+        out.push(h('span', { key: 'm' + i, className: 'elr-math-inline' }, renderMath(codeText.slice(1, -1), false)));
+        continue;
+      }
+      out.push(h('code', { key: 'c' + i }, codeText));
       continue;
     }
     if (part.length > 4 && part.slice(0, 2) === '$$' && part.slice(-2) === '$$') {
@@ -2208,34 +2226,39 @@ function renderMarkdown(text, inline = renderInline) {
   };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    // Display math, possibly spanning several lines. Both `$…$` and the
+    // Display math, possibly spanning several lines. Both `$$…$$` and the
     // LaTeX pair `\[…\]` are supported: the model uses whichever it likes.
-    const opener = line.trim().indexOf('$') === 0 ? '$' : (line.trim().indexOf('\\[') === 0 ? '\\[' : '');
+    const trimmed = line.trim();
+    const opener = trimmed.startsWith('$$') ? '$$' : (trimmed.startsWith('\\[') ? '\\[' : '');
     if (opener) {
-      flush();
-      const closer = opener === '$' ? '$' : '\\]';
-      const after = line.trim().slice(opener.length);
-      if (after.indexOf(closer) >= 0) {
-        const tex = after.slice(0, after.lastIndexOf(closer));
-        nodes.push(h('div', { key: 'dm' + i, className: 'elr-math-block' }, renderMath(tex, true)));
+      const closer = opener === '$$' ? '$$' : '\\]';
+      const after = trimmed.slice(opener.length);
+      const closeAt = after.indexOf(closer);
+      if (closeAt >= 0) {
+        if (!after.slice(closeAt + closer.length).trim()) {
+          flush();
+          nodes.push(h('div', { key: 'dm' + i, className: 'elr-math-block' }, renderMath(after.slice(0, closeAt), true)));
+          continue;
+        }
+      } else {
+        flush();
+        const buf = after ? [after] : [];
+        let closed = false;
+        for (let j = i + 1; j < lines.length; j++) {
+          const row = lines[j];
+          const at = row.indexOf(closer);
+          if (at >= 0) {
+            if (row.slice(0, at).trim()) buf.push(row.slice(0, at));
+            i = j;
+            closed = true;
+            break;
+          }
+          buf.push(row);
+        }
+        nodes.push(h('div', { key: 'dm' + i, className: 'elr-math-block' }, renderMath(buf.join('\n'), true)));
+        if (!closed) i = lines.length;
         continue;
       }
-      const buf = after ? [after] : [];
-      let closed = false;
-      for (let j = i + 1; j < lines.length; j++) {
-        const row = lines[j];
-        const at = row.indexOf(closer);
-        if (at >= 0) {
-          if (row.slice(0, at).trim()) buf.push(row.slice(0, at));
-          i = j;
-          closed = true;
-          break;
-        }
-        buf.push(row);
-      }
-      nodes.push(h('div', { key: 'dm' + i, className: 'elr-math-block' }, renderMath(buf.join('\n'), true)));
-      if (!closed) i = lines.length;
-      continue;
     }
     // Pipe table: a header row followed by a separator row.
     if (line.indexOf('|') >= 0 && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
@@ -5469,30 +5492,12 @@ function Reader(props) {
     setSelectionTools(null);
   };
 
-  const jumpAgentSource = ({ page, text: excerpt }) => {
+  const jumpAgentSource = ({ page }) => {
     pdfReading.showSource();
     const state = pdfStateRef.current;
     if (!state?.viewer || !page || page > state.viewer.pagesCount) return;
-    const viewer = state.viewer;
-    viewer.currentPageNumber = page;
+    state.viewer.currentPageNumber = page;
     setPageNum(page);
-    const jump = () => {
-      if (pdfStateRef.current !== state) return;
-      const element = viewer.getPageView(page - 1)?.div;
-      if (!element) return;
-      const spans = element.querySelectorAll('.textLayer span:not(.markedContent)');
-      const needle = normText(excerpt || '').slice(0, 36);
-      let target = element;
-      if (spans.length && needle.length >= 10) {
-        const index = pageIndexOf(element, spans);
-        const match = index.pageText.indexOf(needle);
-        if (match >= 0) target = spans[index.starts.findIndex((start, i) => start + index.texts[i].length > match)] || element;
-      }
-      target.scrollIntoView({ block: 'center', inline: 'nearest' });
-      target.classList.add('elr-agent-page-target');
-      setTimeout(() => target.classList.remove('elr-agent-page-target'), 1000);
-    };
-    requestAnimationFrame(jump);
   };
 
   const prepareAnalysisText = async (showFeedback = true) => {
@@ -10091,10 +10096,7 @@ function Reader(props) {
         }, item.label);
       })
     ),
-    h('span', { className: 'elr-spacer' }),
-    selectedAnalysisTab === 'summary'
-      ? (summaryBusy ? h('span', { className: 'elr-sel-working' }, t('summary.running')) : null)
-      : (selectedAnalysisTab === 'references' && referencesBusy ? h('span', { className: 'elr-sel-working' }, t('references.running')) : null)
+    h('span', { className: 'elr-spacer' })
   );
 
   const canAnalyze = mode === 'pdf' ? pdfAnalysisReady : Boolean(text.trim());
@@ -10130,23 +10132,32 @@ function Reader(props) {
     }, summary ? renderGenerationMetadata(summaryMeta, modelSelection, t) : null,
     summaryCoverageText ? h('p', { className: 'elr-analysis-info-coverage' }, summaryCoverageText) : null)
   );
+  const summaryBusyText = (pdfTextBusy || summaryBusy) ? t(pdfTextBusy ? 'pdf.extracting' : 'summary.running') : '';
+  const summaryErrorText = summaryIssue || (summaryDetail?.error ? t('summary.synthesisError', { error: summaryDetail.error }) : '');
+  const hasSummaryCenter = Boolean(summaryBusyText || summaryErrorText || summaryDetail?.draft);
   const summaryPanel = h('div', { className: 'elr-col' },
-    (pdfTextBusy || summaryBusy) && h('div', { className: 'elr-refs-stage', role: 'status' },
-      t(pdfTextBusy ? 'pdf.extracting' : 'summary.running')),
-    summaryIssue ? h('div', { className: 'elr-refs-stage elr-summary-error', role: 'alert' }, summaryIssue) : null,
-    (summaryDetail?.error || summaryDetail?.draft) && h('div', { className: 'elr-refs-stage elr-summary-recovery' },
-      summaryDetail.error && h('span', { className: 'elr-summary-error', role: 'alert' }, t('summary.synthesisError', { error: summaryDetail.error })),
-      summaryDetail.draft && h('button', { className: 'elr-btn', type: 'button', disabled: summaryBusy || pdfTextBusy || !canAnalyze,
-        onClick: () => runWithAnalysisText(() => doSummary(true)),
-      }, t('summary.retrySynthesis'))
+    hasSummaryCenter && h('div', { className: 'elr-card-center-status' },
+      h('div', {
+        className: 'elr-card-center-box' + (summaryErrorText && !summaryBusyText ? ' is-error' : ''),
+        role: summaryErrorText && !summaryBusyText ? 'alert' : 'status',
+      },
+        summaryBusyText ? h('span', { className: 'elr-card-center-msg' }, summaryBusyText) : null,
+        summaryErrorText ? h('span', { className: 'elr-card-center-msg' }, summaryErrorText) : null,
+        summaryDetail?.draft && !summaryBusyText ? h('div', { className: 'elr-card-center-actions' },
+          h('button', {
+            className: 'elr-btn primary', type: 'button', disabled: summaryBusy || pdfTextBusy || !canAnalyze,
+            onClick: () => runWithAnalysisText(() => doSummary(true)),
+          }, t('summary.retrySynthesis'))
+        ) : null
+      )
     ),
     h('div', { className: 'elr-out elr-analysis-output' + (summary ? ' elr-markdown' : ' elr-out-empty') },
-      summary ? renderMarkdown(summary) : (analysisUnavailable || h(EmptyState, {
+      summary ? renderMarkdown(summary) : (!hasSummaryCenter ? (analysisUnavailable || h(EmptyState, {
         size: 'card',
         icon: 'document',
         title: '还没有论文总结',
         primaryAction: { label: '开始分析', disabled: summaryBusy || pdfTextBusy || !canAnalyze, onClick: () => runWithAnalysisText(doSummary) },
-      }))
+      })) : null)
     )
   );
 
@@ -10191,19 +10202,26 @@ function Reader(props) {
         }, FIGURE_SORT_ORDERS.map((order) => h('option', { key: order, value: order }, t('figure.sort.' + order))))
       ) : null
     ),
-    figureStatus ? h('div', { className: 'elr-figure-activity', role: currentAnalysis?.error && !currentAnalysis?.busy ? 'alert' : 'status' },
-      h('span', null, figureStatus),
-      currentAnalysis?.busy ? h('button', {
-        type: 'button', className: 'elr-btn', onClick: () => {
-          if (contentCategory === 'formula' && currentAnalysis !== currentFigure) {
-            cancelFormulaWork();
-            setFormulaCard(null);
-          } else {
-            cancelFigureWork();
-            setFigureActivity(null);
-          }
-        },
-      }, t('figure.cancel')) : null
+    figureStatus ? h('div', { className: 'elr-card-center-status' },
+      h('div', {
+        className: 'elr-card-center-box' + (currentAnalysis?.error && !currentAnalysis?.busy ? ' is-error' : ''),
+        role: currentAnalysis?.error && !currentAnalysis?.busy ? 'alert' : 'status',
+      },
+        h('span', { className: 'elr-card-center-msg' }, figureStatus),
+        currentAnalysis?.busy ? h('div', { className: 'elr-card-center-actions' },
+          h('button', {
+            type: 'button', className: 'elr-btn', onClick: () => {
+              if (contentCategory === 'formula' && currentAnalysis !== currentFigure) {
+                cancelFormulaWork();
+                setFormulaCard(null);
+              } else {
+                cancelFigureWork();
+                setFigureActivity(null);
+              }
+            },
+          }, t('figure.cancel'))
+        ) : null
+      )
     ) : null,
     h('div', { ref: figureListRef, className: 'elr-out elr-figure-out' + (figureEntries.length ? '' : ' elr-out-empty') },
       figureEntries.length ? figureEntries.map((entry) => {
@@ -10261,8 +10279,13 @@ function Reader(props) {
       className: 'elr-analysis-run', title: analysisUnavailable, disabled: referencesBusy || pdfTextBusy || !canAnalyze, onClick: doReferences,
     })
   );
+  const referencesBusyText = (referencesBusy || pdfTextBusy) ? t('references.running') : '';
   const referencesPanel = h('div', { className: 'elr-col' },
-    (referencesBusy || pdfTextBusy) && h('div', { className: 'elr-refs-stage', role: 'status' }, t('references.running')),
+    referencesBusyText ? h('div', { className: 'elr-card-center-status' },
+      h('div', { className: 'elr-card-center-box', role: 'status' },
+        h('span', { className: 'elr-card-center-msg' }, referencesBusyText)
+      )
+    ) : null,
     references.length ? h('div', { className: 'elr-out elr-refs-out' },
       h('div', { className: 'elr-refs-list' }, references.map((item, index) => {
         const { id, raw, title, en, zh, authors, venue, year, status, url, number } = item || {};
@@ -10283,14 +10306,16 @@ function Reader(props) {
           )
         );
       }))
-    ) : (!(referencesBusy || pdfTextBusy) ? h('div', { className: 'elr-out elr-refs-out elr-out-empty' },
-      h(EmptyState, {
-        size: 'card',
-        icon: 'quote',
-        title: '还没有参考文献',
-        primaryAction: { label: '整理参考文献', disabled: referencesBusy || pdfTextBusy || !canAnalyze, onClick: doReferences },
-      })
-    ) : null)
+    ) : (referencesBusyText
+      ? h('div', { className: 'elr-out elr-refs-out elr-out-empty' })
+      : h('div', { className: 'elr-out elr-refs-out elr-out-empty' },
+        h(EmptyState, {
+          size: 'card',
+          icon: 'quote',
+          title: '还没有参考文献',
+          primaryAction: { label: '整理参考文献', disabled: referencesBusy || pdfTextBusy || !canAnalyze, onClick: doReferences },
+        })
+      ))
   );
 
   const recentSection = h('div', { className: 'elr-recent' },

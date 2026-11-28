@@ -1,0 +1,132 @@
+name: Release CoReader 0.1.8
+
+on:
+  push:
+    tags: [v0.1.8]
+
+permissions:
+  contents: read
+
+env:
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+  ONNXRUNTIME_NODE_INSTALL: skip
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci --registry=https://registry.npmjs.org --replace-registry-host=always --no-audit --no-fund
+      - run: node --test --test-concurrency=1
+      - run: npm run prepare:translation:win
+      - run: npm run prepare:layout:win
+      - name: Build Windows installer and portable ZIP
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (Test-Path -LiteralPath $compiler) { $env:COREADER_ISCC = $compiler }
+          npm run installer:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = Get-Item -LiteralPath 'release/CoReader-win32-x64/CoReader.exe'
+          if ($exe.VersionInfo.ProductVersion -ne '0.1.8') { throw 'Unexpected Windows version' }
+          tar.exe -tf release/CoReader-0.1.8-win-x64.zip > $null
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-x64
+          path: |
+            release/CoReader-0.1.8-Setup-win-x64.exe
+            release/CoReader-0.1.8-win-x64.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci --registry=https://registry.npmjs.org --replace-registry-host=always --no-audit --no-fund
+      - run: npm run prepare:translation:mac -- ${{ matrix.arch }}
+      - run: npm run prepare:layout:mac
+      - run: npm run package:mac -- ${{ matrix.arch }}
+      - run: unzip -tq release/CoReader-0.1.8-mac-${{ matrix.arch }}.zip
+      - uses: actions/upload-artifact@v6
+        with:
+          name: mac-${{ matrix.arch }}
+          path: release/CoReader-0.1.8-mac-${{ matrix.arch }}.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Publish the verified downloads
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag=v0.1.8
+          cd packages
+          files=(
+            CoReader-0.1.8-Setup-win-x64.exe
+            CoReader-0.1.8-win-x64.zip
+            CoReader-0.1.8-mac-arm64.zip
+            CoReader-0.1.8-mac-x64.zip
+          )
+          for file in "${files[@]}"; do test -s "$file"; done
+          cat > "$RUNNER_TEMP/coreader-018-notes.md" <<'EOF'
+          ## CoReader 0.1.8
+
+          ### 论文分析速度与完整性优化
+          - **自动跳过参考文献与附录**：论文分析（含全文直出与长文分段模式）自动识别正文后的 `References / Bibliography` 边界，跳过参考文献及其后的附录内容，显著缩小输入体积、缩短分析耗时，常规论文可一次直出完成。
+          - **分段失败自动重试与拆半兜底**：长文分段提取新增失败自动重试与超时拆半重跑机制，放宽单段超时并优化并发度、收敛中间笔记长度，避免因后半段超时导致实验结果与结论章节缺失。
+          - **数学公式排版修复**：修正块级公式 `$$...$$` 误匹配导致整段红字报错的问题；支持加粗文本内嵌行内公式渲染及反引号误包公式容错；为超长独立公式增加横向滚动条，防止右侧被截断。
+
+          ### 阅读体验与界面细节修复
+          - **状态与失败提示居中展示**：将「论文分析」「参考文献」「图表 / 公式」卡片的进行中状态、失败原因与重试按钮从卡头下方移至内容区域正中，分析进行中不再同时显示空态引导。
+          - **阅读助手交互优化**：提问发送后立即清空输入框与已附带选段；回答中的引用页数点击后直接跳转到对应页码，不再显示干扰高亮框。
+          - **界面与壁纸细节修复**：修复滚动卡片内容时功能栏顶部出现异常深色区域的问题；Bing 壁纸列表改为按日期正序排列（最新壁纸在最后并自动定位到底部）。
+
+          ## 下载
+
+          - Windows x64：安装版 EXE（`CoReader-0.1.8-Setup-win-x64.exe`）或便携 ZIP（`CoReader-0.1.8-win-x64.zip`）。
+          - macOS 13.3 及以上：Apple Silicon 下载 `CoReader-0.1.8-mac-arm64.zip`，Intel 下载 `CoReader-0.1.8-mac-x64.zip`。两个 ZIP 均使用临时签名，未进行 Apple 公证。
+          EOF
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title 'CoReader 0.1.8' --notes-file "$RUNNER_TEMP/coreader-018-notes.md"
+          else
+            gh release create "$tag" --draft --verify-tag --title 'CoReader 0.1.8' --notes-file "$RUNNER_TEMP/coreader-018-notes.md"
+          fi
+          gh release upload "$tag" "${files[@]}" --clobber
+          gh release edit "$tag" --draft=false --latest

@@ -196,6 +196,8 @@ export function AgentPanel({ active, paper, page, ready, incoming, readPages, pr
     const job = { id: crypto.randomUUID(), controller };
     running.current = job;
     const attached = [...quotes];
+    setQuestion('');
+    setQuotes([]);
     setIssue('');
     follow.current = true;
     setPending({ id: job.id, phase: 'indexing', question: command, text: '' });
@@ -209,8 +211,6 @@ export function AgentPanel({ active, paper, page, ready, incoming, readPages, pr
       if (!response.ok) throw new Error(response.error || 'Agent 问答失败。');
       if (running.current !== job) return;
       setTurns((previous) => [...previous, response.turn]);
-      setQuotes((previous) => previous.filter((quote) => !attached.includes(quote)));
-      setQuestion((previous) => previous.trim() === command ? '' : previous);
     } catch (error) {
       if (running.current === job && !controller.signal.aborted) setIssue(error.message || 'Agent 问答失败。');
     } finally {

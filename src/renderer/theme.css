@@ -397,9 +397,7 @@ html[data-elr-aurora-mode="off"] :is(.elr-view, .pl-home):is(.elr-tone-prism-lig
 }
 
 :is(.elr-view, .pl-home):is(.elr-tone-prism-light, .elr-tone-prism-dark) .elr-card-head.elr-workspace-head::before {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 48%, transparent) 0%, color-mix(in srgb, var(--dsw-alias-bg-base) 16%, transparent) 58%, transparent 100%);
-  backdrop-filter: blur(10px) saturate(128%);
-  -webkit-backdrop-filter: blur(10px) saturate(128%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 68%, transparent) 0%, color-mix(in srgb, var(--dsw-alias-bg-base) 26%, transparent) 58%, transparent 100%);
 }
 
 @keyframes elr-prism-drift {
@@ -460,9 +458,7 @@ html[data-elr-bing-wallpaper="on"] :is(.elr-view, .pl-home) :is(.elr-head, .elr-
 }
 
 html[data-elr-bing-wallpaper="on"] :is(.elr-view, .pl-home) .elr-card-head.elr-workspace-head::before {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 42%, transparent) 0%, color-mix(in srgb, var(--dsw-alias-bg-base) 16%, transparent) 58%, transparent 100%);
-  backdrop-filter: blur(10px) saturate(130%);
-  -webkit-backdrop-filter: blur(10px) saturate(130%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 62%, transparent) 0%, color-mix(in srgb, var(--dsw-alias-bg-base) 24%, transparent) 58%, transparent 100%);
 }
 
 html[data-elr-bing-wallpaper="on"][data-elr-bing-dynamic="on"] :is(.elr-view, .pl-home, .settings.model-center) {

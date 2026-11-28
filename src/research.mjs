@@ -1,7 +1,8 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { planReferenceScan, referenceScanWindow, REFERENCE_CONTEXT_LINES, REFERENCE_HEADING_RE } from './paper-planning.js';
-import { analysisBudget, paperSource, fullPaper, completeExcerpts, estimateTokens, paperCoverage, draftNotes, readDraft, readAnalysisMarkdown, FULL_ANALYSIS_SYSTEM, EXCERPT_SYSTEM, SYNTHESIS_SYSTEM } from './paper-analysis.js';
-const CONCURRENCY = 3;
+import { analysisBudget, bodyOnlyPaper, paperSource, paperExcerpt, fullPaper, completeExcerpts, estimateTokens, paperCoverage, draftNotes, readDraft, readAnalysisMarkdown, FULL_ANALYSIS_SYSTEM, EXCERPT_SYSTEM, SYNTHESIS_SYSTEM } from './paper-analysis.js';
+import { splitBefore } from './paper-planning.js';
+const CONCURRENCY = 2;
 const TITLE_MATCH_MIN = 0.9;
 const TITLE_CONFIRM_MIN = 0.72;
 const safeMessage = (error) => error?.message || String(error);
@@ -295,7 +296,8 @@ export async function analyzePaper(modelCall, info, body, signal, onProgress) {
     draft = readDraft(paper, body.summaryDraft);
     if (!draft) throw new Error("The saved notes do not match this paper. Re-analyze the paper to create new notes.");
   } else {
-    const full = fullPaper(paper);
+    const target = bodyOnlyPaper(paper);
+    const full = fullPaper(target);
     let directError;
     if (fits(FULL_ANALYSIS_SYSTEM, full.text)) {
       try {
@@ -308,15 +310,52 @@ export async function analyzePaper(modelCall, info, body, signal, onProgress) {
       }
     }
     const limit = Math.min(11500, budget.inputTokens - estimateTokens(EXCERPT_SYSTEM));
-    const chunks = completeExcerpts(paper, limit);
-    const mapSignal = AbortSignal.any([signal, AbortSignal.timeout(360000)]);
+    const allChunks = completeExcerpts(target, limit);
+    const bodyChunks = allChunks.filter((chunk) => !chunk.isReferences);
+    const initialChunks = bodyChunks.length ? bodyChunks : allChunks;
+    const mapSignal = AbortSignal.any([signal, AbortSignal.timeout(480000)]);
+    const excerptTokens = Math.min(budget.maxTokens, 3072);
+    const runExcerpt = async (chunk) => {
+      try {
+        return await call(EXCERPT_SYSTEM, chunk.text, 150000, mapSignal, excerptTokens);
+      } catch (firstError) {
+        signal.throwIfAborted();
+        if (mapSignal.aborted) throw firstError;
+        return await call(EXCERPT_SYSTEM, chunk.text, 150000, mapSignal, excerptTokens);
+      }
+    };
     let finished = 0;
-    onProgress('长文分段提取 0/' + chunks.length);
-    const answers = await mapConcurrent(chunks, CONCURRENCY, async (chunk) => {
-      try { return await call(EXCERPT_SYSTEM, chunk.text, 90000, mapSignal, Math.min(budget.maxTokens, 8192)); }
-      finally { onProgress('长文分段提取 ' + (++finished) + '/' + chunks.length); }
+    onProgress('长文分段提取 0/' + initialChunks.length);
+    const firstPass = await mapConcurrent(initialChunks, CONCURRENCY, async (chunk) => {
+      try { return await runExcerpt(chunk); }
+      finally { onProgress('长文分段提取 ' + (++finished) + '/' + initialChunks.length); }
     });
     signal.throwIfAborted();
+    const chunks = [];
+    const answers = [];
+    for (let i = 0; i < initialChunks.length; i++) {
+      const chunk = initialChunks[i];
+      const outcome = firstPass[i];
+      if (outcome.ok || mapSignal.aborted || chunk.end - chunk.start < 1600) {
+        chunks.push(chunk);
+        answers.push(outcome);
+        continue;
+      }
+      const mid = splitBefore(target.text, Math.floor((chunk.start + chunk.end) / 2), chunk.start + 400);
+      if (mid <= chunk.start || mid >= chunk.end) {
+        chunks.push(chunk);
+        answers.push(outcome);
+        continue;
+      }
+      const halves = [paperExcerpt(target, chunk.start, mid), paperExcerpt(target, mid, chunk.end)];
+      onProgress('正在拆分重试未完成片段');
+      const retried = await mapConcurrent(halves, 2, (half) => runExcerpt(half));
+      signal.throwIfAborted();
+      for (let h = 0; h < halves.length; h++) {
+        chunks.push(halves[h]);
+        answers.push(retried[h]);
+      }
+    }
     draft = draftNotes(paper, chunks, answers);
     if (!draft.notes.length) throw new Error([directError, "Paper excerpts failed: " + answers[0]?.error].filter(Boolean).join(". "));
   }

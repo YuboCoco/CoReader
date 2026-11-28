@@ -110,8 +110,3 @@
 .elr-agent-cite:hover, .elr-agent-remove:hover { background: var(--dsw-alias-bg-layer-2); }
 .elr-agent-remove { flex: 0 0 20px; padding: 0; background: transparent; color: var(--dsw-alias-label-secondary); border: none; border-radius: 4px; cursor: pointer; }
 .elr-agent-error { display: flex; align-items: center; gap: 6px; font-size: calc(12px + var(--elr-card-font-adjust, 0px)); color: var(--dsw-alias-state-error-primary); }
-.elr-agent-page-target { animation: elrAgentPageTarget calc(750ms + var(--duration-exit-sm)) var(--ease-in); }
-@keyframes elrAgentPageTarget {
-  from, 83.333% { outline: 3px solid var(--dsw-alias-brand-primary); outline-offset: -3px; }
-  to { outline: 3px solid transparent; outline-offset: -3px; }
-}

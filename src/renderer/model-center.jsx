@@ -424,6 +424,7 @@ function BingWallpaperSettings({ value, onChange, highlighted = false }) {
   const [galleryMode, setGalleryMode] = useState('recent');
   const [savingFav, setSavingFav] = useState(false);
   const [favStatus, setFavStatus] = useState('');
+  const galleryRef = useRef(null);
   useEffect(() => {
     const unsub = subscribeBingWallpaper(setWallpaper);
     loadBingSaveDir().catch(() => {});
@@ -439,7 +440,12 @@ function BingWallpaperSettings({ value, onChange, highlighted = false }) {
   const active = wallpaper.activeItem;
   const favorited = isBingFavorited(active, wallpaper.favorites);
   const showingFavorites = galleryMode === 'favorites' && wallpaper.favorites.length > 0;
-  const galleryItems = showingFavorites ? wallpaper.favorites : wallpaper.items;
+  const galleryItems = [...(showingFavorites ? wallpaper.favorites : wallpaper.items)].reverse();
+
+  useEffect(() => {
+    const el = galleryRef.current;
+    if (el && enabled) el.scrollTop = el.scrollHeight;
+  }, [enabled, galleryMode, galleryItems.length]);
 
   const formatShortDate = (raw) => (/^\d{8}$/.test(raw) ? raw.slice(4, 6) + '-' + raw.slice(6, 8) : raw);
 
@@ -557,7 +563,7 @@ function BingWallpaperSettings({ value, onChange, highlighted = false }) {
           </div>
         )}
         {galleryItems.length > 0 && (
-          <div className="bing-wallpaper-grid" role="group" aria-label={showingFavorites ? '已收藏壁纸' : '近期 Bing 壁纸'}>
+          <div ref={galleryRef} className="bing-wallpaper-grid" role="group" aria-label={showingFavorites ? '已收藏壁纸' : '近期 Bing 壁纸'}>
             {galleryItems.map((item) => {
               const itemMarket = item.market || market;
               const isSelected = active?.date === item.date && (active?.market || market) === itemMarket;

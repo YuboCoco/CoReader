@@ -33,6 +33,31 @@ test('complete paper coverage and saved notes survive a synthesis failure', asyn
   assert.equal(recovered.mode, 'map-reduce');
 });
 
+test('analyzePaper retries and splits failed chunks while skipping references and appendix', async () => {
+  const body = 'Method section details.\n'.repeat(300) + 'Results and conclusions.\n'.repeat(300);
+  const refs = 'References\n' + '[1] Author. Title. 2020.\n'.repeat(120) + '\nAppendix A\nExtra appendix details.\n';
+  const text = body + '\n' + refs;
+  const seen = [];
+  let failLargeSecond = true;
+  const result = await analyzePaper(async (system, user) => {
+    if (system.startsWith('Synthesize')) return '## 1. 论文概览\n完成。';
+    seen.push(user);
+    assert.doesNotMatch(user, /\[1\] Author\. Title\. 2020/);
+    assert.doesNotMatch(user, /Extra appendix details/);
+    if (failLargeSecond && user.includes('Results and conclusions') && user.length > 3500) {
+      failLargeSecond = false;
+      throw new Error('simulated timeout');
+    }
+    if (user.includes('Results and conclusions') && user.length > 3500) {
+      throw new Error('still too large');
+    }
+    return 'Extracted technical note.';
+  }, { context: { contextWindow: 4500 } }, { text, pageTextLengths: [text.length] }, signal, () => {});
+  assert.equal(result.mode, 'map-reduce');
+  assert.equal(result.failedChunks, 0);
+  assert.ok(seen.some((item) => item.includes('Results and conclusions')));
+});
+
 test('bibliography verifies a printed DOI and excludes appendix items', async () => {
   const text = 'References\n[1] Jane Smith. Example Study. 2020. doi:10.1234/fixture\nAppendix A\n[1] Measurement unit';
   let streamed = 0;
