@@ -1,0 +1,126 @@
+name: Release CoReader 0.1.9
+
+on:
+  push:
+    tags: [v0.1.9]
+
+permissions:
+  contents: read
+
+env:
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+  ONNXRUNTIME_NODE_INSTALL: skip
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci --registry=https://registry.npmjs.org --replace-registry-host=always --no-audit --no-fund
+      - run: node --test --test-concurrency=1
+      - run: npm run prepare:translation:win
+      - run: npm run prepare:layout:win
+      - name: Build Windows installer and portable ZIP
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (Test-Path -LiteralPath $compiler) { $env:COREADER_ISCC = $compiler }
+          npm run installer:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = Get-Item -LiteralPath 'release/CoReader-win32-x64/CoReader.exe'
+          if ($exe.VersionInfo.ProductVersion -ne '0.1.9') { throw 'Unexpected Windows version' }
+          tar.exe -tf release/CoReader-0.1.9-win-x64.zip > $null
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-x64
+          path: |
+            release/CoReader-0.1.9-Setup-win-x64.exe
+            release/CoReader-0.1.9-win-x64.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci --registry=https://registry.npmjs.org --replace-registry-host=always --no-audit --no-fund
+      - run: npm run prepare:translation:mac -- ${{ matrix.arch }}
+      - run: npm run prepare:layout:mac
+      - run: npm run package:mac -- ${{ matrix.arch }}
+      - run: unzip -tq release/CoReader-0.1.9-mac-${{ matrix.arch }}.zip
+      - uses: actions/upload-artifact@v6
+        with:
+          name: mac-${{ matrix.arch }}
+          path: release/CoReader-0.1.9-mac-${{ matrix.arch }}.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Publish the verified downloads
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag=v0.1.9
+          cd packages
+          files=(
+            CoReader-0.1.9-Setup-win-x64.exe
+            CoReader-0.1.9-win-x64.zip
+            CoReader-0.1.9-mac-arm64.zip
+            CoReader-0.1.9-mac-x64.zip
+          )
+          for file in "${files[@]}"; do test -s "$file"; done
+          cat > "$RUNNER_TEMP/coreader-019-notes.md" <<'EOF'
+          ## CoReader 0.1.9
+
+          ### 阅读导航与交互体验优化
+          - **PDF 目录跳转居中与高亮提示**：点击左侧目录条目后，PDF 自动切换到对应页并将该标题行精准滚动到视口垂直正中央，同时在对应标题位置显示短暂主题色高亮提示。
+          - **卡片头长按动画与手感优化**：缩短长按触发阈值并加入按压微缩蓄力阻尼，去除长按浮起瞬间的重 DOM 克隆，改用轻量壳体平滑收束，拖动重排更丝滑。
+          - **Popover 菜单退场动画修复**：修复缩放列表、PDF 工具栏下拉菜单、阅读助手模型菜单及分析信息弹窗在关闭退场动画期间布局属性丢失导致元素横排或挤压的问题。
+
+          ### 视觉与排版细节调整
+          - **选词翻译浮窗通透度平衡**：适度降低默认磨砂态与液态玻璃态下选词翻译浮窗及其内部原文/译文块的透明度，兼顾通透质感与文字可读性。
+          - **卡片头字号独立固定**：增大伴读卡片头部标题字号至 `15px`，工具栏调节卡片内容字号时不再影响卡片头大小。
+          EOF
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title 'CoReader 0.1.9' --notes-file "$RUNNER_TEMP/coreader-019-notes.md"
+          else
+            gh release create "$tag" --draft --verify-tag --title 'CoReader 0.1.9' --notes-file "$RUNNER_TEMP/coreader-019-notes.md"
+          fi
+          gh release upload "$tag" "${files[@]}" --clobber
+          gh release edit "$tag" --draft=false --latest

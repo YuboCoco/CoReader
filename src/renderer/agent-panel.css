@@ -43,8 +43,9 @@
   overflow: auto; padding: 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--radius-lg);
   background: var(--elr-frosted-background); color: var(--dsw-alias-label-primary);
   backdrop-filter: var(--elr-frosted-filter); box-shadow: var(--elr-frosted-rim), 0 8px 24px rgb(8 16 27 / .21); font-size: calc(12px + var(--elr-card-font-adjust, 0px));
+  gap: 12px;
 }
-.elr-agent-model-menu:popover-open { display: grid; gap: 12px; }
+.elr-agent-model-menu:popover-open { display: grid; }
 .elr-agent-model-choice { position: relative; border-radius: var(--radius-sm); background: var(--dsw-alias-bg-layer-2); }
 .elr-agent-model-choice:focus-within { outline: 2px solid var(--dsw-alias-brand-primary); }
 .elr-agent-model-choice > span {

@@ -976,10 +976,11 @@ const CSS = [
   '.elr-card-dock-target > .elr-side-body { background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, transparent); }',
   // (v31 #2) The floating clone that follows the pointer while reordering.
   // It is portalled to <body>, positioned fixed, and never receives events.
-  '.elr-drag-ghost { position: fixed; inset: 0 auto auto 0; z-index: 200; pointer-events: none; box-sizing: border-box; display: grid; place-items: center; padding: 6px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--radius-lg, 15px); color: var(--dsw-alias-label-primary); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 82%, transparent); backdrop-filter: blur(16px) saturate(1.4); -webkit-backdrop-filter: blur(16px) saturate(1.4); box-shadow: 0 10px 26px rgb(10 18 30 / .20), var(--elr-frosted-rim); overflow: hidden; will-change: translate, transform; contain: layout style paint; transition: width 160ms var(--ease-out), height 160ms var(--ease-out); }',
-  '.elr-drag-ghost.is-lifting { animation: elr-drag-lift-pop 240ms cubic-bezier(.22, 1.25, .36, 1) both; }',
-  '@keyframes elr-drag-lift-pop { 0% { opacity: 0; scale: .92; } 45% { opacity: 1; scale: .95; } 100% { opacity: 1; scale: 1; } }',
-  '.elr-drag-ghost-label { max-width: 100%; max-height: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(13px + var(--elr-card-font-adjust, 0px)); font-weight: 650; }',
+  '.elr-drag-ghost { position: fixed; inset: 0 auto auto 0; z-index: 200; pointer-events: none; box-sizing: border-box; display: grid; place-items: center; padding: 6px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--radius-lg, 15px); color: var(--dsw-alias-label-primary); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 82%, transparent); backdrop-filter: blur(16px) saturate(1.4); -webkit-backdrop-filter: blur(16px) saturate(1.4); box-shadow: 0 10px 26px rgb(10 18 30 / .20), var(--elr-frosted-rim); overflow: hidden; will-change: translate, transform, opacity; contain: layout style paint; transition: width 160ms var(--ease-out), height 160ms var(--ease-out); }',
+  '.elr-drag-ghost.is-lifting { animation: elr-drag-lift-pop 220ms cubic-bezier(.22, 1, .36, 1) both; }',
+  '@keyframes elr-drag-lift-pop { 0% { opacity: 0; scale: .96; } 100% { opacity: 1; scale: 1; } }',
+  '.elr-sec.elr-card-press-arming { transform: scale(.985); transition: transform 180ms cubic-bezier(.22, 1, .36, 1); }',
+  '.elr-drag-ghost-label { max-width: 100%; max-height: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 650; }',
   '.elr-drag-ghost.is-vertical .elr-drag-ghost-label { writing-mode: vertical-rl; }',
   'body.elr-card-dragging, body.elr-card-dragging * { cursor: grabbing !important; }',
   'body.elr-card-dragging .elr-main, body.elr-card-dragging .elr-side, body.elr-card-dragging .elr-card-menu, body.elr-card-dragging .elr-sec[data-elr-floating-card] { pointer-events: none !important; }',
@@ -1064,7 +1065,7 @@ const CSS = [
   // and a slightly different shade from its frame.
   '.elr-sel-card { background: transparent; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }',
   // Let the card frame provide a single surface behind the title and content.
-  '.elr-function-head { flex: 0 0 52px; height: 52px; min-height: 52px; box-sizing: border-box; display: flex; align-items: stretch; padding: 6px; color: var(--dsw-alias-label-primary); font-size: calc(13px + var(--elr-card-font-adjust, 0px)); font-weight: 650; }',
+  '.elr-function-head { flex: 0 0 52px; height: 52px; min-height: 52px; box-sizing: border-box; display: flex; align-items: stretch; padding: 6px; color: var(--dsw-alias-label-primary); font-size: 15px; font-weight: 650; }',
   '.elr-card-toggle { --elr-toggle-hover-bg: rgb(15 23 42 / .045); --elr-toggle-hover-border: rgb(15 23 42 / .08); --elr-toggle-hover-shadow: inset 0 1px 0 rgb(255 255 255 / .85), inset 0 -1px 0 rgb(0 0 0 / .05), 0 1px 2px rgb(15 23 42 / .06); --elr-toggle-press-bg: rgb(15 23 42 / .075); --elr-toggle-press-border: rgb(15 23 42 / .12); --elr-toggle-press-shadow: inset 0 1px 2px rgb(15 23 42 / .15), inset 0 0 0 transparent, 0 1px 0 rgb(255 255 255 / .9); flex: 1 1 auto; min-width: 0; min-height: 0; display: grid; place-items: center; padding: 5px 10px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: inherit; font: inherit; text-align: center; cursor: pointer; user-select: none; touch-action: none; box-shadow: inset 0 0 0 transparent, inset 0 0 0 transparent, 0 0 0 transparent; transition: transform 120ms ease, box-shadow 140ms ease, background-color 160ms ease, border-color 160ms ease, color 160ms ease; }',
   ':is(:root[data-desktop-scheme="dark"], .elr-tone-navy, .elr-tone-ink, .elr-tone-forest, .elr-tone-plum, .elr-tone-ember, .elr-tone-prism-dark) .elr-card-toggle { --elr-toggle-hover-bg: rgb(255 255 255 / .06); --elr-toggle-hover-border: rgb(255 255 255 / .09); --elr-toggle-hover-shadow: inset 0 1px 0 rgb(255 255 255 / .1), inset 0 -1px 0 rgb(0 0 0 / .22), 0 1px 2px rgb(0 0 0 / .22); --elr-toggle-press-bg: rgb(0 0 0 / .24); --elr-toggle-press-border: rgb(255 255 255 / .07); --elr-toggle-press-shadow: inset 0 1px 2px rgb(0 0 0 / .42), inset 0 0 0 transparent, 0 1px 0 rgb(255 255 255 / .08); }',
   '.elr-card-toggle:hover:not(:active, .is-pressed) { background: var(--elr-toggle-hover-bg); border-color: var(--elr-toggle-hover-border); box-shadow: var(--elr-toggle-hover-shadow); }',
@@ -1588,8 +1589,8 @@ const CSS = [
   // -1px so it lines up with the container's own 1px border) instead of a
   // `min-width` — the preset list is now exactly as wide as the zoom field.
   // Each item centres its number so the column of percentages is symmetric.
-  '.elr-zoom-menu { position: fixed; inset: auto; margin: 4px 0; position-area: block-end span-inline-end; justify-self: start; position-try-fallbacks: flip-block, flip-inline; box-sizing: border-box; min-width: 112px; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-overlay); box-shadow: 0 8px 22px rgba(0, 0, 0, .22); }',
-  '.elr-zoom-menu:popover-open { display: flex; flex-direction: column; }',
+  '.elr-zoom-menu { position: fixed; inset: auto; margin: 4px 0; position-area: block-end span-inline-end; justify-self: start; position-try-fallbacks: flip-block, flip-inline; box-sizing: border-box; flex-direction: column; min-width: 112px; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-overlay); box-shadow: 0 8px 22px rgba(0, 0, 0, .22); }',
+  '.elr-zoom-menu:popover-open { display: flex; }',
   '.elr-zoom-item { border: none; background: transparent; color: var(--dsw-alias-label-primary); text-align: center; padding: 4px 0; border-radius: 5px; cursor: pointer; font: inherit; font-size: 12px; }',
   '.elr-zoom-item:hover { background: var(--dsw-alias-bg-layer-2); }',
   '.elr-zoom-item.active { color: var(--dsw-alias-brand-primary); font-weight: 600; }',
@@ -1707,9 +1708,9 @@ const CSS = [
   '.settings:is(.model-center,.connection-detail)[open] { --elr-frosted-fill: var(--elr-glass-dialog-fill); --elr-frosted-blur: var(--elr-glass-floating-blur); border-color: transparent; border-radius: 16px; background: var(--elr-frosted-background); backdrop-filter: var(--elr-frosted-filter); box-shadow: var(--elr-frosted-rim), 0 16px 44px rgb(12 20 34 / .23); }',
   '.settings.connection-detail[open] { --elr-frosted-fill: var(--elr-glass-floating-fill); }',
   '.elr-settings-panel, .elr-card-menu, .elr-note-bubble { --elr-frosted-fill: var(--elr-glass-floating-fill); --elr-frosted-blur: var(--elr-glass-floating-blur); background: var(--elr-frosted-background); border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 58%, transparent); border-radius: 16px; backdrop-filter: var(--elr-frosted-filter); box-shadow: var(--elr-frosted-rim), 0 12px 34px rgb(12 20 34 / .20); }',
-  '.elr-popup .elr-popup-block-original { background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 22%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-border-l1) 70%, transparent); transition: background-color .18s var(--ease-out), border-color .18s var(--ease-out); }',
-  '.elr-popup .elr-popup-block-original:focus-within { background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 30%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 52%, var(--dsw-alias-border-l2)); }',
-  '.elr-popup .elr-popup-block-result { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-border-l1) 70%, transparent); }',
+  '.elr-popup .elr-popup-block-original { background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 52%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-border-l1) 72%, transparent); transition: background-color .18s var(--ease-out), border-color .18s var(--ease-out); }',
+  '.elr-popup .elr-popup-block-original:focus-within { background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 64%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 52%, var(--dsw-alias-border-l2)); }',
+  '.elr-popup .elr-popup-block-result { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 56%, transparent)); border-color: color-mix(in srgb, var(--dsw-alias-border-l1) 72%, transparent); }',
   '.elr-popup.is-frosted-blocks .elr-popup-block-original { background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent); backdrop-filter: blur(18px) saturate(1.35); -webkit-backdrop-filter: blur(18px) saturate(1.35); border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 55%, transparent); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent); }',
   '.elr-popup.is-frosted-blocks .elr-popup-block-original:focus-within { background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 92%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 58%, var(--dsw-alias-border-l2)); }',
   '.elr-popup.is-frosted-blocks .elr-popup-block-result { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent)); backdrop-filter: blur(18px) saturate(1.35); -webkit-backdrop-filter: blur(18px) saturate(1.35); border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 55%, transparent); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent); }',
@@ -1885,7 +1886,7 @@ const CSS = [
   '.elr-analysis-actions .elr-analysis-icon { color: var(--dsw-alias-label-primary); }',
   '.elr-analysis-icon:disabled { opacity: .45; cursor: default; }',
   '.elr-analysis-actions .elr-analysis-run { color: var(--dsw-alias-brand-primary); }',
-  '.elr-analysis-info:popover-open .elr-generation-meta { display: grid; gap: 5px; margin: 0; padding: 2px 4px; border: 0; background: transparent; overflow-wrap: anywhere; }',
+  '.elr-analysis-info .elr-generation-meta { display: grid; gap: 5px; margin: 0; padding: 2px 4px; border: 0; background: transparent; overflow-wrap: anywhere; }',
   '.elr-analysis-info-coverage { margin: 8px 4px 2px; padding-top: 8px; border-top: 1px solid var(--dsw-alias-border-l2); font-size: .87em; line-height: 1.5; overflow-wrap: anywhere; }',
   '.elr-analysis-card-body > .elr-col > .elr-out, .elr-analysis-card-body > .elr-out, .elr-agent-slot > .elr-out { width: auto; min-width: 0; margin: var(--elr-card-content-gap) var(--elr-card-inset) var(--elr-card-inset) var(--elr-card-leading); padding: var(--elr-card-content-gap); }',
   ':is(.elr-analysis-card-body > .elr-col > .elr-out, .elr-analysis-card-body > .elr-out, .elr-agent-slot > .elr-out, .elr-recent-list, .elr-recent-empty, .elr-terms-list, .elr-marks-list, .elr-marks-empty) { border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--elr-card-content-radius); background: var(--elr-card-content-bg); }',
@@ -8138,7 +8139,7 @@ function Reader(props) {
       };
     };
 
-    const LONG_PRESS_MS = 260;
+    const LONG_PRESS_MS = 220;
     let dragArmed = false;
     let holdCancelled = false;
     let lastPointerX = startX;
@@ -8162,6 +8163,7 @@ function Reader(props) {
     const startDrag = (x, y) => {
       if (started) return;
       started = true;
+      card.classList.remove('elr-card-press-arming');
       document.body.classList.add('elr-card-dragging');
       gestureStart();
       setTermBubble(null);
@@ -8169,11 +8171,9 @@ function Reader(props) {
       lastBox = location.box;
       lastScale = location.scale;
       if (!reduceMotion() && (initial.height > CARD_HEADER_HEIGHT + 8 || initial.width > CARD_HEADER_HEIGHT + 8)) {
-        const clone = card.cloneNode(true);
-        clone.classList.remove('dragging', 'is-resizing-edge');
-        clone.setAttribute('aria-hidden', 'true');
-        clone.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
-        Object.assign(clone.style, {
+        const shell = document.createElement('div');
+        const cardStyle = getComputedStyle(card);
+        Object.assign(shell.style, {
           position: 'fixed',
           left: initial.left + 'px',
           top: initial.top + 'px',
@@ -8182,30 +8182,33 @@ function Reader(props) {
           margin: '0',
           zIndex: '199',
           pointerEvents: 'none',
-          overflow: 'hidden',
-          contain: 'layout style paint',
-          backdropFilter: 'none',
+          boxSizing: 'border-box',
+          borderRadius: cardStyle.borderRadius || '14px',
+          border: '1px solid ' + (cardStyle.borderColor || 'var(--dsw-alias-border-l2)'),
+          background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 72%, transparent)',
+          boxShadow: '0 10px 26px rgb(10 18 30 / .16)',
+          contain: 'strict',
           transformOrigin: 'top left',
           willChange: 'transform, opacity',
         });
-        floatingHost.appendChild(clone);
-        shrinkClone = clone;
+        floatingHost.appendChild(shell);
+        shrinkClone = shell;
         const destX = location.box.x + (location.box.w * (1 - location.scale)) / 2;
         const destY = location.box.y + (location.box.h * (1 - location.scale)) / 2;
         const dx = destX - initial.left;
         const dy = destY - initial.top;
         const sx = (location.box.w * location.scale) / Math.max(1, initial.width);
         const sy = (location.box.h * location.scale) / Math.max(1, initial.height);
-        shrinkAnim = clone.animate([
+        shrinkAnim = shell.animate([
           {
-            opacity: 1,
+            opacity: .92,
             transform: 'translate3d(0,0,0) scale(1, 1)',
           },
           {
             opacity: 0,
             transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(' + sx + ',' + sy + ')',
           },
-        ], { duration: 200, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'forwards' });
+        ], { duration: 220, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'forwards' });
         shrinkAnim.onfinish = stopShrink;
       }
       dragCache = null;
@@ -8221,11 +8224,13 @@ function Reader(props) {
       });
     };
     handle.classList.add('is-pressed');
+    if (!reduceMotion()) card.classList.add('elr-card-press-arming');
     holdTimer = setTimeout(() => {
       holdTimer = 0;
       if (holdCancelled) return;
       dragArmed = true;
       handle.classList.remove('is-pressed');
+      card.classList.remove('elr-card-press-arming');
       startDrag(lastPointerX, lastPointerY);
     }, LONG_PRESS_MS);
     const painter = frameWriter(({ x, y }) => {
@@ -8260,6 +8265,7 @@ function Reader(props) {
       clearTimeout(holdTimer);
       holdTimer = 0;
       handle.classList.remove('is-pressed');
+      card.classList.remove('elr-card-press-arming');
       painter.cancel();
       stopShrink();
       document.body.classList.remove('elr-card-dragging');
@@ -8292,6 +8298,7 @@ function Reader(props) {
           holdTimer = 0;
           holdCancelled = true;
           handle.classList.remove('is-pressed');
+          card.classList.remove('elr-card-press-arming');
         }
         return;
       }

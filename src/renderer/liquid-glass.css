@@ -55,17 +55,22 @@ html:root [data-elr-liquid][data-elr-liquid-ink][data-elr-liquid-strong-labels] 
   --elr-card-content-bg: #303844;
 }
 
+html:root .elr-popup[data-elr-liquid][data-elr-liquid-ink] {
+  --elr-liquid-thin: .50;
+  --elr-liquid-dense: .68;
+}
+
 [data-elr-liquid-ink="light"] .elr-popup-result-box,
 [data-elr-liquid-ink="light"] .elr-popup-textarea {
   background-color: transparent;
 }
 [data-elr-liquid-ink="light"] .elr-popup-block-original {
-  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 28%, transparent);
-  border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 38%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 52%, transparent);
+  border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 44%, transparent);
 }
 [data-elr-liquid-ink="light"] .elr-popup-block-result {
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 24%, transparent));
-  border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 38%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, color-mix(in srgb, var(--dsw-alias-bg-layer-1) 52%, transparent));
+  border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 44%, transparent);
 }
 [data-elr-liquid-ink="light"].elr-popup.is-frosted-blocks .elr-popup-block-original {
   background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);

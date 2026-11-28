@@ -174,17 +174,153 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
     setTranslatedRead(null);
   }
 
-  function goOriginal(location) {
+  function highlightOutlineTarget(location) {
+    const frame = container.current;
+    const state = pdfState.current;
+    const viewer = state?.viewer;
+    if (!frame || !viewer || !location?.page) return;
+    const paint = () => {
+      if (container.current !== frame || pdfState.current !== state) return;
+      frame.querySelectorAll('.elr-outline-target').forEach((node) => node.remove());
+      const view = viewer.getPageView(location.page - 1);
+      const pageNode = view?.div;
+      if (!pageNode) return;
+      const box = pageNode.getBoundingClientRect();
+      if (!box.width || !box.height) return;
+      const spans = [...pageNode.querySelectorAll('.textLayer span:not(.markedContent)')];
+      const norm = (value) => String(value || '').replace(/\s+/g, '').toLowerCase();
+      const titleNeedle = norm(location.title);
+      let rects = [];
+      if (spans.length && titleNeedle.length >= 2) {
+        let joined = '';
+        const ranges = [];
+        for (const span of spans) {
+          const text = norm(span.textContent);
+          if (!text) continue;
+          const start = joined.length;
+          joined += text;
+          ranges.push({ span, start, end: joined.length });
+        }
+        const at = joined.indexOf(titleNeedle);
+        if (at >= 0) {
+          const hitEnd = at + titleNeedle.length;
+          const hitSpans = ranges.filter((r) => r.end > at && r.start < hitEnd).map((r) => r.span);
+          rects = hitSpans.map((span) => span.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
+        }
+      }
+      if (!rects.length && Number.isFinite(location.y) && view?.viewport) {
+        const x = Number.isFinite(location.x) ? location.x : view.viewport.viewBox[0];
+        const [, py] = view.viewport.convertToViewportPoint(x, location.y);
+        if (spans.length) {
+          const targetY = box.top + py;
+          let bestRow = [];
+          let bestDist = Infinity;
+          for (const span of spans) {
+            if (!span.textContent?.trim()) continue;
+            const r = span.getBoundingClientRect();
+            if (!r.width || !r.height) continue;
+            const dist = Math.abs((r.top + r.bottom) / 2 - targetY);
+            if (dist <= Math.max(12, r.height * 0.9)) {
+              if (dist < bestDist - 4) {
+                bestDist = dist;
+                bestRow = [r];
+              } else if (Math.abs(dist - bestDist) <= 6) {
+                bestRow.push(r);
+              }
+            }
+          }
+          if (bestRow.length) rects = bestRow;
+        }
+        if (!rects.length) {
+          const bandHeight = Math.max(18, box.height * 0.024);
+          rects = [new DOMRect(box.left + box.width * 0.06, box.top + Math.max(0, py - bandHeight * 0.5), box.width * 0.88, bandHeight)];
+        }
+      }
+      if (!rects.length) return;
+      const topMin = Math.min(...rects.map((r) => r.top));
+      const bottomMax = Math.max(...rects.map((r) => r.bottom));
+      const leftMin = Math.min(...rects.map((r) => r.left));
+      const rightMax = Math.max(...rects.map((r) => r.right));
+      const padX = 6;
+      const padY = 3;
+      const layer = document.createElement('div');
+      layer.className = 'elr-outline-target';
+      layer.setAttribute('aria-hidden', 'true');
+      const highlight = document.createElement('span');
+      Object.assign(highlight.style, {
+        left: Math.max(0, (leftMin - padX - box.left - pageNode.clientLeft) / pageNode.clientWidth * 100) + '%',
+        top: Math.max(0, (topMin - padY - box.top - pageNode.clientTop) / pageNode.clientHeight * 100) + '%',
+        width: Math.min(100, (rightMax - leftMin + padX * 2) / pageNode.clientWidth * 100) + '%',
+        height: Math.min(100, (bottomMax - topMin + padY * 2) / pageNode.clientHeight * 100) + '%',
+      });
+      layer.append(highlight);
+      pageNode.append(layer);
+      setTimeout(() => layer.remove(), 1850);
+    };
+
+    const viewNow = viewer.getPageView(location.page - 1);
+    const hasSpans = Boolean(viewNow?.div?.querySelector('.textLayer span:not(.markedContent)'));
+    if (hasSpans || !state.eventBus) {
+      requestAnimationFrame(paint);
+      return;
+    }
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      state.eventBus.off('textlayerrendered', onRendered);
+      requestAnimationFrame(paint);
+    };
+    const onRendered = (event) => {
+      if (event?.pageNumber === location.page) finish();
+    };
+    state.eventBus.on('textlayerrendered', onRendered);
+    setTimeout(finish, 750);
+  }
+
+  function goOriginal(location, center = false) {
     const viewer = pdfState.current?.viewer;
     if (!viewer || !location?.page || location.page > viewer.pagesCount) return;
-    if (Number.isFinite(location.y)) {
-      viewer.scrollPageIntoView({
-        pageNumber: location.page, ignoreDestinationZoom: true,
-        destArray: [null, { name: 'XYZ' }, Number.isFinite(location.x) ? location.x : null, location.y, null],
-      });
-    } else {
-      viewer.currentPageNumber = location.page;
+    if (!center) {
+      if (Number.isFinite(location.y)) {
+        viewer.scrollPageIntoView({
+          pageNumber: location.page, ignoreDestinationZoom: true,
+          destArray: [null, { name: 'XYZ' }, Number.isFinite(location.x) ? location.x : null, location.y, null],
+        });
+      } else {
+        viewer.currentPageNumber = location.page;
+      }
+      return;
     }
+    if (viewer.currentPageNumber !== location.page) viewer.currentPageNumber = location.page;
+    const alignCenter = () => {
+      const frame = container.current;
+      const view = viewer.getPageView(location.page - 1);
+      if (!frame || !view?.div) return;
+      const paper = view.div.getBoundingClientRect();
+      const viewport = frame.getBoundingClientRect();
+      const pageTop = frame.scrollTop + paper.top + view.div.clientTop - viewport.top - frame.clientTop;
+      const pageLeft = frame.scrollLeft + paper.left + view.div.clientLeft - viewport.left - frame.clientLeft;
+      const height = frame.clientHeight;
+      let focusY = 0;
+      let focusX = null;
+      if (Number.isFinite(location.y) && view.viewport) {
+        const x = Number.isFinite(location.x) ? location.x : view.viewport.viewBox[0];
+        const [px, py] = view.viewport.convertToViewportPoint(x, location.y);
+        focusY = py;
+        if (Number.isFinite(location.x)) focusX = px;
+      }
+      const targetTop = Math.max(0, Math.min(frame.scrollHeight - height, pageTop + focusY - height / 2));
+      if (Math.abs(frame.scrollTop - targetTop) > 0.5) frame.scrollTop = targetTop;
+      if (focusX !== null && view.div.clientWidth > frame.clientWidth) {
+        const targetLeft = Math.max(0, Math.min(frame.scrollWidth - frame.clientWidth, pageLeft + focusX - frame.clientWidth / 3));
+        if (Math.abs(frame.scrollLeft - targetLeft) > 0.5) frame.scrollLeft = targetLeft;
+      }
+    };
+    requestAnimationFrame(() => {
+      alignCenter();
+      requestAnimationFrame(alignCenter);
+    });
   }
 
   function isolateOriginalPage(view) {
@@ -246,8 +382,10 @@ export function usePdfReading({ paper, edition, ready, page, setPage, pdfState, 
     owner.current = 'navigation';
     setAnchor({ ...location, navigation: ++navigation.current });
     setPage(location.page);
+    const center = Boolean(location?.center);
     if (currentMode.current === 'compare') keepOriginalInView(location, true);
-    else if (currentMode.current === 'pdf') goOriginal(location);
+    else if (currentMode.current === 'pdf') goOriginal(location, center);
+    if (center) highlightOutlineTarget(location);
   }
 
   function changeMode(next) {
@@ -661,7 +799,7 @@ export function PdfOutline({ id, open = true, nodes, current, status, onJump, on
           aria-expanded={!collapsed.has(entry.id)} aria-label={(collapsed.has(entry.id) ? '展开 ' : '折叠 ') + entry.title}>
           {collapsed.has(entry.id) ? '▸' : '▾'}
         </button> : <span className="elr-outline-toggle" />}
-        <button type="button" className="elr-outline-link" onClick={() => onJump(entry)}
+        <button type="button" className="elr-outline-link" onClick={() => onJump({ ...entry, center: true })}
           aria-current={current === entry.id ? 'location' : undefined} title={entry.title}>
           <span>{entry.title}</span><small>{entry.page}</small>
         </button>
